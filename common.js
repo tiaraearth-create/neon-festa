@@ -15,6 +15,9 @@
 
   const FES = {};
   let cfg = { id: 'game', title: 'GAME', ranking: true };
+  // 運営への不具合・要望の窓口（ゲームフィードバックセンター）
+  const FEEDBACK_URL = 'https://game-feedback.brainrot-rumble.workers.dev/?game=bunkasai-game-center&lang=ja';
+  FES.feedbackUrl = FEEDBACK_URL;
 
   /* ------------------------------------------------------------ 保存 */
   const LS = {
@@ -190,6 +193,8 @@
   .fes-act.alt { background: rgba(255,255,255,.12); box-shadow: none; }
   .fes-act:hover { transform: translateY(-2px); filter: brightness(1.15); }
   .fes-act:active { transform: translateY(1px) scale(.97); }
+  .fes-report { display: inline-block; margin-top: 12px; font-size: 12px; color: rgba(255,255,255,.55); text-decoration: none; pointer-events: auto; }
+  .fes-report:hover { color: #fff; text-decoration: underline; }
   .fes-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px; background: rgba(0,0,0,.7); color: #fff;
     font-size: 14px; font-weight: 700; pointer-events: none; animation: fesFade .3s; z-index: 9500; }
   `;
@@ -345,6 +350,10 @@
       renderRank(null);
     }
     card.appendChild(actions);
+    // 不具合・要望の窓口（インターネットにつながっているときだけ意味がある）
+    if (global.navigator && global.navigator.onLine !== false) {
+      card.appendChild(el('a', { class: 'fes-report', href: FEEDBACK_URL, target: '_blank', rel: 'noopener noreferrer', text: '🐛 バグ報告・要望を送る' }));
+    }
     overlay = el('div', { id: 'fes-overlay' }, [card]);
     ui.appendChild(overlay);
     // キー操作: Enter/Space でリトライ（名前入力中は除く）
