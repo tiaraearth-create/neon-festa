@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>ネオンデュエル</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07071a; overflow: hidden;
+    font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
+  #game { display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+</style>
+<script src="../common.js"></script>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+'use strict';
+FES.init({ id: 'duel', title: 'ネオンデュエル', ranking: false });
+
+/* ================================================================ 基本定数 */
+// 1台の PC で 2 人対戦。P1 = 左（A キー / 画面左半分タップ）、P2 = 右（L キー / 画面右半分タップ）。
+// 4 種類のミニ勝負をランダムに出し、先に 3 勝した方が勝ち（最大 5 ラウンド）。
+const W = 960, H = 540;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const view = FES.fitCanvas(canvas, W, H);
+const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
+const { clamp, lerp, rand, randInt, pick } = FES;
+const TAU = Math.PI * 2;
+const WIN_NEED = 3;
+const P = [
+  { name: 'P1', key: 'A', color: '#ff4d8d', dark: '#5a1230', side: -1 },
+  { name: 'P2', key: 'L', color: '#5ee7ff', dark: '#0f4a5a', side: 1 },
+];
+const KEYS = { KeyA: 0, KeyZ: 0, KeyQ: 0, Digit1: 0, KeyL: 1, Slash: 1, KeyP2: 1, Digit0: 1, Period: 1 };
+
+/* ================================================================ ユーティリティ */
+const easeOutBack = t => { const c = 1.70158; const u = t - 1; return 1 + (c + 1) * u * u * u + c * u * u; };
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+function rr(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function text(s, x, y, size, color, align, opts) {
+  opts = opts || {};
+  ctx.font = `${opts.weight || 900} ${size}px ${FONT}`;
+  ctx.textAlign = align || 'center'; ctx.textBaseline = 'middle';
+  if (opts.stroke !== false) { ctx.lineJoin = 'round'; ctx.lineWidth = opts.lineWidth || Math.max(3, size * 0.14); ctx.strokeStyle = opts.strokeColor || 'rgba(5,5,20,.8)'; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+}
+function glowText(s, x, y, size, color, glow, align) {
+  ctx.save(); ctx.shadowColor = glow || color; ctx.shadowBlur = size * .6; text(s, x, y, size, color, align); ctx.restore();
+}
+function seeded(seed) { let s = seed; return () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }; }
+
+/* ================================================================ 勝負の種類 */
+const COLORS = [
+  { name: 'あか', c: '#ff4d4d' }, { name: 'あお', c: '#4d8dff' }, { name: 'きいろ', c: '#ffd93d' },
+  { name: 'みどり', c: '#5cff8d' }, { name: 'むらさき', c: '#c86bff' }, { name: 'しろ', c: '#ffffff' },
+];
+const TYPES = {
+  flash:  { name: '早押し',     icon: '⚡', rule: '「GO!」が出たら押せ！ フライングは負け',       color: '#ffd36e' },
+  mash:   { name: '連打',       icon: '🔥', rule: '5秒間、ひたすら連打！ 多い方の勝ち',           color: '#ff6b3d' },
+  timing: { name: 'タイミング', icon: '🎯', rule: '動くバーを ど真ん中で止めろ！ 近い方の勝ち',     color: '#5cff8d' },
+  stroop: { name: '色よみ',     icon: '🎨', rule: '文字の「色」が お題と同じになったら押せ！ 間違えたら負け', color: '#c86bff' },
+};
+const TYPE_KEYS = Object.keys(TYPES);
+
+/* ================================================================ ゲーム状態 */
+const G = {
+  state: 'title',      // title | intro | play | roundend | matchend
+  paused: false,
+  t: 0, bgT: 0,
+  round: 0, wins: [0, 0], type: null, lastType: null,
+  st: 0,               // 状態内の経過秒
+  rt: 0,               // ラウンド結果表示の経過秒
+  shake: 0, flash: 0, flashColor: '#fff',
+  particles: [], texts: [],
+  press: [0, 0],       // ボタン押下の演出用（押した瞬間 1 → 減衰）
+  roundWinner: -1, roundMsg: '', roundSub: '',
+  fastest: [9, 9],     // 早押しの最速反応（秒）
+  mini: null,          // 進行中の勝負のデータ
+  history: [],
+  titleT: 0,
+};
+const stars = [];
+{ const R = seeded(777); for (let i = 0; i < 70; i++) stars.push({ x: R() * W, y: R() * H, r: .6 + R() * 1.6, k: R() * TAU, s: .3 + R() * .8 }); }
+
+/* ================================================================ 演出 */
+function burst(x, y, color, n, speed) {
+  for (let i = 0; i < (n || 30); i++) {
+    const a = rand(0, TAU), v = rand(60, speed || 420);
+    G.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, life: rand(.5, 1.1), t: 0, c: color, r: rand(3, 8), g: 500 });
+  }
+}
+function popText(s, x, y, color, size) { G.texts.push({ s, x, y, c: color, size: size || 44, t: 0, life: 1.1 }); }
+function hitFlash(color, a) { G.flash = a == null ? .5 : a; G.flashColor = color; }
+
+/* ================================================================ 入力 */
+function pressed(p) {
+  if (G.paused) return;
+  G.press[p] = 1;
+  if (G.state === 'title') { startMatch(); return; }
+  if (G.state === 'play' && G.mini) G.mini.onPress(p);
+}
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (e.code === 'Escape' || e.code === 'KeyP') { e.preventDefault(); if (G.state !== 'title') togglePause(); return; }
+  if (e.code in KEYS) { e.preventDefault(); pressed(KEYS[e.code]); return; }
+  if ((e.code === 'Space' || e.code === 'Enter') && (G.state === 'title' || G.state === 'matchend')) { e.preventDefault(); if (G.state === 'title') startMatch(); }
+});
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const g = view.toGame(e.clientX, e.clientY);
+  if (G.paused) { togglePause(); return; }
+  // 上端中央のポーズボタン
+  if (G.state !== 'title' && Math.abs(g.x - W / 2) < 30 && g.y < 44) { togglePause(); return; }
+  pressed(g.x < W / 2 ? 0 : 1);
+});
+function togglePause() {
+  G.paused = !G.paused;
+  if (G.mini && G.mini.onPause) G.mini.onPause(G.paused);
+  FES.sfx(G.paused ? 'select' : 'go');
+}
+
+/* ================================================================ 進行 */
+function startMatch() {
+  FES.sfx('start');
+  G.round = 0; G.wins = [0, 0]; G.lastType = null; G.history = []; G.fastest = [9, 9];
+  nextRound();
+}
+function nextRound() {
+  G.round++;
+  let k; do { k = pick(TYPE_KEYS); } while (k === G.lastType && TYPE_KEYS.length > 1);
+  G.lastType = k; G.type = k;
+  G.state = 'intro'; G.st = 0; G.mini = null;
+  FES.sfx('countdown');
+}
+function beginPlay() {
+  G.state = 'play'; G.st = 0;
+  G.mini = MAKE[G.type]();
+  FES.sfx('go');
+}
+function endRound(winner, msg, sub) {
+  if (G.state !== 'play') return;
+  G.state = 'roundend'; G.rt = 0; G.roundWinner = winner; G.roundMsg = msg || ''; G.roundSub = sub || '';   // G.st は勝負画面の表示用にそのまま進める
+  G.history.push({ type: G.type, winner });
+  if (winner >= 0) {
+    G.wins[winner]++;
+    const px = winner === 0 ? W * .25 : W * .75;
+    burst(px, H * .5, P[winner].color, 70, 520); hitFlash(P[winner].color, .45); G.shake = 14;
+    FES.sfx('perfect');
+  } else { FES.sfx('miss'); G.shake = 6; }
+}
+function afterRound() {
+  if (G.wins[0] >= WIN_NEED || G.wins[1] >= WIN_NEED || G.round >= WIN_NEED * 2 - 1) finishMatch();
+  else nextRound();
+}
+function finishMatch() {
+  G.state = 'matchend'; G.st = 0;
+  const w = G.wins[0] === G.wins[1] ? -1 : (G.wins[0] > G.wins[1] ? 0 : 1);
+  if (w >= 0) { burst(w === 0 ? W * .25 : W * .75, H * .4, P[w].color, 140, 650); burst(W / 2, H * .3, '#ffd36e', 80, 500); }
+  const stats = [
+    { label: 'P1 勝利数', value: G.wins[0] }, { label: 'P2 勝利数', value: G.wins[1] },
+    { label: 'ラウンド数', value: G.round },
+  ];
+  const f = Math.min(G.fastest[0], G.fastest[1]);
+  if (f < 9) stats.push({ label: '最速反応', value: Math.round(f * 1000) + 'ms' });
+  const sub = G.history.map(h => TYPES[h.type].icon + (h.winner < 0 ? '－' : P[h.winner].name)).join('  ');
+  setTimeout(() => {
+    if (G.state !== 'matchend') return;
+    FES.showResult({ title: w < 0 ? 'ひきわけ！' : `${P[w].name} の勝ち！`, score: Math.max(G.wins[0], G.wins[1]), scoreLabel: '勝', subtitle: sub, stats, ranking: false, retryLabel: 'もう一回' }, () => { G.state = 'title'; G.titleT = 0; });
+  }, 1700);
+}
+
+/* ================================================================ 各勝負 */
+const MAKE = {
+  // ---- 早押し: 「GO!」が出た瞬間に押す。フライングは負け。
+  flash() {
+    const m = { wait: rand(1.4, 4.2), go: false, goT: 0, done: false };
+    m.onPress = p => {
+      if (m.done) return;
+      if (!m.go) { m.done = true; popText('フライング！', p === 0 ? W * .25 : W * .75, H * .5, '#ff4d4d', 40); endRound(1 - p, `${P[1 - p].name} の勝ち！`, `${P[p].name} がフライング…`); return; }
+      m.done = true; const rt = G.st - m.goT; G.fastest[p] = Math.min(G.fastest[p], rt);
+      endRound(p, `${P[p].name} の勝ち！`, `反応 ${Math.round(rt * 1000)} ms`);
+    };
+    m.update = dt => {
+      if (m.done) return;
+      if (!m.go && G.st >= m.wait) { m.go = true; m.goT = G.st; hitFlash('#ffd36e', .35); FES.sfx('go'); G.shake = 5; }
+      if (m.go && G.st - m.goT > 2.5) { m.done = true; endRound(-1, 'どっちも押さず…', 'ひきわけ'); }
+    };
+    m.draw = () => {
+      const cx = W / 2, cy = H / 2 + 20;
+      if (!m.go) {
+        const pulse = 1 + Math.sin(G.t * 6) * .04;
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(pulse, pulse);
+        ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.beginPath(); ctx.arc(0, 0, 120, 0, TAU); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 4; ctx.setLineDash([12, 10]); ctx.lineDashOffset = -G.t * 40; ctx.stroke(); ctx.setLineDash([]);
+        text('まて…', 0, 0, 54, '#9aa0b8'); ctx.restore();
+        text('まだ押すな！', cx, cy + 150, 24, 'rgba(255,255,255,.55)');
+      } else {
+        const k = clamp((G.st - m.goT) * 6, 0, 1), s = easeOutBack(k);
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
+        ctx.fillStyle = '#ffd36e'; ctx.shadowColor = '#ffd36e'; ctx.shadowBlur = 60; ctx.beginPath(); ctx.arc(0, 0, 130, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+        text('GO!', 0, 4, 96, '#2a1a00', 'center', { stroke: false }); ctx.restore();
+      }
+    };
+    return m;
+  },
+  // ---- 連打: 5 秒間の連打数で勝負。
+  mash() {
+    const m = { n: [0, 0], dur: 5, done: false, started: false, countT: 0 };
+    m.onPress = p => {
+      if (m.done || !m.started) return;
+      m.n[p]++; G.particles.push({ x: p === 0 ? W * .25 + rand(-60, 60) : W * .75 + rand(-60, 60), y: H * .62, vx: rand(-80, 80), vy: rand(-320, -180), life: .6, t: 0, c: P[p].color, r: rand(3, 6), g: 700 });
+      if (m.n[p] % 10 === 0) { popText(`${m.n[p]}!`, p === 0 ? W * .25 : W * .75, H * .3, P[p].color, 36); FES.sfx('combo'); }
+      else FES.sfx('tick');
+    };
+    m.update = dt => {
+      if (m.done) return;
+      if (!m.started) { // 3・2・1
+        const c = Math.ceil(2.4 - G.st);
+        if (c !== m.countT) { m.countT = c; if (c > 0) FES.sfx('countdown'); }
+        if (G.st >= 2.4) { m.started = true; m.t0 = G.st; FES.sfx('go'); hitFlash('#ff6b3d', .3); }
+        return;
+      }
+      if (G.st - m.t0 >= m.dur) {
+        m.done = true;
+        if (m.n[0] === m.n[1]) endRound(-1, 'ひきわけ！', `${m.n[0]} 回 vs ${m.n[1]} 回`);
+        else { const w = m.n[0] > m.n[1] ? 0 : 1; endRound(w, `${P[w].name} の勝ち！`, `${m.n[0]} 回 vs ${m.n[1]} 回`); }
+      }
+    };
+    m.draw = () => {
+      const cy = H / 2 + 20;
+      if (!m.started) {
+        const c = Math.ceil(2.4 - G.st), k = (2.4 - G.st) % 1, s = 1 + (1 - k) * .3;
+        ctx.save(); ctx.translate(W / 2, cy); ctx.scale(s, s); text(c > 0 ? String(c) : 'GO!', 0, 0, 110, '#ff6b3d'); ctx.restore();
+        text('3・2・1 で 連打スタート！', W / 2, cy + 120, 24, 'rgba(255,255,255,.6)');
+        return;
+      }
+      const left = Math.max(0, m.dur - (G.st - m.t0));
+      // 残り時間
+      const bw = 420; rr(W / 2 - bw / 2, 70, bw, 18, 9); ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fill();
+      rr(W / 2 - bw / 2, 70, bw * left / m.dur, 18, 9); ctx.fillStyle = left < 1.5 ? '#ff4d4d' : '#ffd36e'; ctx.fill();
+      text(left.toFixed(1), W / 2, 110, 28, '#fff');
+      // 綱引きバー
+      const total = m.n[0] + m.n[1] || 1, ratio = m.n[0] / total;
+      const x0 = 120, x1 = W - 120, y = cy + 60, h = 46;
+      rr(x0, y - h / 2, x1 - x0, h, 23); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
+      const mid = lerp(x0 + 30, x1 - 30, 1 - ratio);
+      ctx.save(); rr(x0, y - h / 2, x1 - x0, h, 23); ctx.clip();
+      ctx.fillStyle = P[0].color; ctx.fillRect(x0, y - h / 2, mid - x0, h);
+      ctx.fillStyle = P[1].color; ctx.fillRect(mid, y - h / 2, x1 - mid, h); ctx.restore();
+      ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(mid, y, 30, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+      text('🔥', mid, y + 2, 30, '#fff', 'center', { stroke: false });
+      [0, 1].forEach(p => {
+        const x = p === 0 ? W * .25 : W * .75, s = 1 + G.press[p] * .25;
+        ctx.save(); ctx.translate(x, cy - 40); ctx.scale(s, s); glowText(String(m.n[p]), 0, 0, 96, P[p].color); ctx.restore();
+        text('回', x + 70, cy - 20, 24, 'rgba(255,255,255,.6)');
+      });
+    };
+    return m;
+  },
+  // ---- タイミング: 往復するカーソルを中央で止める。中央に近い方の勝ち。
+  timing() {
+    const m = { pos: [0, 0], dir: [1, -1], stop: [null, null], speed: [1.35, 1.35], done: false, limit: 6 };
+    m.pos = [0, 1]; m.dir = [1, -1];
+    m.onPress = p => {
+      if (m.done || m.stop[p] != null) return;
+      m.stop[p] = m.pos[p];
+      const d = Math.abs(m.stop[p] - .5) * 2;  // 0 = ど真ん中, 1 = 端
+      const px = p === 0 ? W * .25 : W * .75;
+      if (d < .04) { popText('PERFECT!', px, H * .3, '#ffd36e', 40); FES.sfx('perfect'); burst(px, H / 2 + 20, '#ffd36e', 30, 300); }
+      else if (d < .15) { popText('GREAT', px, H * .3, '#5cff8d', 34); FES.sfx('hit'); }
+      else if (d < .4) { popText('OK', px, H * .3, '#9aa0b8', 30); FES.sfx('bounce'); }
+      else { popText('ズレた…', px, H * .3, '#ff6b6b', 30); FES.sfx('miss'); }
+      if (m.stop[0] != null && m.stop[1] != null) m.finish();
+    };
+    m.finish = () => {
+      m.done = true;
+      const d0 = m.stop[0] == null ? 2 : Math.abs(m.stop[0] - .5), d1 = m.stop[1] == null ? 2 : Math.abs(m.stop[1] - .5);
+      const pct = d => d >= 2 ? '押さず' : Math.round((1 - d * 2) * 100) + '%';
+      if (Math.abs(d0 - d1) < .004) endRound(-1, 'ひきわけ！', `${pct(d0)} vs ${pct(d1)}`);
+      else { const w = d0 < d1 ? 0 : 1; endRound(w, `${P[w].name} の勝ち！`, `${pct(d0)} vs ${pct(d1)}`); }
+    };
+    m.update = dt => {
+      if (m.done) return;
+      for (let p = 0; p < 2; p++) {
+        if (m.stop[p] != null) continue;
+        m.pos[p] += m.dir[p] * m.speed[p] * dt * (1 + G.st * .08);
+        if (m.pos[p] > 1) { m.pos[p] = 1; m.dir[p] = -1; } else if (m.pos[p] < 0) { m.pos[p] = 0; m.dir[p] = 1; }
+      }
+      if (G.st > m.limit) m.finish();
+    };
+    m.draw = () => {
+      const bw = 300, bh = 34;
+      [0, 1].forEach(p => {
+        const cx = p === 0 ? W * .25 : W * .75, y = H / 2 + 30, x0 = cx - bw / 2;
+        rr(x0, y - bh / 2, bw, bh, 17); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fill();
+        // 的
+        const zones = [[.4, 'rgba(255,255,255,.08)'], [.15, 'rgba(92,255,141,.35)'], [.04, '#ffd36e']];
+        zones.forEach(([z, c]) => { ctx.fillStyle = c; rr(cx - bw * z / 2, y - bh / 2, bw * z, bh, 6); ctx.fill(); });
+        // カーソル
+        const px = x0 + bw * (m.stop[p] != null ? m.stop[p] : m.pos[p]);
+        ctx.fillStyle = P[p].color; ctx.shadowColor = P[p].color; ctx.shadowBlur = 18;
+        rr(px - 6, y - bh / 2 - 14, 12, bh + 28, 6); ctx.fill(); ctx.shadowBlur = 0;
+        text(m.stop[p] != null ? 'STOP' : P[p].key + ' で止める', cx, y + 56, 20, m.stop[p] != null ? P[p].color : 'rgba(255,255,255,.6)');
+      });
+      text('ど真ん中（金色）で止めろ！', W / 2, H / 2 - 70, 26, '#fff');
+      const left = Math.max(0, m.limit - G.st); text(left.toFixed(1), W / 2, 110, 28, left < 2 ? '#ff4d4d' : 'rgba(255,255,255,.7)');
+    };
+    return m;
+  },
+  // ---- 色よみ: 文字の「色」がお題と同じになったら押す。文字の「意味」にだまされるな。
+  stroop() {
+    const m = { target: pick(COLORS), cur: null, interval: .95, next: 0, done: false, shown: 0, matchShownAt: -1, limit: 14, idx: 0 };
+    const roll = () => {
+      m.shown++;
+      // 4 回に 1 回くらい正解を出す（最初の 2 回は出さない）
+      const makeMatch = m.shown > 2 && Math.random() < .3;
+      const colorObj = makeMatch ? m.target : pick(COLORS.filter(c => c !== m.target));
+      const word = Math.random() < .7 ? pick(COLORS.filter(c => c !== colorObj)) : colorObj;  // 意味は色とズラす
+      m.cur = { word: word.name, color: colorObj.c, match: makeMatch };
+      m.matchShownAt = makeMatch ? G.st : -1; m.idx++;
+      FES.sfx('tick');
+    };
+    m.onPress = p => {
+      if (m.done) return;
+      m.done = true;
+      if (m.cur && m.cur.match) { const rt = G.st - m.matchShownAt; G.fastest[p] = Math.min(G.fastest[p], rt); endRound(p, `${P[p].name} の勝ち！`, `反応 ${Math.round(rt * 1000)} ms`); }
+      else { popText('ちがう！', p === 0 ? W * .25 : W * .75, H * .5, '#ff4d4d', 40); endRound(1 - p, `${P[1 - p].name} の勝ち！`, `${P[p].name} がお手つき…`); }
+    };
+    m.update = dt => {
+      if (m.done) return;
+      if (G.st >= m.next) { roll(); m.next = G.st + m.interval; }
+      if (G.st > m.limit) { m.done = true; endRound(-1, 'どっちも押さず…', 'ひきわけ'); }
+    };
+    m.draw = () => {
+      const cx = W / 2, cy = H / 2 + 30;
+      // お題
+      rr(cx - 230, 62, 460, 56, 28); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fill();
+      text('お題の色:', cx - 90, 90, 22, 'rgba(255,255,255,.7)');
+      ctx.fillStyle = m.target.c; ctx.shadowColor = m.target.c; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx + 10, 90, 16, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+      text(m.target.name, cx + 95, 90, 28, '#fff');
+      if (m.cur) {
+        const k = clamp((G.st - (m.next - m.interval)) * 8, 0, 1), s = easeOutBack(k);
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
+        rr(-170, -70, 340, 140, 28); ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fill();
+        glowText(m.cur.word, 0, 0, 84, m.cur.color); ctx.restore();
+      }
+      text('文字の 色 を見ろ！（意味じゃない）', cx, cy + 120, 22, 'rgba(255,255,255,.6)');
+    };
+    return m;
+  },
+};
+
+/* ================================================================ 更新 */
+let last = performance.now();
+function update(dt) {
+  G.t += dt;
+  G.shake = Math.max(0, G.shake - dt * 40); G.flash = Math.max(0, G.flash - dt * 2.2);
+  for (let p = 0; p < 2; p++) G.press[p] = Math.max(0, G.press[p] - dt * 6);
+  for (let i = G.particles.length - 1; i >= 0; i--) { const q = G.particles[i]; q.t += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += q.g * dt; if (q.t > q.life) G.particles.splice(i, 1); }
+  for (let i = G.texts.length - 1; i >= 0; i--) { const q = G.texts[i]; q.t += dt; if (q.t > q.life) G.texts.splice(i, 1); }
+  if (G.state === 'title') { G.titleT += dt; return; }
+  G.st += dt;
+  if (G.state === 'intro' && G.st >= 2.4) beginPlay();
+  else if (G.state === 'play' && G.mini) G.mini.update(dt);
+  else if (G.state === 'roundend') { G.rt += dt; if (G.rt >= 2.1) afterRound(); }
+}
+
+/* ================================================================ 描画 */
+function drawBg() {
+  ctx.fillStyle = '#07071a'; ctx.fillRect(0, 0, W, H);
+  // 左右の陣地
+  [0, 1].forEach(p => {
+    const g = ctx.createLinearGradient(p === 0 ? 0 : W, 0, W / 2, 0);
+    g.addColorStop(0, P[p].dark); g.addColorStop(1, 'rgba(7,7,26,0)');
+    ctx.fillStyle = g; ctx.fillRect(p === 0 ? 0 : W / 2, 0, W / 2, H);
+    if (G.press[p] > 0) { ctx.fillStyle = P[p].color; ctx.globalAlpha = G.press[p] * .18; ctx.fillRect(p === 0 ? 0 : W / 2, 0, W / 2, H); ctx.globalAlpha = 1; }
+  });
+  for (const s of stars) { ctx.globalAlpha = .3 + .7 * (Math.sin(G.t * 2 * s.s + s.k) * .5 + .5); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  // 中央線
+  ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 2; ctx.setLineDash([10, 14]); ctx.lineDashOffset = -G.t * 30;
+  ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); ctx.setLineDash([]);
+}
+function drawScore() {
+  [0, 1].forEach(p => {
+    const x = p === 0 ? 40 : W - 40, dir = p === 0 ? 1 : -1;
+    text(P[p].name, x + dir * 30, 34, 26, P[p].color, p === 0 ? 'left' : 'right');
+    for (let i = 0; i < WIN_NEED; i++) {
+      const cx = x + dir * (100 + i * 34), on = i < G.wins[p];
+      ctx.beginPath(); ctx.arc(cx, 34, 11, 0, TAU);
+      ctx.fillStyle = on ? P[p].color : 'rgba(255,255,255,.12)'; ctx.shadowColor = P[p].color; ctx.shadowBlur = on ? 14 : 0; ctx.fill(); ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    text(p === 0 ? '[A] / 左タップ' : '[L] / 右タップ', x + dir * 30, 60, 13, 'rgba(255,255,255,.45)', p === 0 ? 'left' : 'right', { weight: 700 });
+  });
+  text(`ROUND ${G.round}`, W / 2, 24, 18, 'rgba(255,255,255,.6)');
+  text('❚❚', W / 2, 46, 14, 'rgba(255,255,255,.35)', 'center', { stroke: false });
+}
+function drawTitle() {
+  const t = G.titleT;
+  glowText('⚔️', W / 2, 92, 64, '#fff', '#ff5e5e');
+  const s = 1 + Math.sin(t * 2) * .02;
+  ctx.save(); ctx.translate(W / 2, 170); ctx.scale(s, s);
+  const g = ctx.createLinearGradient(-240, 0, 240, 0); g.addColorStop(0, P[0].color); g.addColorStop(.5, '#fff'); g.addColorStop(1, P[1].color);
+  ctx.font = `900 76px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(5,5,20,.9)'; ctx.lineJoin = 'round'; ctx.strokeText('ネオンデュエル', 0, 0);
+  ctx.fillStyle = g; ctx.shadowColor = '#fff'; ctx.shadowBlur = 24; ctx.fillText('ネオンデュエル', 0, 0); ctx.restore();
+  text('1台で2人対決 ・ 先に 3 勝した方が勝ち', W / 2, 232, 22, 'rgba(255,255,255,.75)');
+  // 種目
+  TYPE_KEYS.forEach((k, i) => {
+    const ty = TYPES[k], x = 150 + i * 220, y = 310;
+    rr(x - 95, y - 38, 190, 76, 18); ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fill(); ctx.strokeStyle = ty.color; ctx.lineWidth = 2; ctx.globalAlpha = .6; ctx.stroke(); ctx.globalAlpha = 1;
+    text(ty.icon, x - 60, y, 32, '#fff', 'center', { stroke: false }); text(ty.name, x + 18, y, 24, ty.color);
+  });
+  // 操作
+  [0, 1].forEach(p => {
+    const x = p === 0 ? W * .25 : W * .75, press = G.press[p];
+    ctx.save(); ctx.translate(x, 420); ctx.scale(1 + press * .2, 1 + press * .2);
+    rr(-110, -40, 220, 80, 22); ctx.fillStyle = P[p].dark; ctx.fill(); ctx.strokeStyle = P[p].color; ctx.lineWidth = 3; ctx.stroke();
+    text(P[p].name, -60, 0, 30, P[p].color); text(`${P[p].key} キー / ${p === 0 ? '左' : '右'}タップ`, 30, 0, 18, '#fff'); ctx.restore();
+  });
+  const bl = .55 + Math.sin(t * 5) * .45;
+  text('どちらかのボタンを押してスタート', W / 2, 500, 24, `rgba(255,255,255,${bl})`);
+}
+function drawIntro() {
+  const ty = TYPES[G.type], k = clamp(G.st * 3, 0, 1), s = easeOutBack(k);
+  ctx.save(); ctx.translate(W / 2, H / 2 - 30); ctx.scale(s, s);
+  text(`ROUND ${G.round}`, 0, -120, 30, 'rgba(255,255,255,.7)');
+  text(ty.icon, 0, -40, 80, '#fff', 'center', { stroke: false });
+  glowText(ty.name, 0, 50, 72, ty.color); ctx.restore();
+  if (G.st > .5) { const a = clamp((G.st - .5) * 3, 0, 1); ctx.globalAlpha = a; text(ty.rule, W / 2, H / 2 + 120, 26, '#fff'); ctx.globalAlpha = 1; }
+  const left = Math.ceil(2.4 - G.st); if (left > 0 && left <= 3) text(String(left), W / 2, H - 50, 36, 'rgba(255,255,255,.5)');
+}
+function drawRoundEnd() {
+  const k = clamp(G.rt * 4, 0, 1), s = easeOutBack(k), w = G.roundWinner;
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(s, s);
+  glowText(G.roundMsg, 0, -20, 68, w >= 0 ? P[w].color : '#fff'); ctx.restore();
+  text(G.roundSub, W / 2, H / 2 + 56, 26, 'rgba(255,255,255,.8)');
+  text(`${G.wins[0]} - ${G.wins[1]}`, W / 2, H / 2 + 110, 40, '#ffd36e');
+}
+function drawMatchEnd() {
+  const w = G.wins[0] === G.wins[1] ? -1 : (G.wins[0] > G.wins[1] ? 0 : 1);
+  const k = clamp(G.st * 2.5, 0, 1), s = easeOutBack(k);
+  ctx.save(); ctx.translate(W / 2, H / 2 - 20); ctx.scale(s, s);
+  text('🏆', 0, -90, 80, '#fff', 'center', { stroke: false });
+  glowText(w < 0 ? 'ひきわけ！' : `${P[w].name} WIN!`, 0, 10, 84, w < 0 ? '#fff' : P[w].color); ctx.restore();
+  text(`${G.wins[0]} - ${G.wins[1]}`, W / 2, H / 2 + 80, 44, '#ffd36e');
+}
+function draw() {
+  ctx.save();
+  if (G.shake > 0) ctx.translate(rand(-G.shake, G.shake), rand(-G.shake, G.shake));
+  drawBg();
+  if (G.state === 'title') drawTitle();
+  else {
+    drawScore();
+    if (G.state === 'intro') drawIntro();
+    else if (G.state === 'play' && G.mini) G.mini.draw();
+    else if (G.state === 'roundend') { if (G.mini) G.mini.draw(); drawRoundEnd(); }
+    else if (G.state === 'matchend') drawMatchEnd();
+  }
+  for (const q of G.particles) { ctx.globalAlpha = 1 - q.t / q.life; ctx.fillStyle = q.c; ctx.beginPath(); ctx.arc(q.x, q.y, q.r * (1 - q.t / q.life * .5), 0, TAU); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  for (const q of G.texts) { const k = q.t / q.life; ctx.globalAlpha = 1 - k * k; const sc = 1 + (1 - easeOutCubic(Math.min(1, k * 4))) * .6; ctx.save(); ctx.translate(q.x, q.y - k * 50); ctx.scale(sc, sc); text(q.s, 0, 0, q.size, q.c); ctx.restore(); }
+  ctx.globalAlpha = 1;
+  if (G.flash > 0) { ctx.fillStyle = G.flashColor; ctx.globalAlpha = G.flash; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  ctx.restore();
+  if (G.paused) {
+    ctx.fillStyle = 'rgba(5,5,20,.7)'; ctx.fillRect(0, 0, W, H);
+    glowText('PAUSE', W / 2, H / 2 - 10, 72, '#fff'); text('Esc / P / タップ でもどる', W / 2, H / 2 + 60, 22, 'rgba(255,255,255,.7)');
+  }
+}
+
+/* ================================================================ ループ */
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!G.paused) update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && G.state !== 'title' && !G.paused) togglePause(); last = performance.now(); });
+requestAnimationFrame(t => { last = t; frame(t); });
+</script>
+</body>
+</html>

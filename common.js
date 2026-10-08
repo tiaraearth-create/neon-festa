@@ -270,6 +270,14 @@
     const useRank = (o.ranking != null ? o.ranking : cfg.ranking) && score > 0;
     const rankIn = useRank && FES.isRankIn(score);
     if (rankIn) FES.sfx('fanfare'); else FES.sfx('gameover');
+    // スタンプラリー: 1回遊び終えたらスタンプ（同じゲームは1枚のカードに1つ）
+    if (cfg.id !== 'hub' && o.stamp !== false) {
+      const st = FES.addStamp(cfg.id);
+      if (st.added) setTimeout(() => {
+        if (st.complete) { FES.sfx('powerup'); FES.toast('🎉 スタンプ コンプリート！ ホームで殿堂入りを確認しよう', 4000); }
+        else FES.toast(`🎟 スタンプ GET！ ${st.count}${st.total ? ' / ' + st.total : ''}`, 2500);
+      }, 900);
+    }
 
     const card = el('div', { class: 'fes-card' });
     card.appendChild(el('h2', { text: cfg.title || '' }));
@@ -347,6 +355,49 @@
     };
     setTimeout(() => document.addEventListener('keydown', key), 400);
     return overlay;
+  };
+
+  /* ------------------------------------------------------------ スタンプラリー */
+  // 1回遊ぶ（リザルトが出る）ごとに、そのゲームのスタンプが1つ押される。
+  // カードは端末ごとに1枚（ブースのPCなら「次の人」で新しいカードにする）。
+  // 全ゲーム集めると「殿堂」に名前と所要時間が残る。
+  const STAMP_KEY = 'fes:stamp:card', HALL_KEY = 'fes:stamp:hall', TOTAL_KEY = 'fes:stamp:total';
+  FES.stampBase = id => String(id || cfg.id).split('_')[0];      // rhythm_hard → rhythm
+  FES.stampTotal = () => LS.get(TOTAL_KEY, 0);                     // ハブが起動時に書き込む
+  FES.setStampTotal = n => LS.set(TOTAL_KEY, n | 0);
+  FES.stampCard = () => LS.get(STAMP_KEY, null);                   // { name, started, stamps:{id:ts}, done:ts|null }
+  FES.newStampCard = function (name) {
+    const c = { name: String(name == null ? '' : name).trim().slice(0, 8), started: Date.now(), stamps: {}, done: null };
+    LS.set(STAMP_KEY, c); return c;
+  };
+  FES.renameStampCard = function (name) {
+    const c = FES.stampCard() || FES.newStampCard('');
+    c.name = String(name == null ? '' : name).trim().slice(0, 8); LS.set(STAMP_KEY, c); return c;
+  };
+  FES.stampHall = () => LS.get(HALL_KEY, []);                       // [{ name, date, timeMs, count }]
+  FES.clearStampHall = () => LS.set(HALL_KEY, []);
+  /** スタンプを押す。戻り値 { card, added, count, total, complete } */
+  FES.addStamp = function (id) {
+    const base = FES.stampBase(id);
+    const c = FES.stampCard() || FES.newStampCard('');
+    const total = FES.stampTotal();
+    if (c.done || c.stamps[base]) return { card: c, added: false, count: Object.keys(c.stamps).length, total, complete: !!c.done };
+    c.stamps[base] = Date.now();
+    const count = Object.keys(c.stamps).length;
+    let complete = false;
+    if (total > 0 && count >= total) {
+      c.done = Date.now(); complete = true;
+      const hall = FES.stampHall();
+      hall.push({ name: c.name || 'ななし', date: c.done, timeMs: c.done - c.started, count });
+      LS.set(HALL_KEY, hall.slice(-100));
+    }
+    LS.set(STAMP_KEY, c);
+    return { card: c, added: true, count, total, complete };
+  };
+  FES.formatDuration = function (ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return (h ? h + ':' : '') + (h ? String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
   };
 
   /* ------------------------------------------------------------ 便利関数 */

@@ -126,8 +126,67 @@
   .act.danger { background: linear-gradient(135deg,#ff4d6d,#ff7b47); box-shadow: 0 8px 24px rgba(255,80,100,.4); }
   .act:hover { transform: translateY(-2px); filter: brightness(1.12); }
 
+  /* ---------- スタンプラリー ---------- */
+  .stamp { margin: 0 auto 26px; max-width: 980px; border-radius: 22px; padding: 16px 20px 14px; background: linear-gradient(160deg, rgba(255,211,110,.10), rgba(255,77,141,.06)); border: 1px solid rgba(255,211,110,.35); box-shadow: 0 10px 30px rgba(0,0,0,.3); animation: cardIn .6s cubic-bezier(.2,1.2,.4,1) both; }
+  .stamp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stamp-head .lbl { font-size: 10px; letter-spacing: .3em; color: var(--gold); font-weight: 900; }
+  .stamp-title { font-size: 20px; font-weight: 900; }
+  .stamp-title b { color: var(--gold); font-variant-numeric: tabular-nums; margin-left: 6px; }
+  .stamp-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .stamp-name input { width: 120px; font-size: 15px; font-weight: 700; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,.4); color: #fff; outline: none; }
+  .stamp-name input:focus { border-color: var(--gold); box-shadow: 0 0 12px rgba(255,211,110,.4); }
+  .stamp-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; padding: 4px 0 2px; }
+  .st { width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; position: relative; font-size: 26px;
+    border: 2px dashed rgba(255,255,255,.25); background: rgba(0,0,0,.3); filter: grayscale(1); opacity: .55; transition: .2s; }
+  .st.on { border: 2px solid var(--accent); background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, #000) 0%, rgba(0,0,0,.5) 75%); filter: none; opacity: 1; box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .st.on::after { content: "✔"; position: absolute; right: -4px; bottom: -4px; width: 22px; height: 22px; border-radius: 50%; background: var(--gold); color: #2a2200; font-size: 13px; font-weight: 900; display: grid; place-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+  .st.pop { animation: stampIn .6s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes stampIn { 0% { transform: scale(2.2) rotate(-25deg); opacity: 0 } 60% { transform: scale(.9) rotate(4deg); opacity: 1 } 100% { transform: scale(1) rotate(0) } }
+  .stamp-hint { margin: 10px 0 0; text-align: center; font-size: 12px; color: var(--muted); }
+  .stamp.done { border-color: var(--gold); box-shadow: 0 0 40px rgba(255,211,110,.35); }
+  .card .stamped { position: absolute; top: 12px; left: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--gold); color: #2a2200; font-size: 14px; font-weight: 900; display: grid; place-items: center; z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,.5); transform: rotate(-12deg); }
+  .hall { list-style: none; margin: 0 0 16px; padding: 0; font-variant-numeric: tabular-nums; }
+  .hall li { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 10px; font-size: 15px; }
+  .hall li:nth-child(odd) { background: rgba(255,255,255,.05); }
+  .hall li:first-child { background: linear-gradient(90deg, rgba(255,211,110,.3), transparent); font-size: 17px; }
+  .hall .r { width: 34px; font-weight: 900; }
+  .hall .n { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hall .tm { font-weight: 900; color: var(--gold); }
+  .hall .d { font-size: 11px; color: var(--muted); }
+  .hall .empty { text-align: center; color: var(--muted); padding: 24px 0; justify-content: center; }
+  .complete-big { font-size: clamp(30px, 7vw, 54px); font-weight: 900; line-height: 1.1; margin: 6px 0 10px; white-space: nowrap;
+    background: linear-gradient(90deg, #fff, var(--gold), #fff, var(--pink), #fff); background-size: 300% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 3s linear infinite; }
+
+  /* ---------- 客寄せ画面（アトラクトモード） ---------- */
+  #attract { position: fixed; inset: 0; z-index: 80; display: none; background: rgba(4,4,18,.86); backdrop-filter: blur(10px); cursor: pointer; user-select: none; }
+  #attract.open { display: block; animation: fade .6s; }
+  .slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 24px 110px; opacity: 0; transform: scale(.96); transition: opacity .7s, transform .7s; pointer-events: none; }
+  .slide.show { opacity: 1; transform: scale(1); }
+  .slide .big-icon { font-size: clamp(90px, 20vw, 170px); line-height: 1; filter: drop-shadow(0 20px 40px rgba(0,0,0,.6)); animation: floaty 3s ease-in-out infinite; }
+  @keyframes floaty { 50% { transform: translateY(-14px) rotate(-3deg); } }
+  .slide .big-title { font-size: clamp(36px, 8vw, 92px); font-weight: 900; letter-spacing: .06em; margin: 8px 0 6px; line-height: 1.1;
+    background: linear-gradient(90deg, #fff 0%, var(--gold) 25%, #fff 45%, var(--cyan) 65%, #fff 85%, var(--pink) 100%); background-size: 300% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 6s linear infinite; }
+  .slide .genre-pill { display: inline-block; font-size: 14px; font-weight: 900; letter-spacing: .25em; padding: 6px 16px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); background: rgba(0,0,0,.4); margin-bottom: 10px; }
+  .slide .desc { font-size: clamp(16px, 2.4vw, 24px); color: var(--text); max-width: 760px; line-height: 1.6; font-weight: 600; }
+  .slide .top3 { display: flex; gap: 14px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
+  .slide .top3 div { padding: 12px 20px; border-radius: 16px; background: rgba(255,255,255,.08); border: 1px solid var(--line); font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .slide .top3 div b { color: var(--gold); margin-right: 8px; }
+  .slide .top3 div span { color: var(--muted); font-size: 14px; margin-left: 8px; }
+  .slide .stamps-demo { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 20px; max-width: 760px; }
+  .slide .stamps-demo i { width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 24px; border: 2px dashed rgba(255,255,255,.3); background: rgba(0,0,0,.3); }
+  .slide .stamps-demo i.on { border-style: solid; border-color: var(--gold); background: rgba(255,211,110,.2); box-shadow: 0 0 14px rgba(255,211,110,.5); }
+  .tap { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); font-size: clamp(18px, 3vw, 28px); font-weight: 900; letter-spacing: .15em; padding: 14px 34px; border-radius: 999px; color: #fff;
+    background: linear-gradient(135deg,#6a5cff,#b04dff); box-shadow: 0 10px 30px rgba(120,80,255,.5); animation: pulse 1.4s ease-in-out infinite; white-space: nowrap; }
+  @keyframes pulse { 50% { transform: translateX(-50%) scale(1.07); box-shadow: 0 10px 50px rgba(176,77,255,.8); } }
+  .dots { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 6px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.25); }
+  .dots i.on { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+  .demo-tag { position: absolute; top: 18px; right: 20px; font-size: 12px; letter-spacing: .3em; font-weight: 900; color: var(--muted); border: 1px solid var(--line); padding: 5px 12px; border-radius: 999px; }
+
   @media (max-width: 600px) {
     #app { padding: 16px 14px 40px; }
+    .st { width: 46px; height: 46px; font-size: 20px; }
+    .stamp { padding: 14px; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
     .card { min-height: 0; padding: 14px; }
     .card p { display: none; }
@@ -140,13 +199,29 @@
 <canvas id="bg"></canvas>
 <div id="app">
   <header>
-    <div class="badge"><span class="dot"></span> ネオンフェスタ · 10 GAMES · FREE PLAY</div>
+    <div class="badge"><span class="dot"></span> ネオンフェスタ · <span id="gameCount">10</span> GAMES · FREE PLAY</div>
     <h1 id="title" contenteditable="true" spellcheck="false">NEON FESTA</h1>
-    <p class="sub">10種類のゲームで ハイスコアに挑戦しよう！</p>
+    <p class="sub"><span id="gameCount2">10</span>種類のゲームで ハイスコアに挑戦しよう！</p>
     <p class="hint">（タイトルはクリックで書きかえられます・自動保存）</p>
   </header>
 
   <div class="ticker"><div class="ticker-track" id="ticker"></div></div>
+
+  <section class="stamp" id="stamp">
+    <div class="stamp-head">
+      <div>
+        <div class="lbl">STAMP RALLY</div>
+        <div class="stamp-title">🎟 スタンプラリー <b id="stampCount">0 / 10</b></div>
+      </div>
+      <div class="stamp-name">
+        <span>👤</span><input id="stampName" maxlength="8" placeholder="なまえ" autocomplete="off">
+        <button class="fbtn" id="stampNew">🔄 次の人（新しいカード）</button>
+        <button class="fbtn" id="hallBtn">🏅 殿堂</button>
+      </div>
+    </div>
+    <div class="stamp-row" id="stampRow"></div>
+    <p class="stamp-hint" id="stampHint">ゲームを1回遊ぶごとにスタンプが1つ。全部集めると殿堂入り！</p>
+  </section>
 
   <div class="grid" id="grid"></div>
 
@@ -155,8 +230,41 @@
     <a class="fbtn" id="qrBtn" href="qr.html" style="text-decoration:none">📱 スマホ・他のPCで遊ぶ（QRコード）</a>
     <button class="fbtn" id="fullBtn">⛶ 全画面</button>
     <button class="fbtn" id="muteBtn">🔊 サウンド</button>
+    <button class="fbtn" id="attractBtn">📺 客寄せ画面: ON</button>
     <button class="fbtn danger" id="resetBtn">🗑 ランキング全消去（スタッフ用）</button>
   </footer>
+</div>
+
+<div class="modal" id="hall">
+  <div class="mbox">
+    <h3>HALL OF FAME</h3>
+    <div class="t">🏅 スタンプラリー 殿堂</div>
+    <ol class="hall" id="hallList"></ol>
+    <div class="mact">
+      <button class="act alt" id="hallClose">とじる</button>
+      <button class="fbtn danger" id="hallClear">殿堂を消去（スタッフ用）</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="complete">
+  <div class="mbox" style="text-align:center">
+    <h3>STAMP RALLY</h3>
+    <div class="complete-big">コンプリート！</div>
+    <div style="font-size:18px;font-weight:800" id="cName">ななし</div>
+    <div style="color:var(--muted);font-size:14px;margin:6px 0 18px" id="cTime"></div>
+    <div class="mact">
+      <button class="act" id="cHall">🏅 殿堂を見る</button>
+      <button class="act alt" id="cClose">とじる</button>
+    </div>
+  </div>
+</div>
+
+<div id="attract">
+  <div class="demo-tag">DEMO</div>
+  <div id="slides"></div>
+  <div class="tap">👆 タッチしてスタート</div>
+  <div class="dots" id="dots"></div>
 </div>
 
 <div class="modal" id="modal">
@@ -200,7 +308,11 @@ const GAMES = [
   { id: 'hockey',   title: 'ネオンエアホッケー',    genre: '対戦',         icon: '🏒', accent: '#3fd8ff', desc: '2人対戦 or CPU戦。マルチタッチ対応で友だちと白熱バトル。', ctrl: ['WASD','↑↓←→'] },
   { id: 'quiz',     title: '早押しクイズ王',        genre: 'クイズ',       icon: '❓', accent: '#ff6b6b', desc: '4択クイズ10問。早く答えるほど高得点。ジャンル選択あり。', ctrl: ['1〜4','クリック'] },
   { id: 'breakout', title: 'ネオンブレイカー',      genre: 'アーケード',    icon: '🧱', accent: '#a5f3fc', desc: 'ブロック崩し進化版。マルチボール・レーザーで全8ステージを攻略。', ctrl: ['← →','マウス'] },
+  { id: 'duel',     title: 'ネオンデュエル',        genre: '2人対戦',       icon: '⚔️', accent: '#ff5e5e', desc: '1台のPCで2人対決！早押し・連打・タイミング・色よみの5番勝負。', ctrl: ['A','L','タッチ'], isNew: true },
 ];
+document.getElementById('gameCount').textContent = GAMES.length;
+document.getElementById('gameCount2').textContent = GAMES.length;
+FES.setStampTotal(GAMES.length);
 
 // ランキングIDの一覧（難易度別ランキングを持つゲームは ids を持つ）
 function gameIds(g) { return g.ids || [{ id: g.id, label: '' }]; }
@@ -222,6 +334,7 @@ const grid = document.getElementById('grid');
 let cards = [];
 function render() {
   grid.innerHTML = ''; cards = [];
+  const card0 = FES.stampCard();
   GAMES.forEach((g, i) => {
     const top = bestOf(g);
     const a = document.createElement('a');
@@ -229,6 +342,8 @@ function render() {
     a.style.animationDelay = (i * 0.05) + 's';
     a.dataset.idx = i;
     a.innerHTML = `
+      ${g.isNew ? '<span class="new">NEW</span>' : ''}
+      ${card0 && card0.stamps[g.id] ? '<span class="stamped" title="スタンプ済み">✔</span>' : ''}
       <div class="top"><div class="icon">${g.icon}</div><div class="genre">${g.genre}</div></div>
       <h2>${g.title}</h2>
       <p>${g.desc}</p>
@@ -245,7 +360,127 @@ function render() {
     grid.appendChild(a); cards.push(a);
   });
   renderTicker();
+  renderStamps();
 }
+
+/* ============================== スタンプラリー ============================== */
+const stampRow = document.getElementById('stampRow');
+const stampNameEl = document.getElementById('stampName');
+let stampSeen = new Set();   // 前回描画時に押されていたスタンプ（新しく増えた分だけ演出する）
+let stampDoneSeen = false;
+function renderStamps() {
+  const card = FES.stampCard() || FES.newStampCard('');
+  const n = Object.keys(card.stamps).length;
+  document.getElementById('stampCount').textContent = `${n} / ${GAMES.length}`;
+  if (document.activeElement !== stampNameEl) stampNameEl.value = card.name || '';
+  stampRow.innerHTML = '';
+  GAMES.forEach(g => {
+    const on = !!card.stamps[g.id];
+    const d = document.createElement('div');
+    d.className = 'st' + (on ? ' on' : '') + (on && !stampSeen.has(g.id) && stampSeen.size ? ' pop' : '');
+    d.style.setProperty('--accent', g.accent);
+    d.title = g.title + (on ? '（スタンプ済み）' : '');
+    d.textContent = g.icon;
+    stampRow.appendChild(d);
+  });
+  const sec = document.getElementById('stamp');
+  sec.classList.toggle('done', !!card.done);
+  const hint = document.getElementById('stampHint');
+  if (card.done) hint.textContent = `🎉 ${card.name || 'ななし'} さん コンプリート！（${FES.formatDuration(card.done - card.started)}）「次の人」で新しいカードにできます。`;
+  else if (n === 0) hint.textContent = 'ゲームを1回遊ぶごとにスタンプが1つ。全部集めると殿堂入り！';
+  else hint.textContent = `あと ${GAMES.length - n} 個で殿堂入り！ 遊んでいないゲームは灰色のスタンプ。`;
+  // 新しくコンプリートした瞬間だけ、お祝い
+  if (card.done && !stampDoneSeen && stampSeen.size && stampSeen.size < GAMES.length) celebrate(card);
+  stampDoneSeen = !!card.done;
+  stampSeen = new Set(Object.keys(card.stamps));
+}
+function celebrate(card) {
+  FES.sfx('fanfare');
+  document.getElementById('cName').textContent = (card.name || 'ななし') + ' さん';
+  document.getElementById('cTime').textContent = `${GAMES.length} 個のスタンプを ${FES.formatDuration(card.done - card.started)} で集めました`;
+  document.getElementById('complete').classList.add('open');
+  if (window.__fesBurst) window.__fesBurst(160);
+}
+stampNameEl.addEventListener('input', () => FES.renameStampCard(stampNameEl.value));
+stampNameEl.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') stampNameEl.blur(); });
+document.getElementById('stampNew').onclick = () => {
+  FES.newStampCard(''); stampSeen = new Set(); stampDoneSeen = false; render();
+  FES.sfx('select'); FES.toast('新しいスタンプカードにしました。なまえを入れてスタート！');
+  stampNameEl.focus();
+};
+// 殿堂
+const hallM = document.getElementById('hall');
+function openHall() {
+  FES.sfx('select');
+  const list = FES.stampHall().slice().sort((a, b) => a.timeMs - b.timeMs);
+  const ol = document.getElementById('hallList'); ol.innerHTML = '';
+  if (!list.length) ol.innerHTML = '<li class="empty">まだ誰もコンプリートしていません。1番乗りになろう！</li>';
+  list.slice(0, 20).forEach((e, i) => {
+    const li = document.createElement('li');
+    const d = new Date(e.date);
+    li.innerHTML = `<span class="r">${i + 1}.</span><span class="n">${esc(e.name)}</span><span class="tm">${FES.formatDuration(e.timeMs)}</span><span class="d">${d.getMonth() + 1}/${d.getDate()} ${FES.pad(d.getHours())}:${FES.pad(d.getMinutes())}</span>`;
+    ol.appendChild(li);
+  });
+  hallM.classList.add('open');
+}
+document.getElementById('hallBtn').onclick = openHall;
+document.getElementById('hallClose').onclick = () => hallM.classList.remove('open');
+hallM.addEventListener('click', e => { if (e.target === hallM) hallM.classList.remove('open'); });
+document.getElementById('hallClear').onclick = () => { FES.clearStampHall(); openHall(); FES.toast('殿堂を消去しました'); };
+const completeM = document.getElementById('complete');
+document.getElementById('cClose').onclick = () => completeM.classList.remove('open');
+document.getElementById('cHall').onclick = () => { completeM.classList.remove('open'); openHall(); };
+completeM.addEventListener('click', e => { if (e.target === completeM) completeM.classList.remove('open'); });
+
+/* ============================== 客寄せ画面（アトラクトモード） ============================== */
+// しばらく誰も触らないと、ゲーム紹介とランキングを自動で流す。何か操作すると消える。
+const attractEl = document.getElementById('attract');
+const IDLE_SEC = 60;
+let attractOn = true;
+try { attractOn = localStorage.getItem('fes:attract') !== '0'; } catch (e) {}
+const attractBtn = document.getElementById('attractBtn');
+const syncAttractBtn = () => attractBtn.textContent = attractOn ? '📺 客寄せ画面: ON' : '📺 客寄せ画面: OFF';
+syncAttractBtn();
+attractBtn.onclick = () => { attractOn = !attractOn; try { localStorage.setItem('fes:attract', attractOn ? '1' : '0'); } catch (e) {} syncAttractBtn(); FES.sfx('select'); if (!attractOn) stopAttract(); };
+let idleTimer = null, slideTimer = null, slideIdx = 0, slideEls = [];
+function anyModalOpen() { return document.querySelectorAll('.modal.open').length > 0; }
+function buildSlides() {
+  const wrap = document.getElementById('slides'); wrap.innerHTML = ''; slideEls = [];
+  const add = html => { const s = document.createElement('div'); s.className = 'slide'; s.innerHTML = html; wrap.appendChild(s); slideEls.push(s); };
+  const title = titleEl.textContent.trim() || 'NEON FESTA';
+  add(`<div class="big-icon">🎪</div><div class="big-title">${esc(title)}</div><div class="desc">${GAMES.length} 種類のゲームが <b style="color:var(--gold)">全部無料</b>で遊べます！<br>ハイスコアを出して名前を残そう</div>`);
+  GAMES.forEach(g => {
+    const r = [];
+    gameIds(g).forEach(x => FES.getRanking(x.id).forEach(e => r.push({ ...e, label: x.label })));
+    r.sort((a, b) => b.score - a.score);
+    const top = r.slice(0, 3).map((e, i) => `<div><b>${['🥇', '🥈', '🥉'][i]}</b>${esc(e.name)} ${e.score.toLocaleString()}${e.label ? `<span>${esc(e.label)}</span>` : ''}</div>`).join('');
+    add(`<div class="big-icon">${g.icon}</div><div class="genre-pill" style="--accent:${g.accent}">${esc(g.genre)}</div><div class="big-title">${esc(g.title)}</div><div class="desc">${esc(g.desc)}</div>${top ? `<div class="top3">${top}</div>` : '<div class="top3"><div>まだ記録なし。1番乗りを狙おう！</div></div>'}`);
+  });
+  const hall = FES.stampHall().slice().sort((a, b) => a.timeMs - b.timeMs).slice(0, 3);
+  const demo = GAMES.map((g, i) => `<i class="${i < Math.ceil(GAMES.length * .6) ? 'on' : ''}">${g.icon}</i>`).join('');
+  add(`<div class="big-icon">🎟</div><div class="big-title">スタンプラリー</div><div class="desc">全部のゲームを1回ずつ遊ぶとコンプリート！<br>いちばん速く集めた人は <b style="color:var(--gold)">殿堂入り</b></div><div class="stamps-demo">${demo}</div>${hall.length ? `<div class="top3">${hall.map((e, i) => `<div><b>${['🥇', '🥈', '🥉'][i]}</b>${esc(e.name)} ${FES.formatDuration(e.timeMs)}</div>`).join('')}</div>` : ''}`);
+  const dots = document.getElementById('dots'); dots.innerHTML = slideEls.map(() => '<i></i>').join('');
+}
+function showSlide(i) {
+  slideIdx = (i + slideEls.length) % slideEls.length;
+  slideEls.forEach((s, k) => s.classList.toggle('show', k === slideIdx));
+  document.querySelectorAll('#dots i').forEach((d, k) => d.classList.toggle('on', k === slideIdx));
+}
+function startAttract() {
+  if (!attractOn || attractEl.classList.contains('open') || anyModalOpen() || document.hidden || document.activeElement === titleEl) { armIdle(); return; }
+  buildSlides(); attractEl.classList.add('open'); showSlide(0);
+  slideTimer = setInterval(() => showSlide(slideIdx + 1), 6000);
+}
+function stopAttract() {
+  if (!attractEl.classList.contains('open')) return;
+  attractEl.classList.remove('open'); clearInterval(slideTimer); slideTimer = null;
+}
+function armIdle() { clearTimeout(idleTimer); idleTimer = setTimeout(startAttract, IDLE_SEC * 1000); }
+function activity() { const was = attractEl.classList.contains('open'); stopAttract(); armIdle(); if (was) FES.sfx('select'); }
+['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(ev => document.addEventListener(ev, activity, { passive: true, capture: true }));
+document.addEventListener('mousemove', () => { if (!attractEl.classList.contains('open')) armIdle(); }, { passive: true });
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopAttract(); armIdle(); });
+armIdle();
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /* ============================== ティッカー ============================== */
@@ -310,8 +545,8 @@ document.getElementById('cYes').onclick = () => {
 /* ============================== キーボード操作 ============================== */
 let sel = -1;
 document.addEventListener('keydown', e => {
-  if (modal.classList.contains('open') || confirmM.classList.contains('open')) { if (e.key === 'Escape') { modal.classList.remove('open'); confirmM.classList.remove('open'); } return; }
-  if (document.activeElement === titleEl) return;
+  if (anyModalOpen()) { if (e.key === 'Escape') document.querySelectorAll('.modal.open').forEach(m => m.classList.remove('open')); return; }
+  if (document.activeElement === titleEl || document.activeElement === stampNameEl) return;
   const cols = Math.max(1, Math.round(grid.clientWidth / (cards[0] ? cards[0].offsetWidth + 18 : 250)));
   let n = sel;
   if (e.key === 'ArrowRight') n = Math.min(cards.length - 1, sel + 1);
@@ -341,6 +576,13 @@ document.addEventListener('keydown', e => {
     if (confetti.length > 80) return;
     confetti.push({ x: Math.random() * W, y: -20, vx: (Math.random() - .5) * .6, vy: (Math.random() * .8 + .5) * devicePixelRatio, r: Math.random() * 6.28, vr: (Math.random() - .5) * .1, c: COLORS[Math.floor(Math.random() * COLORS.length)], w: (Math.random() * 6 + 5) * devicePixelRatio, h: (Math.random() * 3 + 3) * devicePixelRatio, sw: Math.random() * 6.28 });
   }
+  // お祝い用: 画面中央から紙吹雪を一気に噴き出す（スタンプコンプリート時）
+  window.__fesBurst = function (n) {
+    for (let i = 0; i < (n || 100); i++) {
+      const a = Math.random() * 6.28, sp = (Math.random() * 9 + 4) * devicePixelRatio;
+      confetti.push({ x: W / 2, y: H * .45, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4 * devicePixelRatio, r: Math.random() * 6.28, vr: (Math.random() - .5) * .3, c: COLORS[Math.floor(Math.random() * COLORS.length)], w: (Math.random() * 7 + 5) * devicePixelRatio, h: (Math.random() * 3 + 3) * devicePixelRatio, sw: Math.random() * 6.28, burst: true });
+    }
+  };
   function frame() {
     t += 1 / 60;
     ctx.clearRect(0, 0, W, H);
@@ -366,6 +608,7 @@ document.addEventListener('keydown', e => {
     if (Math.random() < .25) spawnConfetti();
     for (let i = confetti.length - 1; i >= 0; i--) {
       const c = confetti[i]; c.y += c.vy; c.x += c.vx + Math.sin(t * 3 + c.sw) * .5; c.r += c.vr;
+      if (c.burst) { c.vy += .25 * devicePixelRatio; c.vx *= .985; }   // 噴き出した紙吹雪は重力で落ちる
       if (c.y > H + 20) { confetti.splice(i, 1); continue; }
       ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.scale(Math.cos(t * 4 + c.sw), 1); ctx.fillStyle = c.c; ctx.globalAlpha = .8; ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h); ctx.restore();
     }
