@@ -21,3 +21,6 @@ QRコード.png
 
 # Shared ranking server (Cloudflare Worker; contains dev secrets)
 server/
+
+# 当日キット（部屋のPC・プロジェクター用の起動ファイル。USBで配る）
+当日キット/

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ランキングボード | NEON FESTA</title>
+<style>
+  :root { --gold: #ffd36e; --muted: rgba(255,255,255,.6); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #07071a; color: #fff; overflow: hidden; cursor: none;
+    font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
+  body::before { content: ""; position: fixed; inset: 0; background: radial-gradient(ellipse at 50% -10%, rgba(110,70,255,.45), transparent 60%),
+    radial-gradient(ellipse at 100% 100%, rgba(255,77,141,.2), transparent 50%); pointer-events: none; }
+  .app { position: relative; height: 100vh; display: grid; grid-template-rows: auto 1fr auto; padding: 2.2vh 2.6vw; gap: 2vh; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 2vw; }
+  .brand { font-size: 4.2vh; font-weight: 900; letter-spacing: .08em;
+    background: linear-gradient(90deg,#fff,#ffd36e,#fff,#8ed6ff,#fff); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 6s linear infinite; }
+  .brand small { display: block; font-size: 1.8vh; letter-spacing: .4em; color: var(--muted); -webkit-text-fill-color: var(--muted); }
+  @keyframes shine { to { background-position: 200% 0 } }
+  .live { font-size: 1.8vh; color: var(--muted); display: flex; align-items: center; gap: .6em; }
+  .live i { width: 1.2vh; height: 1.2vh; border-radius: 50%; background: #5cff8d; box-shadow: 0 0 12px #5cff8d; animation: blink 1.6s infinite; }
+  .live.off i { background: #ff7a7a; box-shadow: 0 0 12px #ff7a7a; }
+  @keyframes blink { 50% { opacity: .35 } }
+  main { display: grid; grid-template-columns: 1.35fr 1fr; gap: 2.4vw; min-height: 0; }
+  .panel { background: linear-gradient(160deg, rgba(30,30,70,.85), rgba(10,10,30,.92)); border: 1px solid rgba(255,255,255,.14); border-radius: 3vh; padding: 3vh 2.4vw; min-height: 0; position: relative; overflow: hidden; }
+  /* 左: ゲームごとの TOP5（順番に切り替わる） */
+  .slide { position: absolute; inset: 3vh 2.4vw; opacity: 0; transform: translateY(2vh); transition: opacity .6s, transform .6s; display: flex; flex-direction: column; }
+  .slide.show { opacity: 1; transform: none; }
+  .g-head { display: flex; align-items: center; gap: 1.4vw; margin-bottom: 2.4vh; }
+  .g-icon { font-size: 7vh; width: 11vh; height: 11vh; display: grid; place-items: center; border-radius: 2.4vh; background: color-mix(in srgb, var(--accent) 25%, transparent); box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .g-genre { font-size: 1.8vh; letter-spacing: .3em; color: var(--accent); font-weight: 800; }
+  .g-title { font-size: 5vh; font-weight: 900; line-height: 1.15; }
+  .g-sub { font-size: 2vh; color: var(--muted); }
+  ol.top { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.2vh; flex: 1; }
+  ol.top li { display: grid; grid-template-columns: 7vh 1fr auto; align-items: center; gap: 1.2vw; padding: 1.4vh 1.6vw; border-radius: 1.8vh; background: rgba(255,255,255,.06); font-size: 3.6vh; font-weight: 800; }
+  ol.top li.r1 { background: linear-gradient(90deg, rgba(255,211,110,.35), rgba(255,77,141,.18)); font-size: 4.6vh; box-shadow: 0 0 0 2px rgba(255,211,110,.55) inset, 0 0 40px rgba(255,211,110,.25); }
+  ol.top li .rk { font-weight: 900; text-align: center; }
+  ol.top li .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ol.top li .sc { font-variant-numeric: tabular-nums; }
+  ol.top li .tag { display: inline-block; margin-left: .6em; font-size: .45em; padding: .2em .7em; border-radius: 999px; background: linear-gradient(90deg,#ff4d8d,#ffb347); vertical-align: middle; letter-spacing: .1em; }
+  ol.top li.empty { grid-template-columns: 1fr; color: var(--muted); font-size: 3vh; text-align: center; background: none; }
+  /* 右: 全ゲームのチャンピオン */
+  .champ { display: flex; flex-direction: column; }
+  .champ h2 { margin: 0 0 1.2vh; font-size: 2.6vh; letter-spacing: .2em; color: var(--gold); }
+  .champ ul { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; display: grid; grid-auto-rows: 1fr; gap: .7vh; }
+  .champ li { display: grid; grid-template-columns: 4.6vh 1fr auto; align-items: center; gap: .9vw; padding: 0 1vw; min-height: 0; overflow: hidden; border-radius: 1.4vh; background: rgba(255,255,255,.05); font-size: 2.4vh; transition: background .4s; }
+  .champ li.cur { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .champ li .ic { font-size: 3vh; text-align: center; }
+  .champ li .gt { font-size: 1.6vh; color: var(--muted); display: block; }
+  .champ li .who { font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .champ li .pt { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--gold); }
+  .champ li.none .who { color: var(--muted); font-weight: 600; }
+  footer { display: flex; align-items: center; justify-content: space-between; font-size: 2vh; color: var(--muted); gap: 2vw; }
+  footer b { color: #fff; }
+  .dots { display: flex; gap: .6vw; }
+  .dots i { width: 1vh; height: 1vh; border-radius: 50%; background: rgba(255,255,255,.25); }
+  .dots i.on { background: var(--gold); }
+  /* 新チャンピオンのお知らせ */
+  #flash { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: rgba(5,5,20,.82); backdrop-filter: blur(6px); z-index: 10; text-align: center; }
+  #flash.open { display: flex; animation: pop .6s cubic-bezier(.2,1.4,.4,1); }
+  #flash .k { font-size: 3vh; letter-spacing: .5em; color: var(--gold); font-weight: 900; }
+  #flash .n { font-size: 12vh; font-weight: 900; margin: 1vh 0; text-shadow: 0 0 60px rgba(255,211,110,.7); }
+  #flash .g { font-size: 4vh; font-weight: 800; }
+  #flash .s { font-size: 6vh; font-weight: 900; color: var(--gold); margin-top: 1vh; }
+  @keyframes pop { from { transform: scale(.7); opacity: 0 } }
+  @media (max-aspect-ratio: 1/1) { main { grid-template-columns: 1fr; } .champ { display: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand" id="brand">NEON FESTA<small>LIVE RANKING</small></div>
+    <div class="live" id="live"><i></i><span id="liveText">接続中…</span></div>
+  </header>
+  <main>
+    <div class="panel" id="slides"></div>
+    <div class="panel champ">
+      <h2>👑 チャンピオン</h2>
+      <ul id="champ"></ul>
+    </div>
+  </main>
+  <footer>
+    <div>ハイスコアを出して <b>チャンピオン</b> に名前をのこそう！</div>
+    <div class="dots" id="dots"></div>
+  </footer>
+</div>
+<div id="flash"><div class="k">NEW CHAMPION!</div><div class="n" id="fName"></div><div class="g" id="fGame"></div><div class="s" id="fScore"></div></div>
+<script>
+'use strict';
+// プロジェクター / テレビ用のランキング表示。誰でも見られる API (/api/rankings) を読むだけなので、ルームキーはいらない。
+const DEFAULT_API = 'https://neon-festa-api.brainrot-rumble.workers.dev';
+const GAMES = [
+  { id: 'rhythm',   title: 'リズムスターズ',       genre: '音楽',         icon: '🎵', accent: '#ff4d8d', ids: [['rhythm_easy', 'やさしい'], ['rhythm', 'ふつう'], ['rhythm_hard', 'むずかしい'], ['rhythm_tas', 'TAS'], ['rhythm_tas2', 'TAS∞']] },
+  { id: 'shooter',  title: 'ギャラクシーブラスター', genre: 'シューティング', icon: '🚀', accent: '#5ee7ff' },
+  { id: 'puzzle',   title: 'ジュエルラッシュ',      genre: 'パズル',        icon: '💎', accent: '#b06bff' },
+  { id: 'typing',   title: 'タイピングバトル',      genre: 'タイピング',     icon: '⌨️', accent: '#5cff8d' },
+  { id: 'racing',   title: 'ネオンドライブ',        genre: 'レース',        icon: '🏎️', accent: '#ff9f43' },
+  { id: 'runner',   title: 'ダッシュ！ネコ忍者',    genre: 'アクション',     icon: '🐱', accent: '#ffd36e' },
+  { id: 'mole',     title: 'もぐらパニック',        genre: '反射神経',       icon: '🔨', accent: '#8bd346' },
+  { id: 'hockey',   title: 'ネオンエアホッケー',    genre: '対戦',          icon: '🏒', accent: '#3fd8ff' },
+  { id: 'quiz',     title: '早押しクイズ王',        genre: 'クイズ',        icon: '❓', accent: '#ff6b6b' },
+  { id: 'breakout', title: 'ネオンブレイカー',      genre: 'アーケード',     icon: '🧱', accent: '#a5f3fc' },
+];
+const SLIDE_SEC = 8, POLL_SEC = 15;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let api = DEFAULT_API;
+try { const r = JSON.parse(localStorage.getItem('fes:room')); if (r && r.api) api = r.api; } catch (e) {}
+try { const t = localStorage.getItem('fes:title'); if (t) $('brand').firstChild.textContent = t; } catch (e) {}
+
+let data = { rankings: {}, hall: [] };
+let champs = null;        // 前回のチャンピオン（新チャンピオンの検出用）
+let slideIdx = 0, slideEls = [];
+
+// ゲームのいちばん良い記録（リズムは難易度ごとに別ランキングなので、その中の最高）
+function bestOf(g) {
+  let best = null;
+  (g.ids || [[g.id, '']]).forEach(([id, label]) => { const r = (data.rankings[id] || [])[0]; if (r && (!best || r.score > best.score)) best = { ...r, label, id }; });
+  return best;
+}
+// スライドにする単位: 記録のあるランキング（リズムは難易度ごと）。記録がないゲームも1枚は出す
+function slideList() {
+  const out = [];
+  GAMES.forEach(g => {
+    const ids = g.ids || [[g.id, '']];
+    const withData = ids.filter(([id]) => (data.rankings[id] || []).length);
+    (withData.length ? withData : [ids[ids.length > 1 ? 1 : 0]]).forEach(([id, label]) => out.push({ g, id, label }));
+  });
+  return out;
+}
+function renderSlides() {
+  const wrap = $('slides'); wrap.innerHTML = '';
+  slideEls = slideList().map(({ g, id, label }) => {
+    const r = (data.rankings[id] || []).slice(0, 5);
+    const s = document.createElement('div');
+    s.className = 'slide'; s.style.setProperty('--accent', g.accent);
+    const fresh = Date.now() - 10 * 60 * 1000;
+    s.innerHTML = `<div class="g-head"><div class="g-icon">${g.icon}</div><div><div class="g-genre">${esc(g.genre)}${label ? ' · ' + esc(label) : ''}</div><div class="g-title">${esc(g.title)}</div><div class="g-sub">TOP 5</div></div></div>
+      <ol class="top">${r.length ? r.map((e, i) => `<li class="r${i + 1}"><span class="rk">${['🥇', '🥈', '🥉'][i] || i + 1}</span><span class="nm">${esc(e.name)}${e.date > fresh ? '<span class="tag">NEW</span>' : ''}</span><span class="sc">${e.score.toLocaleString()}</span></li>`).join('')
+        : '<li class="empty">まだ記録なし — 1番乗りでチャンピオン！</li>'}</ol>`;
+    wrap.appendChild(s);
+    s.dataset.game = g.id;
+    return s;
+  });
+  $('dots').innerHTML = slideEls.map(() => '<i></i>').join('');
+  showSlide(Math.min(slideIdx, slideEls.length - 1));
+}
+function showSlide(i) {
+  if (!slideEls.length) return;
+  slideIdx = (i + slideEls.length) % slideEls.length;
+  slideEls.forEach((s, k) => s.classList.toggle('show', k === slideIdx));
+  document.querySelectorAll('#dots i').forEach((d, k) => d.classList.toggle('on', k === slideIdx));
+  const gid = slideEls[slideIdx].dataset.game;
+  document.querySelectorAll('#champ li').forEach(li => li.classList.toggle('cur', li.dataset.game === gid));
+}
+function renderChamps() {
+  $('champ').innerHTML = GAMES.map(g => {
+    const b = bestOf(g);
+    return `<li style="--accent:${g.accent}" data-game="${g.id}" class="${b ? '' : 'none'}"><span class="ic">${g.icon}</span>
+      <span><span class="gt">${esc(g.title)}${b && b.label ? '（' + esc(b.label) + '）' : ''}</span><span class="who">${b ? esc(b.name) : 'まだいない'}</span></span>
+      <span class="pt">${b ? b.score.toLocaleString() : ''}</span></li>`;
+  }).join('');
+}
+// 新しいチャンピオンが出たら大きく表示
+const flashQueue = [];
+function detectNewChamps() {
+  const now = {};
+  GAMES.forEach(g => { const b = bestOf(g); if (b) now[g.id] = b; });
+  if (champs) GAMES.forEach(g => {
+    const a = champs[g.id], b = now[g.id];
+    if (b && (!a || a.name !== b.name || a.score !== b.score)) flashQueue.push({ g, b });
+  });
+  champs = now;
+  if (flashQueue.length && !$('flash').classList.contains('open')) nextFlash();
+}
+function nextFlash() {
+  const f = flashQueue.shift();
+  if (!f) { $('flash').classList.remove('open'); return; }
+  $('fName').textContent = f.b.name;
+  $('fGame').textContent = `${f.g.icon} ${f.g.title}${f.b.label ? '（' + f.b.label + '）' : ''}`;
+  $('fScore').textContent = f.b.score.toLocaleString();
+  $('flash').classList.remove('open'); void $('flash').offsetWidth; $('flash').classList.add('open');
+  setTimeout(nextFlash, 6000);
+}
+
+async function poll() {
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(api + '/api/rankings', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(t);
+    if (!r.ok) throw new Error(r.status);
+    const rankings = await r.json();
+    const changed = JSON.stringify(rankings) !== JSON.stringify(data.rankings);
+    data.rankings = rankings;
+    if (changed || !slideEls.length) { renderSlides(); renderChamps(); detectNewChamps(); }
+    $('live').classList.remove('off');
+    const d = new Date(); $('liveText').textContent = `LIVE · ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')} 更新`;
+  } catch (e) {
+    $('live').classList.add('off'); $('liveText').textContent = '通信待ち（前の記録を表示中）';
+    if (!slideEls.length) { renderSlides(); renderChamps(); }
+  }
+}
+poll();
+setInterval(poll, POLL_SEC * 1000);
+setInterval(() => showSlide(slideIdx + 1), SLIDE_SEC * 1000);
+// クリック / キーで全画面
+const full = () => { if (!document.fullscreenElement) (document.documentElement.requestFullscreen || (() => {})).call(document.documentElement); };
+addEventListener('click', full); addEventListener('keydown', e => { if (e.key === 'f' || e.key === 'F' || e.key === 'Enter') full(); if (e.key === 'ArrowRight') showSlide(slideIdx + 1); if (e.key === 'ArrowLeft') showSlide(slideIdx - 1); });
+</script>
+</body>
+</html>

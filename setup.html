@@ -92,7 +92,7 @@ $('save').onclick = async () => {
   const api = $('api').value.trim().replace(/\/+$/, '') || DEFAULT_API;
   status('info', 'サーバーに確認しています…');
   try {
-    const r = await fetch(api + '/api/room/check', { headers: { 'X-Room-Key': key } });
+    const r = await fetch(api + '/api/room/check?pc=' + encodeURIComponent(pc), { headers: { 'X-Room-Key': key } });
     if (r.status === 403) { status('ng', '❌ ルームキーがちがいます。'); return; }
     if (!r.ok) throw new Error(r.status);
   } catch (e) {

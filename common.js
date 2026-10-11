@@ -342,11 +342,51 @@
       // ページ内の a[href] クリック音
       document.title = cfg.title ? `${cfg.title} | NEON FESTA` : document.title;
       // 部屋の PC: 起動時と 20 秒ごとに共有ランキングを取ってくる（ハイスコア表示・ランクイン判定用）
-      if (FES.isRoomPC()) { FES.sync(); setInterval(FES.sync, 20000); }
+      if (FES.isRoomPC()) { FES.sync(); setInterval(FES.sync, 20000); armIdleReset(); }
     };
     if (document.body) build(); else document.addEventListener('DOMContentLoaded', build);
     return FES;
   };
+
+  /* ------------------------------------------------------------ 次の人へ自動リセット（部屋の PC） */
+  // スタッフが少ないので、しばらく誰も触らなければ自動で「次の人」の状態に戻す。
+  // 戻す前にカウントダウンを出し、触ればそのまま続けられる。
+  // 秒数は PC ごとに localStorage の fes:idleResetSec で変えられる（既定 150 秒）
+  const IDLE_RESET_SEC = Math.max(30, +LS.get('fes:idleResetSec', 150) || 150), IDLE_WARN_SEC = 15;
+  function armIdleReset() {
+    let last = Date.now(), warnEl = null;
+    const isHub = cfg.id === 'hub';
+    const touch = () => { last = Date.now(); if (warnEl) { warnEl.remove(); warnEl = null; } };
+    ['pointerdown', 'keydown', 'touchstart', 'wheel', 'mousemove'].forEach(ev => document.addEventListener(ev, touch, { passive: true, capture: true }));
+    // ホームで、まだ誰のカードでもない（スタンプも名前もない）ときは戻す必要がない
+    const needsReset = () => {
+      if (!isHub) return true;
+      const c = FES.stampCard();
+      return !!(c && (c.name || Object.keys(c.stamps).length));
+    };
+    setInterval(() => {
+      if (document.hidden) { last = Date.now(); return; }
+      const idle = (Date.now() - last) / 1000;
+      if (idle < IDLE_RESET_SEC - IDLE_WARN_SEC || !needsReset()) return;
+      const left = Math.max(0, Math.ceil(IDLE_RESET_SEC - idle));
+      if (!warnEl) {
+        ensureUI();
+        warnEl = el('div', { id: 'fes-overlay', style: 'z-index:9800' }, [el('div', { class: 'fes-card' }, [
+          el('h2', { text: 'まだ あそんでる？' }),
+          el('div', { class: 'fes-title', text: 'つぎの人に交代します' }),
+          el('div', { class: 'fes-score', text: String(left) }),
+          el('div', { class: 'fes-sub', text: 'つづけるときは、画面をタッチするか キーを押してね' }),
+        ])]);
+        ui.appendChild(warnEl);
+      }
+      warnEl.querySelector('.fes-score').textContent = String(left);
+      if (left <= 0) {
+        FES.newStampCard('');
+        try { localStorage.removeItem('fes:lastName'); } catch (e) {}
+        location.href = isHub ? 'index.html' : '../index.html';
+      }
+    }, 1000);
+  }
 
   FES.toggleFullscreen = function () {
     const d = document;

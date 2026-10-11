@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>運営ページ | NEON FESTA</title>
+<meta name="robots" content="noindex">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: #07071a; color: #fff; font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; padding: 24px 16px 60px; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .lead { margin: 0 0 20px; opacity: .7; font-size: 14px; }
+  section { background: linear-gradient(160deg, rgba(30,30,70,.9), rgba(10,10,30,.95)); border: 1px solid rgba(255,255,255,.15); border-radius: 18px; padding: 18px 20px; margin-bottom: 16px; }
+  h2 { margin: 0 0 12px; font-size: 16px; letter-spacing: .05em; }
+  input, select { font-size: 16px; padding: 9px 12px; border-radius: 10px; border: 2px solid rgba(255,255,255,.3); background: rgba(0,0,0,.4); color: #fff; outline: none; }
+  input:focus, select:focus { border-color: #ffd36e; }
+  button { padding: 9px 16px; border-radius: 10px; border: 0; font-size: 14px; font-weight: 800; cursor: pointer; color: #fff; background: linear-gradient(135deg,#6a5cff,#b04dff); }
+  button.alt { background: rgba(255,255,255,.12); }
+  button.danger { background: rgba(255,80,80,.3); }
+  button.danger.armed { background: #e03b3b; }
+  button.sm { padding: 4px 10px; font-size: 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  th { font-size: 12px; opacity: .6; font-weight: 700; }
+  td.num { text-align: right; }
+  .muted { opacity: .55; font-size: 13px; }
+  .ok { color: #5cff8d; } .warn { color: #ffd36e; } .ng { color: #ff7a7a; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .stat { background: rgba(255,255,255,.06); border-radius: 12px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 26px; }
+  .stat span { font-size: 12px; opacity: .65; }
+  #msg { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: rgba(0,0,0,.85); padding: 10px 18px; border-radius: 999px; font-weight: 700; display: none; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛠 運営ページ</h1>
+  <p class="lead">共有ランキングの管理（スタッフ専用）。お客さんのPCでは開かないでください。</p>
+
+  <section id="login">
+    <h2>運営パスワード</h2>
+    <div class="row">
+      <input id="token" type="password" autocomplete="off" placeholder="運営パスワード" style="flex:1;min-width:220px">
+      <button id="loginBtn">ひらく</button>
+    </div>
+    <p class="muted">このタブを閉じると忘れます。</p>
+  </section>
+
+  <div id="main" style="display:none">
+    <section>
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">いまの状態</h2>
+        <div class="row"><span class="muted" id="updated"></span><button class="alt sm" id="refresh">更新</button><button class="alt sm" id="logout">ログアウト</button></div>
+      </div>
+      <div class="stats" style="margin-top:12px">
+        <div class="stat"><b id="sPlays">-</b><span>記録の数（全ゲーム）</span></div>
+        <div class="stat"><b id="sPcs">-</b><span>登録されたPC</span></div>
+        <div class="stat"><b id="sActive">-</b><span>10分以内に記録が出たPC</span></div>
+        <div class="stat"><b id="sHall">-</b><span>スタンプ コンプリート</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>ゲームごとの記録</h2>
+      <div class="row" style="margin-bottom:10px">
+        <select id="game"></select>
+        <span class="muted">ありえない点数（いたずら）は「消す」で1件ずつ消せます。</span>
+      </div>
+      <div class="scroll"><table><thead><tr><th>#</th><th>なまえ</th><th class="num">スコア</th><th>PC</th><th>時刻</th><th></th></tr></thead><tbody id="scores"></tbody></table></div>
+    </section>
+
+    <section>
+      <h2>部屋のPC</h2>
+      <p class="muted" style="margin-top:0">setup.html で登録したPCと、最後に動きがあった時刻。準備の日に、全部の台が並んでいるか確認できます。</p>
+      <div class="scroll"><table><thead><tr><th>PC</th><th>登録</th><th>最後の動き</th><th class="num">記録の数</th></tr></thead><tbody id="pcs"></tbody></table></div>
+    </section>
+
+    <section>
+      <h2>まとめて消す</h2>
+      <p class="muted" style="margin-top:0">文化祭が始まる前に、テストで遊んだ記録を消すときに使います。ボタンは2回押すと実行されます。元に戻せません。</p>
+      <div class="row">
+        <button class="danger" data-reset="scores-game">選んでいるゲームのランキングを消す</button>
+        <button class="danger" data-reset="scores">全ゲームのランキングを消す</button>
+        <button class="danger" data-reset="hall">殿堂を消す</button>
+        <button class="danger" data-reset="all">ぜんぶ消す</button>
+      </div>
+    </section>
+  </div>
+</div>
+<div id="msg"></div>
+<script>
+'use strict';
+const DEFAULT_API = 'https://neon-festa-api.brainrot-rumble.workers.dev';
+const GAMES = [
+  ['rhythm_easy', 'リズムスターズ（やさしい）'], ['rhythm', 'リズムスターズ（ふつう）'], ['rhythm_hard', 'リズムスターズ（むずかしい）'],
+  ['rhythm_tas', 'リズムスターズ（TAS）'], ['rhythm_tas2', 'リズムスターズ（TAS∞）'], ['shooter', 'ギャラクシーブラスター'], ['puzzle', 'ジュエルラッシュ'],
+  ['typing', 'タイピングバトル'], ['racing', 'ネオンドライブ'], ['runner', 'ダッシュ！ネコ忍者'], ['mole', 'もぐらパニック'],
+  ['hockey', 'ネオンエアホッケー'], ['quiz', '早押しクイズ王'], ['breakout', 'ネオンブレイカー'],
+];
+const $ = id => document.getElementById(id);
+let api = DEFAULT_API;
+try { const r = JSON.parse(localStorage.getItem('fes:room')); if (r && r.api) api = r.api; } catch (e) {}
+let token = sessionStorage.getItem('fes:admin') || '';
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const time = ms => { if (!ms) return '-'; const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const ago = ms => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'たった今' : m < 60 ? `${m}分前` : m < 1440 ? `${Math.floor(m / 60)}時間前` : `${Math.floor(m / 1440)}日前`; };
+function msg(t) { const m = $('msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(msg.t); msg.t = setTimeout(() => m.style.display = 'none', 2500); }
+
+async function call(path, opts) {
+  opts = opts || {};
+  const r = await fetch(api + path, { method: opts.method || 'GET', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (r.status === 401) { logout(); msg('運営パスワードがちがいます'); throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+GAMES.forEach(([id, name]) => { const o = document.createElement('option'); o.value = id; o.textContent = name; $('game').appendChild(o); });
+
+async function loadOverview() {
+  const o = await call('/api/admin/overview');
+  $('sPlays').textContent = o.games.reduce((a, g) => a + g.n, 0);
+  $('sPcs').textContent = o.pcs.length;
+  $('sActive').textContent = o.pcs.filter(p => o.now - p.last_seen < 600000).length;
+  $('sHall').textContent = o.hall;
+  $('pcs').innerHTML = o.pcs.length ? o.pcs.map(p => {
+    const cls = o.now - p.last_seen < 600000 ? 'ok' : o.now - p.last_seen < 3600000 ? 'warn' : 'muted';
+    return `<tr><td><b>${esc(p.pc)}</b></td><td>${time(p.registered_at)}</td><td class="${cls}">${ago(p.last_seen)}</td><td class="num">${p.plays}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="muted">まだ登録されたPCはありません。各PCで setup.html を開いて登録してください。</td></tr>';
+  const counts = Object.fromEntries(o.games.map(g => [g.game, g.n]));
+  [...$('game').options].forEach(op => { const name = GAMES.find(g => g[0] === op.value)[1]; op.textContent = `${name}（${counts[op.value] || 0}件）`; });
+  $('updated').textContent = time(o.now) + ' 時点';
+}
+async function loadScores() {
+  const list = await call('/api/admin/scores?game=' + encodeURIComponent($('game').value));
+  $('scores').innerHTML = list.length ? list.map((s, i) => `<tr><td>${i + 1}</td><td>${esc(s.name)}</td><td class="num"><b>${s.score.toLocaleString()}</b></td><td>${esc(s.pc || '-')}</td><td>${time(s.created_at)}</td><td><button class="danger sm" data-del="${s.id}">消す</button></td></tr>`).join('')
+    : '<tr><td colspan="6" class="muted">まだ記録はありません。</td></tr>';
+}
+async function loadAll() { try { await Promise.all([loadOverview(), loadScores()]); } catch (e) { if (e.message !== 'unauthorized') msg('サーバーにつながりません'); } }
+
+// 2回押しで実行（うっかり防止）
+function armed(btn, run) {
+  if (!btn.classList.contains('armed')) {
+    btn.classList.add('armed'); btn.dataset.label = btn.textContent; btn.textContent = 'もう一度押すと実行';
+    setTimeout(() => { if (btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.textContent = btn.dataset.label; } }, 3000);
+    return;
+  }
+  btn.classList.remove('armed'); btn.textContent = btn.dataset.label; run();
+}
+$('scores').addEventListener('click', e => {
+  const b = e.target.closest('[data-del]'); if (!b) return;
+  armed(b, async () => { await call('/api/admin/scores/' + b.dataset.del, { method: 'DELETE' }); msg('1件消しました'); loadAll(); });
+});
+document.querySelectorAll('[data-reset]').forEach(b => b.addEventListener('click', () => armed(b, async () => {
+  const k = b.dataset.reset;
+  const body = k === 'scores-game' ? { what: 'scores', game: $('game').value } : { what: k };
+  await call('/api/admin/reset', { method: 'POST', body });
+  msg('消しました'); loadAll();
+})));
+$('game').addEventListener('change', () => loadScores().catch(() => {}));
+$('refresh').onclick = loadAll;
+
+function login() {
+  $('login').style.display = 'none'; $('main').style.display = '';
+  loadAll();
+  clearInterval(login.t); login.t = setInterval(loadOverview, 30000);
+}
+function logout() { token = ''; sessionStorage.removeItem('fes:admin'); $('login').style.display = ''; $('main').style.display = 'none'; clearInterval(login.t); }
+$('logout').onclick = logout;
+$('loginBtn').onclick = () => { token = $('token').value.trim(); if (!token) return; sessionStorage.setItem('fes:admin', token); $('token').value = ''; login(); };
+$('token').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginBtn').click(); });
+if (token) login();
+</script>
+</body>
+</html>
