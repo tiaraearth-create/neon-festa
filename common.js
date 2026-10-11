@@ -26,8 +26,60 @@
   };
   const rankKey = id => `fes:${id}:ranking`;
 
+  /* ------------------------------------------------------------ 共有ランキング（部屋の PC） */
+  // setup.html でルームキーを登録した PC は「部屋の PC」。ランキングと殿堂をサーバーで共有する。
+  // それ以外（お客さんのスマホなど）は今まで通り、その端末の中だけに保存する。
+  // サーバーにつながらないときも止まらない: 手元のキャッシュで表示し、送れなかった記録は後で送り直す。
+  const DEFAULT_API = 'https://neon-festa-api.brainrot-rumble.workers.dev';
+  const ROOM_KEY = 'fes:room', CLOUD_KEY = 'fes:cloud', QUEUE_KEY = 'fes:cloud:queue';
+  const room = LS.get(ROOM_KEY, null);                 // { key, pc, api? }
+  const apiBase = () => (room && room.api) || DEFAULT_API;
+  FES.isRoomPC = () => !!(room && room.key);
+  FES.roomInfo = () => room ? { pc: room.pc, api: apiBase() } : null;
+  const cloud = () => LS.get(CLOUD_KEY, { rankings: {}, hall: [], at: 0 });
+  function api(path, opts) {
+    opts = opts || {};
+    const headers = { 'Content-Type': 'application/json' };
+    if (room && room.key) headers['X-Room-Key'] = room.key;
+    const ctl = global.AbortController ? new AbortController() : null;
+    const timer = ctl && setTimeout(() => ctl.abort(), 8000);
+    return fetch(apiBase() + path, { method: opts.method || 'GET', headers, body: opts.body ? JSON.stringify(opts.body) : undefined, signal: ctl && ctl.signal })
+      .then(r => r.json().then(j => { if (!r.ok) { const e = new Error(j.error || r.status); e.status = r.status; throw e; } return j; }))
+      .finally(() => timer && clearTimeout(timer));
+  }
+  FES.api = api;
+  /** 送れなかった記録を1件ずつ送り直す（サーバーの連打制限に引っかからないよう少しずつ） */
+  async function flushQueue() {
+    const q = LS.get(QUEUE_KEY, []);
+    if (!q.length) return;
+    const item = q[0];
+    try { await api(item.path, { method: 'POST', body: item.body }); }
+    catch (e) { if (!e.status || e.status === 429 || e.status >= 500) return; }   // 通信エラー等は次回また送る。400系は捨てる
+    LS.set(QUEUE_KEY, LS.get(QUEUE_KEY, []).slice(1));
+  }
+  function postOrQueue(path, body) {
+    api(path, { method: 'POST', body }).catch(e => {
+      if (e.status && e.status !== 429 && e.status < 500) return;
+      const q = LS.get(QUEUE_KEY, []); q.push({ path, body }); LS.set(QUEUE_KEY, q.slice(-200));
+    });
+  }
+  /** サーバーから最新のランキングと殿堂を取ってくる。終わると window に 'fes:sync' イベント */
+  FES.sync = async function () {
+    if (!FES.isRoomPC()) return false;
+    await flushQueue();
+    try {
+      const [rankings, hall] = await Promise.all([api('/api/rankings'), api('/api/hall')]);
+      LS.set(CLOUD_KEY, { rankings, hall, at: Date.now() });
+      global.dispatchEvent(new Event('fes:sync'));
+      return true;
+    } catch (e) { return false; }
+  };
+  FES.lastSync = () => cloud().at;
+
   FES.getRanking = function (id) {
-    return LS.get(rankKey(id || cfg.id), []);
+    id = id || cfg.id;
+    if (FES.isRoomPC()) return (cloud().rankings[id] || []).slice();
+    return LS.get(rankKey(id), []);
   };
   FES.getHiScore = function (id) {
     const r = FES.getRanking(id);
@@ -36,10 +88,17 @@
   FES.saveScore = function (name, score, id) {
     id = id || cfg.id;
     const r = FES.getRanking(id);
-    r.push({ name: String(name || '???').slice(0, 8), score: Math.floor(score), date: Date.now() });
+    const entry = { name: String(name || '???').slice(0, 8), score: Math.floor(score), date: Date.now() };
+    r.push(entry);
     r.sort((a, b) => b.score - a.score || a.date - b.date);
     const top = r.slice(0, 10);
-    LS.set(rankKey(id), top);
+    if (FES.isRoomPC()) {
+      // 画面にはすぐ反映（手元のキャッシュに入れる）して、サーバーへは後ろで送る
+      const c = cloud(); c.rankings[id] = top; LS.set(CLOUD_KEY, c);
+      postOrQueue('/api/scores', { game: id, name: entry.name, score: entry.score, pc: room.pc });
+    } else {
+      LS.set(rankKey(id), top);
+    }
     return top;
   };
   FES.isRankIn = function (score, id) {
@@ -235,6 +294,8 @@
       ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, unlock, { passive: true }));
       // ページ内の a[href] クリック音
       document.title = cfg.title ? `${cfg.title} | NEON FESTA` : document.title;
+      // 部屋の PC: 起動時と 20 秒ごとに共有ランキングを取ってくる（ハイスコア表示・ランクイン判定用）
+      if (FES.isRoomPC()) { FES.sync(); setInterval(FES.sync, 20000); }
     };
     if (document.body) build(); else document.addEventListener('DOMContentLoaded', build);
     return FES;
@@ -383,7 +444,7 @@
     const c = FES.stampCard() || FES.newStampCard('');
     c.name = String(name == null ? '' : name).trim().slice(0, 8); LS.set(STAMP_KEY, c); return c;
   };
-  FES.stampHall = () => LS.get(HALL_KEY, []);                       // [{ name, date, timeMs, count }]
+  FES.stampHall = () => FES.isRoomPC() ? cloud().hall : LS.get(HALL_KEY, []);   // [{ name, date, timeMs, count }]
   FES.clearStampHall = () => LS.set(HALL_KEY, []);
   /** スタンプを押す。戻り値 { card, added, count, total, complete } */
   FES.addStamp = function (id) {
@@ -396,9 +457,15 @@
     let complete = false;
     if (total > 0 && count >= total) {
       c.done = Date.now(); complete = true;
-      const hall = FES.stampHall();
-      hall.push({ name: c.name || 'ななし', date: c.done, timeMs: c.done - c.started, count });
-      LS.set(HALL_KEY, hall.slice(-100));
+      const rec = { name: c.name || 'ななし', date: c.done, timeMs: c.done - c.started, count };
+      if (FES.isRoomPC()) {
+        const cl = cloud(); cl.hall = cl.hall.concat(rec).sort((a, b) => a.timeMs - b.timeMs).slice(0, 20); LS.set(CLOUD_KEY, cl);
+        postOrQueue('/api/hall', { name: rec.name, timeMs: rec.timeMs, count, pc: room.pc });
+      } else {
+        const hall = FES.stampHall();
+        hall.push(rec);
+        LS.set(HALL_KEY, hall.slice(-100));
+      }
     }
     LS.set(STAMP_KEY, c);
     return { card: c, added: true, count, total, complete };

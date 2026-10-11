@@ -623,6 +623,17 @@ FES.init({ id: 'hub', title: '', buttons: false });
 render();
 // 他タブ/ゲームから戻ってきたら最新ランキングに更新
 addEventListener('pageshow', render);
+// 部屋の PC: 共有ランキングが変わったときだけ描き直す（20秒ごとに同期。毎回描き直すとカードがチラつく）
+let lastSynced = '';
+addEventListener('fes:sync', () => {
+  const s = localStorage.getItem('fes:cloud') || '';
+  const now = s.replace(/"at":\d+/, '');
+  if (now === lastSynced) return;
+  lastSynced = now;
+  if (!anyModalOpen() && document.activeElement !== stampNameEl) render();
+});
+// 部屋の PC ではランキング・殿堂はサーバーのものなので、ここからは消せない（運営ページで消す）
+if (FES.isRoomPC()) { document.getElementById('resetBtn').style.display = 'none'; document.getElementById('hallClear').style.display = 'none'; }
 addEventListener('storage', render);
 </script>
 </body>

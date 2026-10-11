@@ -18,3 +18,6 @@ QRコード.png
 
 # 宣伝キット（パスワード付き・ローカル専用。公開しない）
 宣伝キット/
+
+# Shared ranking server (Cloudflare Worker; contains dev secrets)
+server/
