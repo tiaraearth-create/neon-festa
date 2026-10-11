@@ -106,6 +106,42 @@
     return score > 0 && (r.length < 10 || score > r[r.length - 1].score);
   };
   FES.lastName = () => LS.get('fes:lastName', '');
+
+  /* ------------------------------------------------------------ 名前（色＋どうぶつ） */
+  // 名前は今のスタンプカードに結びつける。「次の人」で新しいカードになると名前もリセットされる。
+  FES.NAME_COLORS = ['あか', 'あお', 'きいろ', 'みどり', 'ピンク', 'むらさき', 'オレンジ', 'しろ', 'くろ', 'きん'];
+  FES.NAME_ANIMALS = ['ネコ', 'イヌ', 'ウサギ', 'クマ', 'パンダ', 'キツネ', 'ペンギン', 'ライオン', 'イルカ', 'ドラゴン'];
+  FES.randomName = () => FES.pick(FES.NAME_COLORS) + FES.pick(FES.NAME_ANIMALS);
+  FES.currentName = function () { const c = FES.stampCard(); return (c && c.name) || ''; };
+  FES.setCurrentName = function (name) { FES.renameStampCard(name); LS.set('fes:lastName', name); };
+  /** 名前えらび UI。 戻り値 { el, value() }。 initial が色＋どうぶつなら、それを選んだ状態で始まる */
+  FES.namePicker = function (initial) {
+    ensureUI();
+    let color = FES.NAME_COLORS.find(c => initial && initial.startsWith(c) && FES.NAME_ANIMALS.includes(initial.slice(c.length)));
+    let animal = color ? initial.slice(color.length) : null;
+    if (!color) { const r = FES.randomName(); color = FES.NAME_COLORS.find(c => r.startsWith(c)); animal = r.slice(color.length); }
+    const show = el('div', { class: 'fes-pick-name' });
+    const row = (list, get, set) => {
+      const r = el('div', { class: 'fes-pick-row' });
+      list.forEach(v => r.appendChild(el('button', { class: 'fes-chip', type: 'button', text: v, onclick: () => { set(v); FES.sfx('select'); sync(); } })));
+      r.sync = () => r.querySelectorAll('.fes-chip').forEach(b => b.classList.toggle('on', b.textContent === get()));
+      return r;
+    };
+    const cRow = row(FES.NAME_COLORS, () => color, v => color = v);
+    const aRow = row(FES.NAME_ANIMALS, () => animal, v => animal = v);
+    const omakase = el('button', { class: 'fes-chip omakase', type: 'button', text: '🎲 おまかせ', onclick: () => {
+      const r = FES.randomName(); color = FES.NAME_COLORS.find(c => r.startsWith(c)); animal = r.slice(color.length); FES.sfx('select'); sync();
+    } });
+    function sync() { show.textContent = color + animal; cRow.sync(); aRow.sync(); }
+    const wrap = el('div', { class: 'fes-pick' }, [
+      el('div', { class: 'fes-pick-lbl', text: 'なまえを えらんでね' }), show,
+      el('div', { class: 'fes-pick-lbl', text: 'いろ' }), cRow,
+      el('div', { class: 'fes-pick-lbl', text: 'どうぶつ' }), aRow,
+      el('div', { class: 'fes-pick-row' }, [omakase]),
+    ]);
+    sync();
+    return { el: wrap, value: () => color + animal };
+  };
   /** ランキングの保存先IDを切り替える（難易度別ランキングなどに使う）。例: FES.setId('rhythm_hard') */
   FES.setId = function (id) { if (id) cfg.id = String(id); return cfg.id; };
   FES.getId = () => cfg.id;
@@ -238,6 +274,17 @@
     background: rgba(0,0,0,.4); color: #fff; outline: none; font-weight: 700; letter-spacing: .1em; }
   .fes-name input:focus { border-color: #ffd36e; box-shadow: 0 0 16px rgba(255,211,110,.5); }
   .fes-name button { padding: 8px 18px; }
+  .fes-namebox { margin: 4px 0 14px; }
+  .fes-pick { margin-bottom: 12px; }
+  .fes-pick-lbl { font-size: 11px; letter-spacing: .2em; opacity: .6; margin: 8px 0 4px; }
+  .fes-pick-name { font-size: 30px; font-weight: 900; margin: 2px 0 4px; color: #ffd36e; text-shadow: 0 0 18px rgba(255,211,110,.5); }
+  .fes-pick-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .fes-chip { pointer-events: auto; padding: 7px 11px; min-height: 38px; border-radius: 10px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08);
+    color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; transition: transform .1s, background .1s; }
+  .fes-chip:hover { background: rgba(255,255,255,.18); }
+  .fes-chip:active { transform: scale(.94); }
+  .fes-chip.on { background: linear-gradient(135deg,#6a5cff,#b04dff); border-color: transparent; box-shadow: 0 4px 14px rgba(120,80,255,.5); }
+  .fes-chip.omakase { margin-top: 8px; }
   .fes-rank { text-align: left; margin: 0 0 14px; padding: 0; list-style: none; max-height: 220px; overflow: auto; font-variant-numeric: tabular-nums; }
   .fes-rank li { display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 8px; font-size: 14px; }
   .fes-rank li:nth-child(odd) { background: rgba(255,255,255,.05); }
@@ -389,24 +436,23 @@
     const homeBtn = el('a', { class: 'fes-act alt', href: '../index.html', text: 'ホームへ' });
     actions.appendChild(retryBtn); actions.appendChild(homeBtn);
 
+    let submitName = null;
     if (rankIn) {
-      const input = el('input', { maxlength: '8', placeholder: 'なまえ', value: FES.lastName() });
-      const ok = el('button', { class: 'fes-act', text: '登録' });
-      const nameBox = el('div', { class: 'fes-name' }, [input, ok]);
+      // 名前はボタンで選ぶ（色＋どうぶつ）。キーボードが苦手な人・小さい子でも登録できる。
+      const picker = FES.namePicker(FES.currentName());
+      const ok = el('button', { class: 'fes-act', text: 'この名前で登録' });
+      const nameBox = el('div', { class: 'fes-namebox' }, [picker.el, el('div', { class: 'fes-actions' }, [ok])]);
       card.appendChild(nameBox);
-      const submit = () => {
-        const name = (input.value || '').trim() || 'ななし';
-        LS.set('fes:lastName', name);
+      submitName = () => {
+        const name = picker.value();
+        FES.setCurrentName(name);
         const top = FES.saveScore(name, score);
         const mine = top.find(e => e.name === name && e.score === score);
-        nameBox.remove();
+        nameBox.remove(); submitName = null;
         renderRank(mine ? mine.date : null);
         FES.sfx('coin');
       };
-      ok.addEventListener('click', submit);
-      input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') submit(); });
-      input.addEventListener('keyup', e => e.stopPropagation());
-      setTimeout(() => { input.focus(); input.select(); }, 350);
+      ok.addEventListener('click', submitName);
     } else {
       renderRank(null);
     }
@@ -418,10 +464,11 @@
     overlay = el('div', { id: 'fes-overlay' }, [card]);
     ui.appendChild(overlay);
     // キー操作: Enter/Space でリトライ（名前入力中は除く）
+    // 名前がまだ登録されていなければ、Enter は「登録」（うっかりリトライで記録が消えないように）
     const key = e => {
       if (!overlay) { document.removeEventListener('keydown', key); return; }
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); retryBtn.click(); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (submitName) submitName(); else retryBtn.click(); }
     };
     setTimeout(() => document.addEventListener('keydown', key), 400);
     return overlay;

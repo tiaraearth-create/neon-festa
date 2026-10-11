@@ -214,7 +214,7 @@
         <div class="stamp-title">🎟 スタンプラリー <b id="stampCount">0 / 10</b></div>
       </div>
       <div class="stamp-name">
-        <span>👤</span><input id="stampName" maxlength="8" placeholder="なまえ" autocomplete="off">
+        <span>👤</span><input id="stampName" maxlength="8" placeholder="なまえをえらぶ" autocomplete="off" readonly title="タップして なまえをえらぶ" style="cursor:pointer">
         <button class="fbtn" id="stampNew">🔄 次の人（新しいカード）</button>
         <button class="fbtn" id="hallBtn">🏅 殿堂</button>
       </div>
@@ -276,6 +276,17 @@
     <div class="mact">
       <a class="act" id="mPlay" href="#">プレイする</a>
       <button class="act alt" id="mClose">とじる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="nameM">
+  <div class="mbox" style="text-align:center">
+    <h3>NAME</h3>
+    <div id="namePick"></div>
+    <div class="mact" style="justify-content:center">
+      <button class="act" id="nameOk">この名前にする</button>
+      <button class="act alt" id="nameCancel">やめる</button>
     </div>
   </div>
 </div>
@@ -402,12 +413,24 @@ function celebrate(card) {
   document.getElementById('complete').classList.add('open');
   if (window.__fesBurst) window.__fesBurst(160);
 }
-stampNameEl.addEventListener('input', () => FES.renameStampCard(stampNameEl.value));
-stampNameEl.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') stampNameEl.blur(); });
+// 名前はボタンで選ぶ（色＋どうぶつ）。キーボード入力はしない
+const nameM = document.getElementById('nameM');
+let namePicker = null;
+function openNamePicker() {
+  const box = document.getElementById('namePick'); box.innerHTML = '';
+  namePicker = FES.namePicker(FES.currentName());
+  box.appendChild(namePicker.el);
+  nameM.classList.add('open'); FES.sfx('select');
+}
+stampNameEl.addEventListener('click', openNamePicker);
+stampNameEl.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNamePicker(); } });
+document.getElementById('nameOk').onclick = () => { FES.setCurrentName(namePicker.value()); nameM.classList.remove('open'); render(); FES.sfx('coin'); };
+document.getElementById('nameCancel').onclick = () => nameM.classList.remove('open');
+nameM.addEventListener('click', e => { if (e.target === nameM) nameM.classList.remove('open'); });
 document.getElementById('stampNew').onclick = () => {
   FES.newStampCard(''); stampSeen = new Set(); stampDoneSeen = false; render();
-  FES.sfx('select'); FES.toast('新しいスタンプカードにしました。なまえを入れてスタート！');
-  stampNameEl.focus();
+  FES.toast('新しいスタンプカードにしました。なまえをえらんでスタート！');
+  openNamePicker();
 };
 // 殿堂
 const hallM = document.getElementById('hall');
