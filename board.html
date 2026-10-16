@@ -55,6 +55,18 @@
   .dots { display: flex; gap: .6vw; }
   .dots i { width: 1vh; height: 1vh; border-radius: 50%; background: rgba(255,255,255,.25); }
   .dots i.on { background: var(--gold); }
+  /* 殿堂スライド（スタンプラリー全クリアの速い順） */
+  .slide.hall .g-icon { background: rgba(255,211,110,.22); box-shadow: 0 0 40px rgba(255,211,110,.4); }
+  ol.top li .tm { font-family: Consolas, "Courier New", monospace; font-variant-numeric: tabular-nums; color: var(--gold); }
+  ol.top.hall li { font-size: 3vh; padding: 1vh 1.6vw; }
+  ol.top.hall li.r1 { font-size: 3.8vh; }
+  /* 案内スライド（スタンプラリー・遊び方） */
+  .slide.info .steps { display: flex; flex-direction: column; gap: 1.6vh; flex: 1; justify-content: center; }
+  .slide.info .st { display: grid; grid-template-columns: 7vh 1fr; align-items: center; gap: 1.4vw; padding: 1.6vh 1.6vw; border-radius: 1.8vh; background: rgba(255,255,255,.06); font-size: 3.2vh; font-weight: 800; line-height: 1.3; }
+  .slide.info .st .n { width: 6vh; height: 6vh; border-radius: 50%; display: grid; place-items: center; font-size: 3.4vh; font-weight: 900; color: #1a1040; background: linear-gradient(135deg,#ffd36e,#ff9f43); }
+  .slide.info .st small { display: block; font-size: 2vh; color: var(--muted); font-weight: 700; margin-top: .3vh; }
+  .slide.info .st b { color: var(--gold); }
+  .slide.info .st.hot { background: linear-gradient(90deg, rgba(255,211,110,.3), rgba(255,77,141,.18)); box-shadow: 0 0 0 2px rgba(255,211,110,.5) inset; }
   /* 新チャンピオンのお知らせ */
   #flash { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: rgba(5,5,20,.82); backdrop-filter: blur(6px); z-index: 10; text-align: center; }
   #flash.open { display: flex; animation: pop .6s cubic-bezier(.2,1.4,.4,1); }
@@ -80,7 +92,7 @@
     </div>
   </main>
   <footer>
-    <div>ハイスコアを出して <b>チャンピオン</b> に名前をのこそう！</div>
+    <div>ハイスコアで <b>チャンピオン</b>、全ゲーム遊んで <b>殿堂入り</b> をめざそう！</div>
     <div class="dots" id="dots"></div>
   </footer>
 </div>
@@ -101,7 +113,9 @@ const GAMES = [
   { id: 'quiz',     title: '早押しクイズ王',        genre: 'クイズ',        icon: '❓', accent: '#ff6b6b' },
   { id: 'breakout', title: 'ネオンブレイカー',      genre: 'アーケード',     icon: '🧱', accent: '#a5f3fc' },
 ];
+const N_GAMES = GAMES.length + 1;   // スタンプラリーの対象（ランキングのないネオンデュエルも入る）
 const SLIDE_SEC = 8, POLL_SEC = 15;
+const fmtTime = ms => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return (h ? h + ':' : '') + (h ? String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0'); };
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let api = DEFAULT_API;
@@ -142,6 +156,26 @@ function renderSlides() {
     s.dataset.game = g.id;
     return s;
   });
+  // 殿堂（スタンプラリー全クリア、速い順）
+  const hall = document.createElement('div');
+  hall.className = 'slide hall'; hall.style.setProperty('--accent', '#ffd36e');
+  const fresh = Date.now() - 10 * 60 * 1000;
+  const top = (data.hall || []).slice(0, 8);
+  hall.innerHTML = `<div class="g-head"><div class="g-icon">🏅</div><div><div class="g-genre">STAMP RALLY</div><div class="g-title">殿堂</div><div class="g-sub">全 ${N_GAMES} ゲームをクリアした人 · 速い順</div></div></div>
+    <ol class="top hall">${top.length ? top.map((e, i) => `<li class="r${i + 1}"><span class="rk">${['🥇', '🥈', '🥉'][i] || i + 1}</span><span class="nm">${esc(e.name)}${e.created_at > fresh ? '<span class="tag">NEW</span>' : ''}</span><span class="tm">${fmtTime(e.time_ms)}</span></li>`).join('')
+      : `<li class="empty">まだいない — 全 ${N_GAMES} ゲーム遊ぶと殿堂入り！</li>`}</ol>`;
+  wrap.appendChild(hall); slideEls.push(hall);
+  // 案内（スタンプラリー・遊び方）
+  const info = document.createElement('div');
+  info.className = 'slide info'; info.style.setProperty('--accent', '#5ee7ff');
+  info.innerHTML = `<div class="g-head"><div class="g-icon">🎮</div><div><div class="g-genre">HOW TO PLAY</div><div class="g-title">スタンプラリー開催中</div><div class="g-sub">ゲームを1つ遊ぶごとにスタンプ1つ</div></div></div>
+    <div class="steps">
+      <div class="st"><span class="n">1</span><span>「次の人」を押して、なまえを選ぶ<small>色＋どうぶつをボタンで。🎲 おまかせでもOK</small></span></div>
+      <div class="st"><span class="n">2</span><span>好きなゲームを選んで「スタート」<small>全 ${N_GAMES} ゲーム · 1回 1〜3分 · ⚔️ 2人対戦「ネオンデュエル」もあり</small></span></div>
+      <div class="st"><span class="n">3</span><span>ハイスコアで <b>チャンピオン</b> に名前が出る<small>1位をとると、この画面に大きく出ます</small></span></div>
+      <div class="st hot"><span class="n">🏅</span><span>スタンプを全部集めると <b>殿堂入り</b><small>名前とタイムが殿堂に残ります</small></span></div>
+    </div>`;
+  wrap.appendChild(info); slideEls.push(info);
   $('dots').innerHTML = slideEls.map(() => '<i></i>').join('');
   showSlide(Math.min(slideIdx, slideEls.length - 1));
 }
@@ -173,12 +207,29 @@ function detectNewChamps() {
   champs = now;
   if (flashQueue.length && !$('flash').classList.contains('open')) nextFlash();
 }
+// 新しく殿堂入りした人も大きく表示（起動時にすでにある記録は出さない）
+let hallSeen = null;
+function detectNewHall() {
+  const key = e => `${e.name}|${e.time_ms}|${e.created_at}`;
+  const now = new Set((data.hall || []).map(key));
+  if (hallSeen) (data.hall || []).forEach(e => { if (!hallSeen.has(key(e))) flashQueue.push({ hall: e }); });
+  hallSeen = now;
+  if (flashQueue.length && !$('flash').classList.contains('open')) nextFlash();
+}
 function nextFlash() {
   const f = flashQueue.shift();
   if (!f) { $('flash').classList.remove('open'); return; }
-  $('fName').textContent = f.b.name;
-  $('fGame').textContent = `${f.g.icon} ${f.g.title}${f.b.label ? '（' + f.b.label + '）' : ''}`;
-  $('fScore').textContent = f.b.score.toLocaleString();
+  if (f.hall) {
+    $('flash').firstElementChild.textContent = 'HALL OF FAME!';
+    $('fName').textContent = f.hall.name;
+    $('fGame').textContent = `🏅 殿堂入り！ 全 ${N_GAMES} ゲームクリア`;
+    $('fScore').textContent = fmtTime(f.hall.time_ms);
+  } else {
+    $('flash').firstElementChild.textContent = 'NEW CHAMPION!';
+    $('fName').textContent = f.b.name;
+    $('fGame').textContent = `${f.g.icon} ${f.g.title}${f.b.label ? '（' + f.b.label + '）' : ''}`;
+    $('fScore').textContent = f.b.score.toLocaleString();
+  }
   $('flash').classList.remove('open'); void $('flash').offsetWidth; $('flash').classList.add('open');
   setTimeout(nextFlash, 6000);
 }
@@ -186,12 +237,16 @@ function nextFlash() {
 async function poll() {
   try {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
-    const r = await fetch(api + '/api/rankings', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(t);
+    const [r, rh] = await Promise.all([
+      fetch(api + '/api/rankings', { signal: ctl.signal, cache: 'no-store' }),
+      fetch(api + '/api/hall', { signal: ctl.signal, cache: 'no-store' }).catch(() => null),   // 殿堂が取れなくてもランキングは出す
+    ]); clearTimeout(t);
     if (!r.ok) throw new Error(r.status);
     const rankings = await r.json();
-    const changed = JSON.stringify(rankings) !== JSON.stringify(data.rankings);
-    data.rankings = rankings;
-    if (changed || !slideEls.length) { renderSlides(); renderChamps(); detectNewChamps(); }
+    const hall = rh && rh.ok ? await rh.json() : data.hall;
+    const changed = JSON.stringify(rankings) !== JSON.stringify(data.rankings) || JSON.stringify(hall) !== JSON.stringify(data.hall);
+    data.rankings = rankings; data.hall = Array.isArray(hall) ? hall : [];
+    if (changed || !slideEls.length) { renderSlides(); renderChamps(); detectNewChamps(); detectNewHall(); }
     $('live').classList.remove('off');
     const d = new Date(); $('liveText').textContent = `LIVE · ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')} 更新`;
   } catch (e) {
