@@ -286,6 +286,7 @@
       <button class="fbtn" id="attractBtn">📺 客寄せ画面: ON</button>
       <a class="fbtn" id="feedbackBtn" href="https://game-feedback.brainrot-rumble.workers.dev/?game=bunkasai-game-center&amp;lang=ja" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="不具合や「こうしてほしい」を運営に送れます">🐛 バグ報告・要望</a>
       <button class="fbtn" id="prizeBtn" title="景品のQRコードの行き先と、もらえる条件を決める">🎁 景品の設定</button>
+      <button class="fbtn" id="liteBtn" title="古いPCで重いときに。粒子や紙吹雪を減らします（このPCだけ）">🐢 軽量モード: OFF</button>
       <button class="fbtn danger" id="resetBtn">🗑 ランキング全消去（スタッフ用）</button>
     </span>
   </footer>
@@ -494,7 +495,7 @@ function bindPreviews() {
 }
 function drawPreviews(now) {
   requestAnimationFrame(drawPreviews);
-  if (now - pvLast < 33 || document.hidden || attractEl.classList.contains('open')) return;   // 30fps
+  if (now - pvLast < (FES.lite() ? 66 : 33) || document.hidden || attractEl.classList.contains('open')) return;   // 30fps（軽量モードは 15fps）
   pvLast = now;
   const t = now / 1000;
   for (const p of pvList) {
@@ -579,6 +580,10 @@ function openPrize(card) {
 }
 document.getElementById('prizeClose').onclick = () => prizeM.classList.remove('open');
 prizeM.addEventListener('click', e => { if (e.target === prizeM) prizeM.classList.remove('open'); });
+const liteBtn = document.getElementById('liteBtn');
+const refreshLite = () => { liteBtn.textContent = `🐢 軽量モード: ${FES.lite() ? 'ON' : 'OFF'}`; liteBtn.classList.toggle('on', FES.lite()); };
+liteBtn.onclick = () => { FES.setLite(!FES.lite()); refreshLite(); FES.sfx('select'); FES.toast(FES.lite() ? '軽量モード ON（粒子・紙吹雪を減らします）' : '軽量モード OFF'); };
+refreshLite();
 document.getElementById('prizeBtn').onclick = () => {
   const cur = FES.prize() || { url: '', cond: 'complete', label: '' };
   const url = prompt('景品のQRコードで開く URL（空にすると景品なし）', cur.url); if (url === null) return;

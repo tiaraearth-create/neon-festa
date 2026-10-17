@@ -329,6 +329,32 @@
   };
   FES.isFever = () => feverOn;
 
+  /* ------------------------------------------------------------ 軽量モード（古い PC 向け: 粒子・紙吹雪・フィーバーの負荷を下げる） */
+  const LITE_KEY = 'fes:lite';
+  FES.lite = () => !!LS.get(LITE_KEY, false);
+  FES.setLite = v => { LS.set(LITE_KEY, !!v); document.documentElement.classList.toggle('fes-lite', !!v); };
+
+  /* ------------------------------------------------------------ 画面切り替えのワイプ（ページを開いたとき暗から明へ／リンクで出るとき明から暗へ） */
+  let wipeEl = null;
+  function accentColor() {
+    if (cfg.accent) return cfg.accent;
+    const g = FES.games().find(x => x.id === FES.stampBase(cfg.id));
+    return (g && g.accent) || '#7a5cff';
+  }
+  FES.wipeIn = function () {
+    ensureUI(); if (wipeEl) wipeEl.remove();
+    wipeEl = el('div', { class: 'fes-wipe out', style: `--wc:${accentColor()}` });
+    ui.appendChild(wipeEl);
+    const me = wipeEl; setTimeout(() => { me.remove(); if (wipeEl === me) wipeEl = null; }, 700);
+  };
+  /** リンク先へ、暗転してから移動する */
+  FES.leaveTo = function (href) {
+    ensureUI(); if (wipeEl) wipeEl.remove();
+    wipeEl = el('div', { class: 'fes-wipe in', style: `--wc:${accentColor()}` });
+    ui.appendChild(wipeEl);
+    setTimeout(() => { location.href = href; }, 230);
+  };
+
   /* ------------------------------------------------------------ あそびかたチップ（ゲーム開始のカウントダウン中に数秒だけ出す） */
   let howtoEl = null, howtoTm = null;
   /** FES.howto(['🔨 クリックでたたく', '⭐ 金もぐら +500']) / FES.howto(false) で消す */
@@ -367,7 +393,8 @@
       hitStop(sec) { s.stop = Math.max(s.stop, sec == null ? 0.06 : sec); },
       burst(x, y, o) {
         o = o || {};
-        const n = o.n || 18, speed = o.speed || 220, life = o.life || 0.6, size = o.size || 5, g = o.gravity == null ? 300 : o.gravity;
+        const lite = FES.lite();
+        const n = Math.max(1, Math.round((o.n || 18) * (lite ? 0.45 : 1))), speed = o.speed || 220, life = o.life || 0.6, size = o.size || 5, g = o.gravity == null ? 300 : o.gravity;
         const colors = Array.isArray(o.color) ? o.color : [o.color || '#ffd36e'];
         for (let i = 0; i < n; i++) {
           const a = (o.angle != null ? o.angle + (Math.random() - .5) * (o.spread == null ? Math.PI * 2 : o.spread) : Math.random() * Math.PI * 2);
@@ -375,7 +402,7 @@
           s.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: life * (0.6 + Math.random() * 0.6), max: life, size: size * (0.6 + Math.random() * 0.8),
             color: colors[(Math.random() * colors.length) | 0], g, shape: o.shape || 'circle', rot: Math.random() * Math.PI * 2, vr: (Math.random() - .5) * 12, drag: o.drag == null ? 0.9 : o.drag });
         }
-        if (s.parts.length > 600) s.parts.splice(0, s.parts.length - 600);
+        const cap = lite ? 220 : 600; if (s.parts.length > cap) s.parts.splice(0, s.parts.length - cap);
       },
       ring(x, y, o) { o = o || {}; s.rings.push({ x, y, r: o.r || 10, r1: o.r1 || 120, life: o.life || 0.4, max: o.life || 0.4, color: o.color || '#fff', w: o.width || 4 }); },
       text(x, y, str, o) { o = o || {}; s.texts.push({ x, y, str: String(str), life: o.life || 0.8, max: o.life || 0.8, color: o.color || '#fff', size: o.size || 22, vy: o.vy == null ? -70 : o.vy, vx: o.vx || 0, weight: o.weight || 900, stroke: o.stroke !== false }); if (s.texts.length > 60) s.texts.shift(); },
@@ -526,6 +553,14 @@
   .fes-howto.out { animation: fesFeverOut .4s ease both; }
   .fes-howto .lbl { width: 100%; text-align: center; font-size: 12px; letter-spacing: .3em; font-weight: 900; color: rgba(255,255,255,.7); text-shadow: 0 2px 8px rgba(0,0,0,.8); }
   .fes-howto .chip { padding: 9px 16px; border-radius: 999px; background: rgba(8,8,28,.86); border: 1px solid rgba(255,255,255,.28); color: #fff; font-weight: 900; font-size: clamp(14px, 2.2vw, 18px); box-shadow: 0 6px 24px rgba(0,0,0,.5); animation: fesPop .5s cubic-bezier(.2,1.4,.4,1) both; white-space: nowrap; }
+  .fes-wipe { position: fixed; inset: 0; z-index: 9950; pointer-events: none; background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--wc, #7a5cff) 55%, #07071a), #07071a 70%); }
+  .fes-wipe.out { animation: fesWipeOut .6s cubic-bezier(.4,0,.2,1) both; }
+  .fes-wipe.in { pointer-events: auto; animation: fesWipeIn .25s ease both; }
+  @keyframes fesWipeOut { 0% { opacity: 1; clip-path: circle(120% at 50% 50%) } 100% { opacity: 1; clip-path: circle(0% at 50% 50%) } }
+  @keyframes fesWipeIn { from { opacity: 0 } to { opacity: 1 } }
+  .fes-lite .fes-fever { animation: fesFeverIn .35s ease both; }
+  .fes-lite .fes-fever::before { display: none; }
+  .fes-lite .fes-grade.gS { animation: fesStamp .55s cubic-bezier(.2,1.3,.4,1) both; }
   .fes-newrec { display: inline-block; margin: 4px 0 10px; padding: 5px 16px; border-radius: 999px; font-weight: 900; font-size: 14px; letter-spacing: .15em;
     background: linear-gradient(90deg,#ff4d8d,#ffb347); box-shadow: 0 0 24px rgba(255,120,80,.6); animation: fesPop .6s .3s both; }
   .fes-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px,1fr)); gap: 8px; margin: 10px 0 14px; }
@@ -624,6 +659,14 @@
       // タブに戻ってきたとき、音が止まったままにならないように
       document.addEventListener('visibilitychange', () => { if (!document.hidden && actx && actx.state === 'suspended') actx.resume().catch(() => {}); });
       document.title = cfg.title ? `${cfg.title} | NEON FESTA` : document.title;
+      if (FES.lite()) document.documentElement.classList.add('fes-lite');
+      if (cfg.wipe !== false) FES.wipeIn();
+      // 共通UI内のリンク（🏠・つぎは・ホームへ）は暗転してから移動
+      ui.addEventListener('click', e => {
+        const a = e.target && e.target.closest && e.target.closest('a[href]'); if (!a || !ui.contains(a)) return;
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1 || a.target === '_blank') return;
+        e.preventDefault(); FES.leaveTo(a.getAttribute('href'));
+      });
       // 部屋の PC: 起動時と 20 秒ごとに共有ランキングを取ってくる（ハイスコア表示・ランクイン判定用）
       if (FES.isRoomPC()) { FES.sync(); setInterval(FES.sync, 20000); armIdleReset(); }
       armErrorGuard();
@@ -775,7 +818,7 @@
     const ctx = cv.getContext('2d');
     const W = cv.width = innerWidth, H = cv.height = innerHeight;
     const cols = colors || ['#ffd36e', '#ff4d8d', '#5ee7ff', '#8a6bff', '#5cff8d', '#fff'];
-    const ps = Array.from({ length: Math.min(160, Math.round(W * H / 9000)) }, () => ({
+    const ps = Array.from({ length: Math.min(FES.lite() ? 60 : 160, Math.round(W * H / (FES.lite() ? 18000 : 9000))) }, () => ({
       x: Math.random() * W, y: -20 - Math.random() * H * 0.5, vx: (Math.random() - .5) * 120, vy: 120 + Math.random() * 220,
       w: 6 + Math.random() * 8, h: 10 + Math.random() * 10, rot: Math.random() * 6.3, vr: (Math.random() - .5) * 8, c: cols[(Math.random() * cols.length) | 0], ph: Math.random() * 6.3,
     }));
