@@ -36,6 +36,7 @@
   .card.tas { background: repeating-linear-gradient(135deg, rgba(255,40,120,.08) 0 8px, rgba(0,0,0,0) 8px 16px), rgba(255,255,255,.05); }
   .card .skull { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: .05em;
                  background: linear-gradient(90deg,#ff2878,#8a0030); box-shadow: 0 0 12px rgba(255,40,120,.6); animation: pulse 1.2s ease-in-out infinite; }
+  .card .skull.ext { background: linear-gradient(90deg,#5ee7ff,#6a5cff); box-shadow: 0 0 12px rgba(94,231,255,.5); margin-left: 4px; }
   .card .skull.sudden { background: linear-gradient(90deg,#ffb020,#c04000); box-shadow: 0 0 12px rgba(255,160,40,.6); margin-left: 4px; }
   .diff button.off { opacity: .3; cursor: default; pointer-events: none; box-shadow: none; }
   @media (max-width: 1100px) and (min-width: 761px) { .songs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
@@ -140,6 +141,7 @@
 </div>
 
 <script src="../common.js"></script>
+<script src="music/charts.js"></script>
 <script>
 'use strict';
 FES.init({ id: 'rhythm', title: 'リズムスターズ' });
@@ -544,6 +546,12 @@ const CAT = {
   },
 };
 const SONGS = [NEON, SAKURA, ROCK, BALLAD, TAS, CAT];
+// 追加曲（games/music/charts.js があれば。自分の曲の音声 .m4a ＋ tools/make-chart.js が作った譜面）
+const EXT_SONGS = (window.RHYTHM_EXT_SONGS || []).filter(e => e && e.audio && e.charts).map(e => ({
+  id: 'ext_' + e.id, name: e.name, genre: e.genre || 'ORIGINAL', bpm: e.bpm, bpmLabel: e.bpm, theme: e.theme || 'rock', color: e.color || [255, 94, 94], hex: e.hex || '#ff5e5e',
+  ext: e, inst: {}, holdMin: [4, 4, 4], melDiv: [4, 2, 1], sections: [],
+}));
+EXT_SONGS.forEach(d => SONGS.push(d));
 
 const THEMES = {
   tas:    { bg: ['#1a0208', '#4a0420'], glow: [255, 40, 120],  grid: [255, 60, 140],  line: [255, 170, 210], fx: 'embers', emberHue: 330, starN: 20, bolt: [255, 60, 160] },
@@ -580,7 +588,15 @@ function makeTempo(def, totalBars) {
     freezes: segs.filter(s => s.gap > 0).map(s => ({ from: s.t0 - s.gap, to: s.t0, gap: s.gap })),
   };
 }
+/** 追加曲: 音は .m4a を鳴らすので音イベントは無し。拍⇔時間は一定テンポ */
+function buildExtSong(def) {
+  const e = def.ext, beat = 60 / e.bpm, length = e.length, bars = Math.max(1, Math.ceil(length / (beat * 4)));
+  const seg = { bar: 0, bars, bpm: e.bpm, beat, barLen: beat * 4, gap: 0, t0: 0, beat0: 0, t1: length };
+  const tempo = { segs: [seg], length, segOfBar: () => seg, beatToTime: b => b * beat, timeToBeat: t => t / beat, beatLenAt: () => beat, bpmAt: () => e.bpm, freezes: [] };
+  return { def, events: [], mel: [], drums: [], sections: [{ name: '', start: 0, end: length, bar0: 0, bars }], length, beat, step: beat / 4, bar: beat * 4, tempo, freezes: [], themeChanges: [] };
+}
 function buildSong(def) {
+  if (def.ext) return buildExtSong(def);
   const totalBars = def.sections.reduce((a, S) => a + S.bars, 0);
   const tempo = makeTempo(def, totalBars);
   const ev = [], mel = [], drums = [], sections = [];
@@ -664,7 +680,32 @@ const SONG_DATA = SONGS.map(buildSong);
    譜面生成（楽曲 × 難易度 → ノーツ列 + 理論満点）
    tap: { t, lane }  hold: { t, lane, end, ticks[] }（ticks は拍の1/2ごと + テール）
    ===================================================================== */
+function buildExtChart(song, di) {
+  const BEAT = song.beat, src = song.def.ext.charts[di] || song.def.ext.charts[1] || [];
+  const notes = src.map(([t, lane, end]) => ({ t, lane: FES.clamp(lane | 0, 0, 3), lanes: 4, type: end ? 'hold' : 'tap', end: end || 0, src: 'ext', state: 0, judge: null, chord: false,
+    ticks: null, tickIdx: 0, holding: false, broken: false, done: false }));
+  notes.sort((a, b) => a.t - b.t || a.lane - b.lane);
+  for (let i = 0; i < notes.length; i++) {
+    let j = i + 1;
+    while (j < notes.length && Math.abs(notes[j].t - notes[i].t) < 1e-6) j++;
+    if (j - i >= 2) { for (let k = i; k < j; k++) { notes[k].chord = true; notes[k].chordLo = notes[i].lane; notes[k].chordHi = notes[j - 1].lane; } i = j - 1; }
+  }
+  let points = 0, holds = 0;
+  notes.forEach(n => {
+    points++;
+    if (n.type !== 'hold') return;
+    holds++;
+    const ticks = [];
+    for (let tt = n.t + BEAT / 2; tt < n.end - BEAT * 0.2; tt += BEAT / 2) ticks.push(tt);
+    ticks.push(n.end);
+    n.ticks = ticks; points += ticks.length;
+  });
+  let maxRaw = 0;
+  for (let i = 1; i <= points; i++) maxRaw += Math.round(JUDGES.PERFECT.score * comboMult(i));
+  return { notes, maxRaw, points, holds, laneChanges: [] };
+}
 function buildChart(song, di) {
+  if (song.def.ext) return buildExtChart(song, di);
   if (song.def.tas) return buildTasChart(song);
   const def = song.def, BEAT = song.beat, STEP = song.step, BAR = song.bar;
   const notes = [];
@@ -1326,15 +1367,40 @@ const Music = (() => {
   }
   function run() { clearInterval(timer); timer = setInterval(schedule, 25); schedule(); }
 
+  // ---- 追加曲（音声ファイル）: <audio> をそのまま鳴らす（file:// で開いても音が出るように WebAudio は通さない）
+  let ext = null, el = null, extTimer = null;
+  function extPrepare() {
+    if (!el || el.dataset.src !== ext.audio) { if (el) { try { el.pause(); } catch (e) {} } el = new Audio(ext.audio); el.preload = 'auto'; el.dataset.src = ext.audio; el.volume = 0.72; }
+    else { try { el.pause(); } catch (e) {} }
+    try { el.load(); } catch (e) {}
+  }
+  function extPlayAt(startAbs, songTime) {
+    clearTimeout(extTimer); if (!el) return;
+    const from = Math.max(0, songTime), pos = (ext.start || 0) + from;
+    const go = () => {
+      // メタデータが読めてから位置を合わせる（先に currentTime を入れても無視されるため）
+      try { el.currentTime = pos; } catch (e) {}
+      const delay = Math.max(0, startAbs + from - ac.currentTime);
+      extTimer = setTimeout(() => { try { if (Math.abs(el.currentTime - pos) > 0.05) el.currentTime = pos; } catch (e) {} el.play().catch(() => {}); }, delay * 1000);
+    };
+    if (el.readyState >= 1) go(); else el.addEventListener('loadedmetadata', go, { once: true });
+  }
+  function extStop() { clearTimeout(extTimer); extTimer = null; if (el) { try { el.pause(); } catch (e) {} } }
+
   return {
     setup,
     ctx: () => ac,
-    load(song) { stopAll(); events = song.events; idx = 0; },
-    start(startAbs) { if (!ac) return; seek(-99, startAbs); playing = true; run(); },
-    resume(songTime, newStart) { if (!ac) return; seek(songTime, newStart); playing = true; run(); },
-    pause() { playing = false; clearInterval(timer); timer = null; stopAll(); },
-    stop() { playing = false; clearInterval(timer); timer = null; stopAll(); },
+    load(song) { stopAll(); extStop(); events = song.events; idx = 0; ext = song.def.ext || null; if (ext) extPrepare(); },
+    /** タイトルで曲を選んだ時点で音声を読み込んでおく（開始時に待たせない） */
+    preload(song) { if (!song.def.ext || playing) return; ext = song.def.ext; extPrepare(); },
+    start(startAbs) { if (!ac) return; seek(-99, startAbs); playing = true; run(); if (ext) extPlayAt(startAbs, 0); },
+    resume(songTime, newStart) { if (!ac) return; seek(songTime, newStart); playing = true; run(); if (ext) extPlayAt(newStart, songTime); },
+    pause() { playing = false; clearInterval(timer); timer = null; stopAll(); extStop(); },
+    stop() { playing = false; clearInterval(timer); timer = null; stopAll(); extStop(); },
+    /** 追加曲の再生位置（曲の 0 秒基準）。鳴っていなければ null */
+    audioTime() { return ext && el && !el.paused && el.currentTime > 0.03 ? el.currentTime - (ext.start || 0) : null; },
     tick() {
+      if (el) el.muted = FES.isMuted();
       if (!master) return;
       const m = FES.isMuted();
       if (m !== lastMuted) { master.gain.value = m ? 0 : 0.55; lastMuted = m; }
@@ -1521,7 +1587,7 @@ function buildCards() {
     card.style.setProperty('--c', def.hex); card.style.setProperty('--cr', def.color.join(','));
     card.innerHTML = `<div class="sel-mark"></div><div class="cg">${def.genre}</div><div class="cn">${def.name}</div>` +
       `<div class="cm">${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(SONG_DATA[i].length)}</div><div class="cs" data-s></div><div class="ch" data-h></div>` +
-      (def.tas ? '<div class="skull">☠ 人力クリア不可</div>' : '') + (def.sudden ? '<div class="skull sudden">⚡ 急変注意</div>' : '');
+      (def.tas ? '<div class="skull">☠ 人力クリア不可</div>' : '') + (def.sudden ? '<div class="skull sudden">⚡ 急変注意</div>' : '') + (def.ext ? '<div class="skull ext">🎧 オリジナル曲</div>' : '');
     card.addEventListener('click', () => { if (G.state !== 'title') return; if (G.songIdx === i) startGame(); else { setSong(i); FES.sfx('select'); } });
     box.appendChild(card);
   });
@@ -1541,6 +1607,7 @@ function refreshCards() {
 function setSong(i) {
   G.songIdx = (i + SONGS.length) % SONGS.length;
   G.song = SONG_DATA[G.songIdx];
+  if (G.song.def.ext && G.state === 'title') Music.preload(G.song);
   setTheme(SONGS[G.songIdx].theme);
   const tas = isTas();
   Array.from($('diff').children).forEach(b => { b.disabled = tas; b.classList.toggle('off', tas); });
@@ -1838,7 +1905,15 @@ function update(dt, now) {
     if (G.state !== 'pause') idleVis(now);
     return;
   }
-  const st = songTime();
+  let st = songTime();
+  if (G.song.def.ext) {
+    // 音声ファイルの再生位置に、ゲームの時計をゆっくり合わせる（ズレがたまらないように）
+    const at = Music.audioTime();
+    if (at != null && G.state === 'play') { const target = clock() - at; G.songStart += (target - G.songStart) * Math.min(1, dt * 5); st = songTime(); }
+    // ビジュアライザー: 拍でキック、ノーツが通るたびに光る
+    if (st >= 0) { const b = st / G.song.beat, ph = b - Math.floor(b); if (ph < 0.08) VIS.kick = Math.max(VIS.kick, 0.9); if (ph >= 0.5 && ph < 0.58) VIS.hat = Math.max(VIS.hat, 0.8); }
+    while (G.visIdx < G.notes.length && G.notes[G.visIdx].t <= st) { const n = G.notes[G.visIdx++]; VIS.lead = 1; if (n.lane === 0 || n.lane === 3) VIS.bass = 1; if (n.chord) { VIS.snare = 1; if (theme.fx === 'embers') spawnBolt(now); } }
+  }
 
   // ビジュアライザー用の音イベント
   const ev = G.song.events, K = G.song.def.inst;
