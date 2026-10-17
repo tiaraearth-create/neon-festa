@@ -204,7 +204,10 @@
   };
   FES.isMuted = () => muted;
   /** スマホの振動（対応端末のみ。音と一緒に使うと手触りが良くなる） */
-  FES.vibrate = function (ms) { try { if (global.navigator && global.navigator.vibrate) global.navigator.vibrate(ms || 15); } catch (e) {} };
+  // ブラウザは最初の操作より前の vibrate をエラーにするので、1回でも触ってから
+  let interacted = false;
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => global.addEventListener(ev, () => { interacted = true; }, { capture: true, passive: true, once: true }));
+  FES.vibrate = function (ms) { if (!interacted) return; try { if (global.navigator && global.navigator.vibrate) global.navigator.vibrate(ms || 15); } catch (e) {} };
 
   /**
    * 汎用トーン。 FES.tone({freq:440, dur:0.1, type:'square', vol:0.3, slide:880, attack:0.005, delay:0})
@@ -494,6 +497,17 @@
     background: linear-gradient(90deg, #ff4d8d, #ffd36e, #5ee7ff, #b06bff, #ff4d8d); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 18px rgba(255,120,200,.8)) drop-shadow(0 4px 0 rgba(0,0,0,.6));
     animation: fesShine 1.2s linear infinite, fesFeverLbl 1.4s ease both; }
   @keyframes fesFeverLbl { 0% { opacity: 0; transform: translateX(-50%) scale(.4) } 20% { opacity: 1; transform: translateX(-50%) scale(1.15) } 35% { transform: translateX(-50%) scale(1) } 80% { opacity: 1 } 100% { opacity: 0; transform: translateX(-50%) scale(1.3) } }
+  .fes-missions { display: flex; flex-wrap: wrap; gap: 6px 10px; justify-content: center; align-items: center; margin: 8px 0 2px; font-size: 12px; font-weight: 700; color: rgba(255,255,255,.75); }
+  .fes-missions .lbl { color: #ffd36e; font-weight: 900; letter-spacing: .04em; }
+  .fes-missions .m { padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); }
+  .fes-missions .m.done { background: rgba(92,255,141,.14); border-color: rgba(92,255,141,.4); color: #b8ffd0; }
+  .fes-badges { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 4px; }
+  .fes-badge { padding: 10px 14px; border-radius: 14px; background: linear-gradient(135deg, rgba(255,211,110,.22), rgba(255,77,141,.18)); border: 1px solid rgba(255,211,110,.5); text-align: left; animation: fesPop .5s cubic-bezier(.2,1.4,.4,1) 1s both; box-shadow: 0 0 24px rgba(255,211,110,.25); }
+  .fes-badge b { display: block; font-size: 15px; color: #ffd36e; }
+  .fes-badge span { font-size: 12px; color: rgba(255,255,255,.8); }
+  .fes-badge.mission { background: linear-gradient(135deg, rgba(92,255,141,.2), rgba(94,231,255,.16)); border-color: rgba(92,255,141,.5); box-shadow: 0 0 24px rgba(92,255,141,.2); }
+  .fes-badge.mission b { color: #8dffb5; }
+  .fes-prize { margin: 10px 0 2px; padding: 10px 14px; border-radius: 14px; font-weight: 900; color: #2a2200; background: linear-gradient(90deg, #ffd36e, #ffb347); animation: fesBump 1.2s ease-in-out infinite; }
   .fes-newrec { display: inline-block; margin: 4px 0 10px; padding: 5px 16px; border-radius: 999px; font-weight: 900; font-size: 14px; letter-spacing: .15em;
     background: linear-gradient(90deg,#ff4d8d,#ffb347); box-shadow: 0 0 24px rgba(255,120,80,.6); animation: fesPop .6s .3s both; }
   .fes-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px,1fr)); gap: 8px; margin: 10px 0 14px; }
@@ -839,6 +853,26 @@
       card.appendChild(lbl); card.appendChild(row);
       if (st && st.added) setTimeout(() => { FES.sfx('stamp'); FES.vibrate(30); }, 650);
       if (st && st.complete) setTimeout(() => { FES.sfx('powerup'); FES.toast('🎉 スタンプ コンプリート！ ホームで殿堂入りを確認しよう', 4000); confetti(4000); }, 1300);
+      // ミッション・バッジ（新しく達成したものだけ大きく出す）
+      const freshM = FES.claimMissions(FES.stampCard()), freshB = FES.claimBadges(FES.stampCard());
+      const ms = FES.missionProgress(FES.stampCard());
+      if (ms.length) {
+        const doneN = ms.filter(m => m.done).length;
+        const mrow = el('div', { class: 'fes-missions' });
+        mrow.appendChild(el('span', { class: 'lbl', text: `🎯 今日のミッション ${doneN}/${ms.length}` }));
+        ms.forEach(m => mrow.appendChild(el('span', { class: 'm' + (m.done ? ' done' : ''), text: (m.done ? '✔ ' : '○ ') + m.text + (m.goal > 1 && !m.done ? `（${m.cur}/${m.goal}）` : '') })));
+        card.appendChild(mrow);
+      }
+      if (freshM.length || freshB.length) {
+        const box = el('div', { class: 'fes-badges' });
+        freshM.forEach(m => box.appendChild(el('div', { class: 'fes-badge mission' }, [el('b', { text: '🎯 ミッション達成！' }), el('span', { text: m.text })])));
+        freshB.forEach(b => box.appendChild(el('div', { class: 'fes-badge' }, [el('b', { text: `${b.icon} バッジ獲得「${b.name}」` }), el('span', { text: b.desc })])));
+        card.appendChild(box);
+        setTimeout(() => { FES.sfx('powerup'); FES.vibrate([20, 30, 40]); }, 1000);
+      }
+      if (FES.prizeEligible(FES.stampCard())) {
+        card.appendChild(el('div', { class: 'fes-prize', text: '🎁 景品ゲット！ ホーム画面で QRコード を見せてね' }));
+      }
     }
 
     const rankBox = el('div');
@@ -980,6 +1014,82 @@
     LS.set(STAMP_KEY, c);
     return { card: c, added: true, count, total, complete };
   };
+  /* ------------------------------------------------------------ バッジ（カードごとの実績） */
+  const BADGES = [
+    { id: 'first', icon: '🎮', name: 'はじめの一歩', desc: 'ゲームを1つ遊んだ', check: (c, n) => n >= 1 },
+    { id: 'half', icon: '⭐', name: '半分クリア', desc: '半分のゲームにスタンプ', check: (c, n, total) => total > 0 && n >= Math.ceil(total / 2) },
+    { id: 'complete', icon: '🏅', name: '殿堂入り', desc: '全部のゲームを遊んだ', check: c => !!c.done },
+    { id: 'rankS', icon: '💎', name: 'Sランク', desc: 'どれかのゲームで ランク S', check: c => Object.values(c.grades || {}).includes('S') },
+    { id: 'rankA3', icon: '🔥', name: 'A以上 ×3', desc: '3つのゲームで ランク A 以上', check: c => Object.values(c.grades || {}).filter(g => g === 'S' || g === 'A').length >= 3 },
+    { id: 'allB', icon: '🌈', name: 'オールB以上', desc: '全部のゲームで ランク B 以上', check: c => !!c.done && FES.games().length > 0 && FES.games().every(g => 'SAB'.includes((c.grades || {})[g.id] || 'x')) },
+    { id: 'versus', icon: '⚔️', name: '対戦デビュー', desc: '対戦ゲーム（ホッケー / デュエル）を遊んだ', check: c => !!(c.stamps.duel || c.stamps.hockey) },
+    { id: 'speed', icon: '⚡', name: 'スピードラン', desc: '20分以内に殿堂入り', check: c => !!c.done && (c.done - c.started) <= 20 * 60000 },
+    { id: 'mission', icon: '🎯', name: 'ミッション制覇', desc: '今日のミッションを全部クリア', check: c => FES.missionsDone(c) },
+  ];
+  FES.badgeDefs = () => BADGES;
+  FES.earnedBadges = function (c) {
+    c = c || FES.stampCard(); if (!c) return [];
+    const total = FES.stampTotal(), n = Object.keys(c.stamps || {}).length;
+    return BADGES.filter(b => { try { return b.check(c, n, total); } catch (e) { return false; } });
+  };
+  /** 新しく獲得したバッジを返し、カードに記録する（2回目以降は返さない） */
+  FES.claimBadges = function (c) {
+    c = c || FES.stampCard(); if (!c) return [];
+    c.badges = c.badges || {};
+    const fresh = FES.earnedBadges(c).filter(b => !c.badges[b.id]);
+    fresh.forEach(b => { c.badges[b.id] = Date.now(); });
+    if (fresh.length) LS.set(STAMP_KEY, c);
+    return fresh;
+  };
+
+  /* ------------------------------------------------------------ 今日のミッション（日付で決まる3つ。どのPCでも同じ） */
+  const gradeAtLeast = (c, id, g) => { const have = (c.grades || {})[id]; return !!have && FES.gradeIndex(have) <= FES.gradeIndex(g); };
+  function missionPool() {
+    const games = FES.games();
+    const play = [
+      { id: 'play3', text: 'ゲームを 3 つ遊ぶ', goal: 3, prog: c => Object.keys(c.stamps || {}).length },
+      { id: 'play5', text: 'ゲームを 5 つ遊ぶ', goal: 5, prog: c => Object.keys(c.stamps || {}).length },
+      { id: 'versus', text: '対戦ゲーム（🏒 or ⚔️）を遊ぶ', goal: 1, prog: c => (c.stamps && (c.stamps.duel || c.stamps.hockey)) ? 1 : 0 },
+    ];
+    const rank = [
+      { id: 'anyA', text: 'どれかのゲームで ランク A 以上', goal: 1, prog: c => Object.values(c.grades || {}).filter(g => g === 'S' || g === 'A').length },
+      { id: 'twoB', text: '2 つのゲームで ランク B 以上', goal: 2, prog: c => Object.values(c.grades || {}).filter(g => 'SAB'.includes(g)).length },
+      { id: 'anyS', text: 'どれかのゲームで ランク S', goal: 1, prog: c => Object.values(c.grades || {}).filter(g => g === 'S').length },
+    ];
+    const per = games.filter(g => g.id !== 'duel').map(g => ({ id: 'b_' + g.id, text: `${g.icon || ''} ${g.title} で ランク B 以上`, goal: 1, prog: c => gradeAtLeast(c, g.id, 'B') ? 1 : 0 }));
+    return { play, rank, per };
+  }
+  FES.missionSeed = () => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
+  FES.missions = function () {
+    const pool = missionPool(); let seed = FES.missionSeed();
+    const pick = arr => { if (!arr.length) return null; seed = (seed * 1103515245 + 12345) & 0x7fffffff; return arr[seed % arr.length]; };
+    return [pick(pool.play), pick(pool.rank), pick(pool.per)].filter(Boolean);
+  };
+  FES.missionProgress = function (c) {
+    c = c || FES.stampCard() || { stamps: {}, grades: {} };
+    return FES.missions().map(m => { let cur = 0; try { cur = Math.min(m.goal, m.prog(c) || 0); } catch (e) {} return Object.assign({}, m, { cur, done: cur >= m.goal }); });
+  };
+  FES.missionsDone = c => { const ms = FES.missionProgress(c); return ms.length > 0 && ms.every(m => m.done); };
+  /** 新しく達成したミッションを返し、カードに記録する */
+  FES.claimMissions = function (c) {
+    c = c || FES.stampCard(); if (!c) return [];
+    c.missions = c.missions || {};
+    const fresh = FES.missionProgress(c).filter(m => m.done && !c.missions[m.id]);
+    fresh.forEach(m => { c.missions[m.id] = Date.now(); });
+    if (fresh.length) LS.set(STAMP_KEY, c);
+    return fresh;
+  };
+
+  /* ------------------------------------------------------------ 景品（QRコードの行き先。スタッフがホームで設定） */
+  const PRIZE_KEY = 'fes:prize';
+  FES.prize = () => LS.get(PRIZE_KEY, null);   // { url, cond: 'complete'|'mission'|'any', label }
+  FES.setPrize = o => { if (!o || !o.url) { LS.set(PRIZE_KEY, null); return null; } const p = { url: String(o.url).trim(), cond: o.cond || 'complete', label: (o.label || '').trim() }; LS.set(PRIZE_KEY, p); return p; };
+  FES.prizeEligible = function (c) {
+    const p = FES.prize(); c = c || FES.stampCard(); if (!p || !c) return false;
+    const n = Object.keys(c.stamps || {}).length;
+    return p.cond === 'any' ? n >= 1 : p.cond === 'mission' ? FES.missionsDone(c) : !!c.done;
+  };
+
   FES.formatDuration = function (ms) {
     const s = Math.max(0, Math.round(ms / 1000));
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;

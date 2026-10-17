@@ -164,6 +164,22 @@
   body.kiosk .hint { display: none; }
   #staffBtn { display: none; } body.kiosk #staffBtn { display: inline-block; opacity: .5; }
   .stamp.done { border-color: var(--gold); box-shadow: 0 0 40px rgba(255,211,110,.35); }
+  .extras { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  @media (max-width: 760px) { .extras { grid-template-columns: 1fr; } }
+  .mission-box, .badge-box { background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 10px 14px; }
+  .mission-box .lbl, .badge-box .lbl { font-size: 11px; letter-spacing: .2em; color: rgba(255,255,255,.55); font-weight: 800; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .mission-box .lbl b, .badge-box .lbl b { color: var(--gold); letter-spacing: 0; }
+  .mission { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 4px 0; color: rgba(255,255,255,.85); }
+  .mission .chk { width: 20px; height: 20px; border-radius: 6px; border: 2px solid rgba(255,255,255,.3); display: grid; place-items: center; font-size: 13px; flex: none; }
+  .mission.done { color: #b8ffd0; } .mission.done .chk { background: #5cff8d; border-color: #5cff8d; color: #053; }
+  .mission .prog { margin-left: auto; font-size: 11px; color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+  .badge { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); filter: grayscale(1); opacity: .35; cursor: help; transition: .2s; }
+  .badge.on { filter: none; opacity: 1; background: linear-gradient(135deg, rgba(255,211,110,.25), rgba(255,77,141,.2)); border-color: rgba(255,211,110,.6); box-shadow: 0 0 14px rgba(255,211,110,.3); }
+  .badge.pop { animation: pulseTag .8s ease-out 3; }
+  .prize-cta { margin-top: 8px; width: 100%; padding: 10px; border-radius: 12px; border: 0; font-weight: 900; font-size: 14px; cursor: pointer; color: #2a2200; background: linear-gradient(90deg, var(--gold), #ffb347); box-shadow: 0 0 18px rgba(255,211,110,.45); animation: pulseTag 1.6s ease-in-out infinite; font-family: inherit; }
+  .qrwrap { display: inline-block; padding: 12px; background: #fff; border-radius: 14px; }
+  .qrwrap svg { display: block; width: 220px; height: 220px; }
   .card .stamped { position: absolute; top: 12px; left: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--gold); color: #2a2200; font-size: 14px; font-weight: 900; display: grid; place-items: center; z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,.5); transform: rotate(-12deg); }
   .hall { list-style: none; margin: 0 0 16px; padding: 0; font-variant-numeric: tabular-nums; }
   .hall li { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 10px; font-size: 15px; }
@@ -245,6 +261,10 @@
     </div>
     <div class="stamp-row" id="stampRow"></div>
     <p class="stamp-hint" id="stampHint">ゲームを1回遊ぶごとにスタンプが1つ。全部集めると殿堂入り！</p>
+    <div class="extras">
+      <div class="mission-box" id="missionBox"></div>
+      <div class="badge-box" id="badgeBox"></div>
+    </div>
   </section>
 
   <div class="grid" id="grid"></div>
@@ -258,6 +278,7 @@
       <button class="fbtn" id="fullBtn">⛶ 全画面</button>
       <button class="fbtn" id="attractBtn">📺 客寄せ画面: ON</button>
       <a class="fbtn" id="feedbackBtn" href="https://game-feedback.brainrot-rumble.workers.dev/?game=bunkasai-game-center&amp;lang=ja" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="不具合や「こうしてほしい」を運営に送れます">🐛 バグ報告・要望</a>
+      <button class="fbtn" id="prizeBtn" title="景品のQRコードの行き先と、もらえる条件を決める">🎁 景品の設定</button>
       <button class="fbtn danger" id="resetBtn">🗑 ランキング全消去（スタッフ用）</button>
     </span>
   </footer>
@@ -281,10 +302,22 @@
     <div class="complete-big">コンプリート！</div>
     <div style="font-size:18px;font-weight:800" id="cName">ななし</div>
     <div style="color:var(--muted);font-size:14px;margin:6px 0 18px" id="cTime"></div>
+    <div id="cPrize"></div>
     <div class="mact">
       <button class="act" id="cHall">🏅 殿堂を見る</button>
       <button class="act alt" id="cClose">とじる</button>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="prizeM">
+  <div class="mbox" style="text-align:center">
+    <h3>PRIZE</h3>
+    <div class="complete-big" style="font-size:30px">🎁 景品ゲット！</div>
+    <div id="prizeLabel" style="font-size:15px;font-weight:800;margin:4px 0 10px"></div>
+    <div class="qrwrap" id="prizeQR"></div>
+    <div style="color:var(--muted);font-size:13px;margin:10px 0 14px">スマホのカメラで QRコード を読んでね。<br>読み取れないときはスタッフに声をかけてください。</div>
+    <div class="mact"><button class="act" id="prizeClose">とじる</button></div>
   </div>
 </div>
 
@@ -332,6 +365,7 @@
 
 <script src="common.js"></script>
 <script src="preview.js"></script>
+<script src="qrcode.js"></script>
 <script>
 'use strict';
 
@@ -487,9 +521,59 @@ function renderStamps() {
   if (card.done && !stampDoneSeen && stampSeen.size && stampSeen.size < GAMES.length) celebrate(card);
   stampDoneSeen = !!card.done;
   stampSeen = new Set(Object.keys(card.stamps));
+  renderExtras(card);
 }
+/* ============================== 今日のミッション・バッジ・景品 ============================== */
+function renderExtras(card) {
+  const ms = FES.missionProgress(card), doneN = ms.filter(m => m.done).length;
+  const mb = document.getElementById('missionBox');
+  mb.innerHTML = `<div class="lbl"><span>🎯 今日のミッション</span><b>${doneN} / ${ms.length}</b></div>` +
+    ms.map(m => `<div class="mission${m.done ? ' done' : ''}"><span class="chk">${m.done ? '✔' : ''}</span><span>${esc(m.text)}</span>${m.goal > 1 ? `<span class="prog">${m.cur}/${m.goal}</span>` : ''}</div>`).join('') +
+    (doneN === ms.length && ms.length ? '<div class="mission done" style="justify-content:center;color:var(--gold)">🎉 ぜんぶ達成！</div>' : '');
+  const fresh = FES.claimBadges(card);
+  const have = card.badges || {};
+  const bb = document.getElementById('badgeBox');
+  bb.innerHTML = `<div class="lbl"><span>🎖 バッジ</span><b>${Object.keys(have).length} / ${FES.badgeDefs().length}</b></div><div class="badges">` +
+    FES.badgeDefs().map(b => `<div class="badge${have[b.id] ? ' on' : ''}${fresh.some(f => f.id === b.id) ? ' pop' : ''}" title="${esc(b.name)}：${esc(b.desc)}">${b.icon}</div>`).join('') + '</div>';
+  if (fresh.length && stampSeen.size) { FES.sfx('powerup'); FES.toast(`🎖 バッジ獲得！ ${fresh.map(b => b.icon + ' ' + b.name).join('　')}`, 3000); }
+  // 景品
+  const old = bb.querySelector('.prize-cta'); if (old) old.remove();
+  if (FES.prizeEligible(card)) {
+    const btn = document.createElement('button'); btn.className = 'prize-cta'; btn.textContent = '🎁 景品のQRコードを見る';
+    btn.onclick = () => openPrize(card); bb.appendChild(btn);
+    if (!card.prizeShown) { card.prizeShown = true; try { localStorage.setItem('fes:stamp:card', JSON.stringify(card)); } catch (e) {} setTimeout(() => openPrize(card), 900); }
+  }
+}
+const prizeM = document.getElementById('prizeM');
+function drawQR(box, url) {
+  box.innerHTML = '';
+  try { const qr = qrcode(0, 'M'); qr.addData(url); qr.make(); box.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 0, scalable: true }); }
+  catch (e) { box.textContent = url; }
+}
+function openPrize(card) {
+  const p = FES.prize(); if (!p) return;
+  document.getElementById('prizeLabel').textContent = p.label || '';
+  drawQR(document.getElementById('prizeQR'), p.url);
+  prizeM.classList.add('open'); FES.sfx('fanfare'); if (window.__fesBurst) window.__fesBurst(120);
+}
+document.getElementById('prizeClose').onclick = () => prizeM.classList.remove('open');
+prizeM.addEventListener('click', e => { if (e.target === prizeM) prizeM.classList.remove('open'); });
+document.getElementById('prizeBtn').onclick = () => {
+  const cur = FES.prize() || { url: '', cond: 'complete', label: '' };
+  const url = prompt('景品のQRコードで開く URL（空にすると景品なし）', cur.url); if (url === null) return;
+  if (!url.trim()) { FES.setPrize(null); FES.toast('景品をなしにしました'); render(); return; }
+  const cond = prompt('もらえる条件を番号で：\n1 = 全部のゲームを遊んだ（殿堂入り）\n2 = 今日のミッションを全部クリア\n3 = 1回でも遊んだ人みんな', cur.cond === 'mission' ? '2' : cur.cond === 'any' ? '3' : '1');
+  if (cond === null) return;
+  const label = prompt('QRの上に出す ひとこと（例: 自作ゲーム「○○」をプレゼント！）', cur.label || '');
+  if (label === null) return;
+  FES.setPrize({ url, cond: cond.trim() === '2' ? 'mission' : cond.trim() === '3' ? 'any' : 'complete', label });
+  FES.toast('景品を設定しました'); render();
+};
 function celebrate(card) {
   FES.sfx('fanfare');
+  const cp = document.getElementById('cPrize'); cp.innerHTML = '';
+  const p = FES.prize();
+  if (p && FES.prizeEligible(card)) { cp.innerHTML = `<div style="font-weight:900;color:var(--gold);margin-bottom:6px">🎁 景品ゲット！ ${esc(p.label || '')}</div><div class="qrwrap" id="cQR"></div><div style="color:var(--muted);font-size:12px;margin-top:6px">スマホのカメラで読んでね</div>`; drawQR(document.getElementById('cQR'), p.url); }
   document.getElementById('cName').textContent = (card.name || 'ななし') + ' さん';
   document.getElementById('cTime').textContent = `${GAMES.length} 個のスタンプを ${FES.formatDuration(card.done - card.started)} で集めました`;
   document.getElementById('complete').classList.add('open');
