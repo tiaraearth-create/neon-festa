@@ -325,6 +325,7 @@ const GAMES = [
 document.getElementById('gameCount').textContent = GAMES.length;
 document.getElementById('gameCount2').textContent = GAMES.length;
 FES.setStampTotal(GAMES.length);
+FES.setGames(GAMES);   // リザルト画面の「スタンプの進み具合」「つぎのおすすめ」用
 
 // ランキングIDの一覧（難易度別ランキングを持つゲームは ids を持つ）
 function gameIds(g) { return g.ids || [{ id: g.id, label: '' }]; }

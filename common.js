@@ -1,7 +1,9 @@
 /* =====================================================================
    FES  —  文化祭ゲーム共通ライブラリ
    ---------------------------------------------------------------------
-   全ゲームで共通に使う「効果音 / ランキング / リザルト画面 / ホームボタン」。
+   全ゲームで共通に使う「効果音 / ランキング / リザルト画面 / ホームボタン /
+   スタンプラリー / 演出ヘルパー（揺れ・ヒットストップ・パーティクル）/
+   カウントダウン / ポーズ画面 / エラー時の自動復帰」。
    外部依存なし。オフラインでも動作する。
 
    使い方（最小）:
@@ -9,6 +11,11 @@
      FES.sfx('hit');                         // 効果音
      FES.showResult({ score: 12345, stats:[{label:'MAX COMBO', value:120}] },
                     () => restartGame());    // リザルト + ランキング登録
+
+   演出ヘルパー（任意）:
+     const fx = FES.fx();                    // ゲームごとに1つ作る
+     fx.shake(1); fx.flash('#fff', .5); fx.hitStop(.06); fx.burst(x, y, { color:'#ffd36e' }); fx.text(x, y, '+100');
+     // ループ内:  const d = fx.update(dt);  fx.begin(ctx);  …描画…  fx.draw(ctx);  fx.end(ctx);  fx.drawFlash(ctx, W, H);
    ===================================================================== */
 (function (global) {
   'use strict';
@@ -107,10 +114,18 @@
   };
   FES.lastName = () => LS.get('fes:lastName', '');
 
+  /* ------------------------------------------------------------ ゲーム一覧（ホームが登録する） */
+  // リザルト画面の「スタンプの進み具合」「つぎのおすすめ」に使う。[{ id, title, icon, accent }]
+  const GAMES_KEY = 'fes:games';
+  FES.setGames = list => LS.set(GAMES_KEY, (list || []).map(g => ({ id: g.id, title: g.title, icon: g.icon, accent: g.accent })));
+  FES.games = () => LS.get(GAMES_KEY, []);
+
   /* ------------------------------------------------------------ 名前（色＋どうぶつ） */
   // 名前は今のスタンプカードに結びつける。「次の人」で新しいカードになると名前もリセットされる。
   FES.NAME_COLORS = ['あか', 'あお', 'きいろ', 'みどり', 'ピンク', 'むらさき', 'オレンジ', 'しろ', 'くろ', 'きん'];
   FES.NAME_ANIMALS = ['ネコ', 'イヌ', 'ウサギ', 'クマ', 'パンダ', 'キツネ', 'ペンギン', 'ライオン', 'イルカ', 'ドラゴン'];
+  const COLOR_HEX = { 'あか': '#ff5e5e', 'あお': '#4f8cff', 'きいろ': '#ffd36e', 'みどり': '#5cff8d', 'ピンク': '#ff7ab8', 'むらさき': '#b06bff', 'オレンジ': '#ff9f43', 'しろ': '#f4f4ff', 'くろ': '#5a5a7a', 'きん': '#f5c242' };
+  const ANIMAL_EMOJI = { 'ネコ': '🐱', 'イヌ': '🐶', 'ウサギ': '🐰', 'クマ': '🐻', 'パンダ': '🐼', 'キツネ': '🦊', 'ペンギン': '🐧', 'ライオン': '🦁', 'イルカ': '🐬', 'ドラゴン': '🐲' };
   FES.randomName = () => FES.pick(FES.NAME_COLORS) + FES.pick(FES.NAME_ANIMALS);
   FES.currentName = function () { const c = FES.stampCard(); return (c && c.name) || ''; };
   FES.setCurrentName = function (name) { FES.renameStampCard(name); LS.set('fes:lastName', name); };
@@ -121,18 +136,27 @@
     let animal = color ? initial.slice(color.length) : null;
     if (!color) { const r = FES.randomName(); color = FES.NAME_COLORS.find(c => r.startsWith(c)); animal = r.slice(color.length); }
     const show = el('div', { class: 'fes-pick-name' });
-    const row = (list, get, set) => {
+    const row = (list, get, set, deco) => {
       const r = el('div', { class: 'fes-pick-row' });
-      list.forEach(v => r.appendChild(el('button', { class: 'fes-chip', type: 'button', text: v, onclick: () => { set(v); FES.sfx('select'); sync(); } })));
-      r.sync = () => r.querySelectorAll('.fes-chip').forEach(b => b.classList.toggle('on', b.textContent === get()));
+      list.forEach(v => {
+        const b = el('button', { class: 'fes-chip', type: 'button', onclick: () => { set(v); FES.sfx('select'); sync(); } });
+        deco(b, v);
+        r.appendChild(b);
+      });
+      r.sync = () => r.querySelectorAll('.fes-chip').forEach(b => b.classList.toggle('on', b.dataset.v === get()));
       return r;
     };
-    const cRow = row(FES.NAME_COLORS, () => color, v => color = v);
-    const aRow = row(FES.NAME_ANIMALS, () => animal, v => animal = v);
+    const cRow = row(FES.NAME_COLORS, () => color, v => color = v, (b, v) => { b.dataset.v = v; b.appendChild(el('i', { class: 'fes-dot', style: `background:${COLOR_HEX[v]}` })); b.appendChild(document.createTextNode(v)); });
+    const aRow = row(FES.NAME_ANIMALS, () => animal, v => animal = v, (b, v) => { b.dataset.v = v; b.textContent = `${ANIMAL_EMOJI[v] || ''} ${v}`; });
     const omakase = el('button', { class: 'fes-chip omakase', type: 'button', text: '🎲 おまかせ', onclick: () => {
       const r = FES.randomName(); color = FES.NAME_COLORS.find(c => r.startsWith(c)); animal = r.slice(color.length); FES.sfx('select'); sync();
+      show.classList.remove('bump'); void show.offsetWidth; show.classList.add('bump');
     } });
-    function sync() { show.textContent = color + animal; cRow.sync(); aRow.sync(); }
+    function sync() {
+      show.textContent = `${ANIMAL_EMOJI[animal] || ''} ${color}${animal}`;
+      show.style.color = COLOR_HEX[color] || '#ffd36e';
+      cRow.sync(); aRow.sync();
+    }
     const wrap = el('div', { class: 'fes-pick' }, [
       el('div', { class: 'fes-pick-lbl', text: 'なまえを えらんでね' }), show,
       el('div', { class: 'fes-pick-lbl', text: 'いろ' }), cRow,
@@ -150,30 +174,40 @@
   let actx = null;
   let master = null;
   let muted = LS.get('fes:muted', false);
+  const VOL = 0.5;
 
   function ensureAudio() {
     if (!actx) {
       try {
         actx = new (global.AudioContext || global.webkitAudioContext)();
+        // master → コンプレッサー → 出力。音が重なっても割れないようにする
         master = actx.createGain();
-        master.gain.value = muted ? 0 : 0.5;
-        master.connect(actx.destination);
+        master.gain.value = muted ? 0 : VOL;
+        let out = actx.destination;
+        try {
+          const comp = actx.createDynamicsCompressor();
+          comp.threshold.value = -14; comp.knee.value = 20; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.2;
+          comp.connect(actx.destination); out = comp;
+        } catch (e) { /* 古いブラウザ: コンプレッサーなしで鳴らす */ }
+        master.connect(out);
       } catch (e) { return null; }
     }
-    if (actx.state === 'suspended') actx.resume();
+    if (actx.state === 'suspended') actx.resume().catch(() => {});
     return actx;
   }
   FES.audioContext = () => ensureAudio();
   FES.unlockAudio = ensureAudio;
   FES.setMuted = function (m) {
     muted = !!m; LS.set('fes:muted', muted);
-    if (master) master.gain.value = muted ? 0 : 0.5;
+    if (master) master.gain.value = muted ? 0 : VOL;
     const b = document.getElementById('fes-mute'); if (b) b.textContent = muted ? '🔇' : '🔊';
   };
   FES.isMuted = () => muted;
+  /** スマホの振動（対応端末のみ。音と一緒に使うと手触りが良くなる） */
+  FES.vibrate = function (ms) { try { if (global.navigator && global.navigator.vibrate) global.navigator.vibrate(ms || 15); } catch (e) {} };
 
   /**
-   * 汎用トーン。 FES.tone({freq:440, dur:0.1, type:'square', vol:0.3, slide:880, attack:0.005, decay:0.1})
+   * 汎用トーン。 FES.tone({freq:440, dur:0.1, type:'square', vol:0.3, slide:880, attack:0.005, delay:0})
    */
   FES.tone = function (o) {
     const ac = ensureAudio(); if (!ac || muted) return;
@@ -186,21 +220,24 @@
     if (o.slide) osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.slide), t0 + (o.dur || 0.1));
     const vol = o.vol == null ? 0.25 : o.vol;
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(vol, t0 + (o.attack || 0.005));
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t0 + (o.attack || 0.005));
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + (o.dur || 0.1));
     osc.connect(g); g.connect(master);
     osc.start(t0); osc.stop(t0 + (o.dur || 0.1) + 0.05);
   };
   /** ノイズ（爆発・ヒット用） */
+  let noiseBuf = null;
   FES.noise = function (o) {
     const ac = ensureAudio(); if (!ac || muted) return;
     o = o || {};
     const dur = o.dur || 0.2;
     const t0 = ac.currentTime + (o.delay || 0);
-    const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    const src = ac.createBufferSource(); src.buffer = buf;
+    if (!noiseBuf) {   // 1秒ぶんのノイズを1回だけ作って使い回す（毎回作ると重い）
+      noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
     const f = ac.createBiquadFilter(); f.type = o.filter || 'lowpass';
     f.frequency.setValueAtTime(o.freq || 1200, t0);
     if (o.slide) f.frequency.exponentialRampToValueAtTime(Math.max(40, o.slide), t0 + dur);
@@ -211,30 +248,148 @@
     src.start(t0); src.stop(t0 + dur + 0.05);
   };
 
-  /** プリセット効果音 */
+  /** プリセット効果音（名前は今までと同じ。中身を少し豪華に） */
   const SFX = {
     select:   () => FES.tone({ freq: 880, dur: 0.06, type: 'square', vol: 0.15 }),
-    start:    () => { [523, 659, 784, 1047].forEach((f, i) => FES.tone({ freq: f, dur: 0.12, delay: i * 0.08, type: 'square', vol: 0.2 })); },
-    hit:      () => FES.tone({ freq: 660, slide: 990, dur: 0.07, type: 'triangle', vol: 0.3 }),
-    perfect:  () => { FES.tone({ freq: 1320, dur: 0.08, type: 'sine', vol: 0.3 }); FES.tone({ freq: 1760, dur: 0.12, delay: 0.04, type: 'sine', vol: 0.2 }); },
-    miss:     () => FES.tone({ freq: 220, slide: 110, dur: 0.18, type: 'sawtooth', vol: 0.2 }),
+    click:    () => { FES.tone({ freq: 1200, dur: 0.03, type: 'square', vol: 0.1 }); FES.noise({ dur: 0.03, freq: 4000, vol: 0.06, filter: 'highpass' }); },
+    start:    () => { [523, 659, 784, 1047].forEach((f, i) => FES.tone({ freq: f, dur: 0.12, delay: i * 0.08, type: 'square', vol: 0.2 })); FES.noise({ dur: 0.25, freq: 3000, slide: 300, vol: 0.08, delay: 0.3 }); },
+    hit:      () => { FES.tone({ freq: 660, slide: 990, dur: 0.07, type: 'triangle', vol: 0.3 }); FES.noise({ dur: 0.05, freq: 2500, slide: 600, vol: 0.12 }); },
+    perfect:  () => { FES.tone({ freq: 1320, dur: 0.08, type: 'sine', vol: 0.3 }); FES.tone({ freq: 1760, dur: 0.12, delay: 0.04, type: 'sine', vol: 0.2 }); FES.tone({ freq: 2640, dur: 0.1, delay: 0.08, type: 'sine', vol: 0.1 }); },
+    miss:     () => { FES.tone({ freq: 220, slide: 110, dur: 0.18, type: 'sawtooth', vol: 0.2 }); FES.noise({ dur: 0.12, freq: 500, slide: 100, vol: 0.1 }); },
     coin:     () => { FES.tone({ freq: 988, dur: 0.06, type: 'square', vol: 0.2 }); FES.tone({ freq: 1319, dur: 0.18, delay: 0.06, type: 'square', vol: 0.2 }); },
     jump:     () => FES.tone({ freq: 300, slide: 700, dur: 0.15, type: 'square', vol: 0.2 }),
-    explode:  () => { FES.noise({ dur: 0.4, freq: 900, slide: 80, vol: 0.4 }); FES.tone({ freq: 90, slide: 30, dur: 0.35, type: 'sine', vol: 0.4 }); },
+    explode:  () => { FES.noise({ dur: 0.45, freq: 900, slide: 60, vol: 0.45 }); FES.tone({ freq: 90, slide: 30, dur: 0.4, type: 'sine', vol: 0.45 }); FES.noise({ dur: 0.08, freq: 4000, vol: 0.2, filter: 'highpass' }); },
     shoot:    () => FES.tone({ freq: 1200, slide: 300, dur: 0.08, type: 'sawtooth', vol: 0.12 }),
-    powerup:  () => { [440, 554, 659, 880, 1108].forEach((f, i) => FES.tone({ freq: f, dur: 0.1, delay: i * 0.05, type: 'triangle', vol: 0.22 })); },
+    powerup:  () => { [440, 554, 659, 880, 1108].forEach((f, i) => FES.tone({ freq: f, dur: 0.1, delay: i * 0.05, type: 'triangle', vol: 0.22 })); FES.tone({ freq: 1760, dur: 0.3, delay: 0.25, type: 'sine', vol: 0.12 }); },
     combo:    () => { FES.tone({ freq: 1047, dur: 0.05, type: 'square', vol: 0.15 }); FES.tone({ freq: 1568, dur: 0.1, delay: 0.05, type: 'square', vol: 0.15 }); },
-    bounce:   () => FES.tone({ freq: 500, slide: 350, dur: 0.06, type: 'triangle', vol: 0.25 }),
-    gameover: () => { [523, 494, 440, 392, 349].forEach((f, i) => FES.tone({ freq: f, dur: 0.25, delay: i * 0.18, type: 'triangle', vol: 0.25 })); },
-    fanfare:  () => { [523, 523, 523, 659, 784, 1047].forEach((f, i) => FES.tone({ freq: f, dur: i === 5 ? 0.6 : 0.14, delay: [0, .15, .3, .45, .6, .8][i], type: 'square', vol: 0.22 })); },
+    bounce:   () => { FES.tone({ freq: 500, slide: 350, dur: 0.06, type: 'triangle', vol: 0.25 }); FES.noise({ dur: 0.03, freq: 1500, vol: 0.08 }); },
+    gameover: () => { [523, 494, 440, 392, 349].forEach((f, i) => FES.tone({ freq: f, dur: 0.25, delay: i * 0.18, type: 'triangle', vol: 0.25 })); FES.tone({ freq: 175, dur: 0.6, delay: 0.72, type: 'sine', vol: 0.2 }); },
+    fanfare:  () => { [523, 523, 523, 659, 784, 1047].forEach((f, i) => { FES.tone({ freq: f, dur: i === 5 ? 0.6 : 0.14, delay: [0, .15, .3, .45, .6, .8][i], type: 'square', vol: 0.22 }); FES.tone({ freq: f / 2, dur: i === 5 ? 0.6 : 0.14, delay: [0, .15, .3, .45, .6, .8][i], type: 'triangle', vol: 0.12 }); }); FES.noise({ dur: 0.5, freq: 5000, slide: 500, vol: 0.1, delay: 0.8, filter: 'highpass' }); },
     tick:     () => FES.tone({ freq: 1500, dur: 0.03, type: 'square', vol: 0.08 }),
     countdown:() => FES.tone({ freq: 660, dur: 0.15, type: 'square', vol: 0.25 }),
-    go:       () => FES.tone({ freq: 1320, dur: 0.4, type: 'square', vol: 0.3 }),
+    go:       () => { FES.tone({ freq: 1320, dur: 0.4, type: 'square', vol: 0.3 }); FES.tone({ freq: 660, dur: 0.4, type: 'triangle', vol: 0.15 }); FES.noise({ dur: 0.3, freq: 3000, slide: 400, vol: 0.1 }); },
     wrong:    () => { FES.tone({ freq: 200, dur: 0.15, type: 'square', vol: 0.25 }); FES.tone({ freq: 160, dur: 0.25, delay: 0.15, type: 'square', vol: 0.25 }); },
     correct:  () => { FES.tone({ freq: 1047, dur: 0.1, type: 'sine', vol: 0.3 }); FES.tone({ freq: 1568, dur: 0.25, delay: 0.1, type: 'sine', vol: 0.3 }); },
+    stamp:    () => { FES.noise({ dur: 0.12, freq: 600, slide: 80, vol: 0.4 }); FES.tone({ freq: 160, slide: 60, dur: 0.15, type: 'sine', vol: 0.4 }); FES.tone({ freq: 1568, dur: 0.12, delay: 0.1, type: 'sine', vol: 0.15 }); },
+    rankin:   () => { [784, 988, 1175, 1568].forEach((f, i) => FES.tone({ freq: f, dur: 0.14, delay: i * 0.07, type: 'square', vol: 0.18 })); FES.tone({ freq: 2093, dur: 0.5, delay: 0.3, type: 'sine', vol: 0.15 }); },
+    whoosh:   () => FES.noise({ dur: 0.25, freq: 300, slide: 3000, vol: 0.15, filter: 'bandpass' }),
+    levelup:  () => { [523, 659, 784, 1047, 1319].forEach((f, i) => FES.tone({ freq: f, dur: 0.12, delay: i * 0.06, type: 'triangle', vol: 0.2 })); },
   };
   FES.sfx = function (name) { const f = SFX[name]; if (f) f(); };
   FES.sfxNames = Object.keys(SFX);
+
+  /* ------------------------------------------------------------ 演出ヘルパー（Canvas 用） */
+  /**
+   * fx = FES.fx()
+   *   fx.shake(power=1, dur=0.3)      画面揺れ
+   *   fx.flash(color='#fff', a=0.5, dur=0.12)  画面フラッシュ
+   *   fx.hitStop(sec=0.06)           一瞬止める（update が 0 を返す）
+   *   fx.burst(x, y, { color, n, speed, life, size, gravity, shape:'circle'|'rect'|'spark'|'star' })
+   *   fx.ring(x, y, { color, r, life })   広がる輪
+   *   fx.text(x, y, '+100', { color, size, life, vy })   浮かぶ文字
+   *   dt2 = fx.update(dt)             毎フレーム最初に。ヒットストップ中は 0
+   *   fx.begin(ctx) / fx.end(ctx)     揺れぶん translate する（間に描画）
+   *   fx.draw(ctx)                    パーティクルと文字を描く（begin〜end の間で）
+   *   fx.drawFlash(ctx, W, H)         フラッシュを描く（end のあと）
+   *   fx.clear()                      全部消す（リトライ時）
+   */
+  FES.fx = function () {
+    const s = { shake: 0, shakeDur: 0.3, sx: 0, sy: 0, flashA: 0, flashColor: '#fff', flashDur: 0.12, flashT: 0, stop: 0, parts: [], texts: [], rings: [], t: 0 };
+    const fx = {
+      shake(power, dur) { s.shake = Math.max(s.shake, power == null ? 1 : power); s.shakeDur = dur || 0.3; },
+      flash(color, a, dur) { s.flashColor = color || '#fff'; s.flashA = a == null ? 0.5 : a; s.flashDur = dur || 0.12; s.flashT = s.flashDur; },
+      hitStop(sec) { s.stop = Math.max(s.stop, sec == null ? 0.06 : sec); },
+      burst(x, y, o) {
+        o = o || {};
+        const n = o.n || 18, speed = o.speed || 220, life = o.life || 0.6, size = o.size || 5, g = o.gravity == null ? 300 : o.gravity;
+        const colors = Array.isArray(o.color) ? o.color : [o.color || '#ffd36e'];
+        for (let i = 0; i < n; i++) {
+          const a = (o.angle != null ? o.angle + (Math.random() - .5) * (o.spread == null ? Math.PI * 2 : o.spread) : Math.random() * Math.PI * 2);
+          const sp = speed * (0.35 + Math.random() * 0.85);
+          s.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: life * (0.6 + Math.random() * 0.6), max: life, size: size * (0.6 + Math.random() * 0.8),
+            color: colors[(Math.random() * colors.length) | 0], g, shape: o.shape || 'circle', rot: Math.random() * Math.PI * 2, vr: (Math.random() - .5) * 12, drag: o.drag == null ? 0.9 : o.drag });
+        }
+        if (s.parts.length > 600) s.parts.splice(0, s.parts.length - 600);
+      },
+      ring(x, y, o) { o = o || {}; s.rings.push({ x, y, r: o.r || 10, r1: o.r1 || 120, life: o.life || 0.4, max: o.life || 0.4, color: o.color || '#fff', w: o.width || 4 }); },
+      text(x, y, str, o) { o = o || {}; s.texts.push({ x, y, str: String(str), life: o.life || 0.8, max: o.life || 0.8, color: o.color || '#fff', size: o.size || 22, vy: o.vy == null ? -70 : o.vy, vx: o.vx || 0, weight: o.weight || 900, stroke: o.stroke !== false }); if (s.texts.length > 60) s.texts.shift(); },
+      update(dt) {
+        dt = Math.min(dt || 0, 0.05);
+        s.t += dt;
+        if (s.stop > 0) { s.stop -= dt; return 0; }
+        if (s.shake > 0) {
+          s.shake = Math.max(0, s.shake - dt / s.shakeDur);
+          const k = s.shake * s.shake * 14;
+          s.sx = (Math.random() - .5) * 2 * k; s.sy = (Math.random() - .5) * 2 * k;
+        } else { s.sx = s.sy = 0; }
+        if (s.flashT > 0) s.flashT -= dt;
+        for (let i = s.parts.length - 1; i >= 0; i--) {
+          const p = s.parts[i];
+          p.life -= dt; if (p.life <= 0) { s.parts.splice(i, 1); continue; }
+          p.vy += p.g * dt; const d = Math.pow(p.drag, dt * 60); p.vx *= d; p.vy *= d;
+          p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+        }
+        for (let i = s.rings.length - 1; i >= 0; i--) { const r = s.rings[i]; r.life -= dt; if (r.life <= 0) s.rings.splice(i, 1); }
+        for (let i = s.texts.length - 1; i >= 0; i--) { const t = s.texts[i]; t.life -= dt; if (t.life <= 0) { s.texts.splice(i, 1); continue; } t.y += t.vy * dt; t.x += t.vx * dt; t.vy *= Math.pow(0.9, dt * 60); }
+        return dt;
+      },
+      begin(ctx) { ctx.save(); if (s.sx || s.sy) ctx.translate(s.sx, s.sy); },
+      end(ctx) { ctx.restore(); },
+      draw(ctx) {
+        ctx.save();
+        for (const p of s.parts) {
+          const k = Math.max(0, p.life / p.max);
+          ctx.globalAlpha = Math.min(1, k * 1.5);
+          ctx.fillStyle = p.color;
+          const sz = p.size * (0.3 + k * 0.7);
+          if (p.shape === 'circle') { ctx.beginPath(); ctx.arc(p.x, p.y, sz, 0, Math.PI * 2); ctx.fill(); }
+          else if (p.shape === 'spark') { ctx.strokeStyle = p.color; ctx.lineWidth = Math.max(1, sz * 0.5); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.04, p.y - p.vy * 0.04); ctx.stroke(); }
+          else {
+            ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+            if (p.shape === 'star') { ctx.beginPath(); for (let i = 0; i < 10; i++) { const r = i % 2 ? sz * 0.5 : sz * 1.2, a = i * Math.PI / 5; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill(); }
+            else ctx.fillRect(-sz, -sz * 0.6, sz * 2, sz * 1.2);
+            ctx.restore();
+          }
+        }
+        for (const r of s.rings) {
+          const k = 1 - r.life / r.max;
+          ctx.globalAlpha = (1 - k) * 0.9; ctx.strokeStyle = r.color; ctx.lineWidth = r.w * (1 - k * 0.7);
+          ctx.beginPath(); ctx.arc(r.x, r.y, r.r + (r.r1 - r.r) * (1 - Math.pow(1 - k, 3)), 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        for (const t of s.texts) {
+          const k = t.life / t.max, pop = 1 + Math.max(0, (k - 0.8) * 5) * 0.6;
+          ctx.globalAlpha = Math.min(1, k * 2.5);
+          ctx.font = `${t.weight} ${Math.round(t.size * pop)}px "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif`;
+          if (t.stroke) { ctx.lineWidth = Math.max(3, t.size * 0.18); ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineJoin = 'round'; ctx.strokeText(t.str, t.x, t.y); }
+          ctx.fillStyle = t.color; ctx.fillText(t.str, t.x, t.y);
+        }
+        ctx.restore();
+      },
+      drawFlash(ctx, W, H) {
+        if (s.flashT <= 0 || s.flashA <= 0) return;
+        ctx.save(); ctx.globalAlpha = s.flashA * (s.flashT / s.flashDur); ctx.fillStyle = s.flashColor; ctx.fillRect(0, 0, W, H); ctx.restore();
+      },
+      clear() { s.parts.length = 0; s.texts.length = 0; s.rings.length = 0; s.shake = 0; s.flashT = 0; s.stop = 0; s.sx = s.sy = 0; },
+      get shakeX() { return s.sx; }, get shakeY() { return s.sy; },
+      get count() { return s.parts.length; },
+    };
+    return fx;
+  };
+  /** 数字をなめらかに増やす（DOM 要素 or 関数）。 FES.countUp(el, 0, 12345, 0.9) */
+  FES.countUp = function (target, from, to, dur, done) {
+    const t0 = performance.now(); dur = (dur || 0.8) * 1000;
+    const set = typeof target === 'function' ? target : v => { target.textContent = Math.round(v).toLocaleString(); };
+    let lastTick = 0;
+    (function step(now) {
+      const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      set(from + (to - from) * e);
+      if (p < 1) { if (now - lastTick > 55 && to !== from) { FES.tone({ freq: 900 + 700 * p, dur: 0.025, type: 'square', vol: 0.05 }); lastTick = now; } requestAnimationFrame(step); }
+      else if (done) done();
+    })(t0);
+  };
+  FES.easeOut = p => 1 - Math.pow(1 - p, 3);
+  FES.easeBack = p => { const c = 1.9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
 
   /* ------------------------------------------------------------ CSS */
   const CSS = `
@@ -248,61 +403,86 @@
   #fes-home { left: 10px; }
   #fes-mute { right: 64px; }
   #fes-full { right: 10px; }
-  #fes-overlay { pointer-events: auto; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  #fes-overlay, .fes-overlay { pointer-events: auto; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     background: rgba(5,5,20,.72); backdrop-filter: blur(8px); animation: fesFade .35s ease-out; }
   @keyframes fesFade { from { opacity: 0 } to { opacity: 1 } }
   @keyframes fesPop { 0% { transform: scale(.7) translateY(30px); opacity: 0 } 60% { transform: scale(1.04) translateY(-4px); opacity: 1 } 100% { transform: scale(1) translateY(0) } }
   @keyframes fesScore { from { transform: scale(2.2); opacity: 0 } to { transform: scale(1); opacity: 1 } }
   @keyframes fesShine { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
-  .fes-card { width: min(92vw, 520px); max-height: 94vh; overflow: auto; border-radius: 24px; padding: 28px 28px 22px; color: #fff; text-align: center;
-    background: linear-gradient(160deg, rgba(30,30,70,.95), rgba(10,10,30,.97)); border: 1px solid rgba(255,255,255,.18);
-    box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05) inset, 0 0 60px rgba(120,90,255,.25); animation: fesPop .5s cubic-bezier(.2,1.4,.4,1); }
-  .fes-card h2 { margin: 0 0 4px; font-size: 14px; letter-spacing: .35em; opacity: .7; font-weight: 600; }
-  .fes-card .fes-title { font-size: 26px; font-weight: 900; margin: 0 0 14px; letter-spacing: .05em;
+  @keyframes fesBump { 0% { transform: scale(1) } 40% { transform: scale(1.18) } 100% { transform: scale(1) } }
+  @keyframes fesStamp { 0% { transform: scale(2.6) rotate(-25deg); opacity: 0 } 60% { transform: scale(.92) rotate(6deg); opacity: 1 } 100% { transform: scale(1) rotate(-6deg) } }
+  @keyframes fesGlow { 0%,100% { box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 60px rgba(120,90,255,.25) } 50% { box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 90px rgba(255,211,110,.35) } }
+  @keyframes fesCount { 0% { transform: scale(2.4); opacity: 0 } 25% { transform: scale(1); opacity: 1 } 80% { transform: scale(1); opacity: 1 } 100% { transform: scale(.6); opacity: 0 } }
+  @keyframes fesGo { 0% { transform: scale(.4); opacity: 0 } 30% { transform: scale(1.15); opacity: 1 } 100% { transform: scale(1.4); opacity: 0 } }
+  .fes-card { position: relative; width: min(92vw, 540px); max-height: 94vh; overflow: auto; border-radius: 26px; padding: 26px 26px 20px; color: #fff; text-align: center;
+    background: linear-gradient(160deg, rgba(34,32,80,.96), rgba(10,10,30,.98)); border: 1px solid rgba(255,255,255,.18);
+    box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 60px rgba(120,90,255,.25); animation: fesPop .5s cubic-bezier(.2,1.4,.4,1); scrollbar-width: thin; }
+  .fes-card.rankin { animation: fesPop .5s cubic-bezier(.2,1.4,.4,1), fesGlow 2.4s ease-in-out .5s infinite; border-color: rgba(255,211,110,.45); }
+  .fes-card h2 { margin: 0 0 4px; font-size: 13px; letter-spacing: .35em; opacity: .7; font-weight: 700; }
+  .fes-card .fes-title { font-size: 28px; font-weight: 900; margin: 0 0 10px; letter-spacing: .05em; line-height: 1.2;
     background: linear-gradient(90deg,#fff,#ffd36e,#fff,#8ed6ff,#fff); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: fesShine 3s linear infinite; }
-  .fes-score { font-size: 56px; font-weight: 900; line-height: 1.1; margin: 8px 0 8px; font-variant-numeric: tabular-nums; animation: fesScore .6s cubic-bezier(.2,1.4,.4,1) .15s both; text-shadow: 0 0 30px rgba(255,220,120,.6); }
+  .fes-score { font-size: 60px; font-weight: 900; line-height: 1.1; margin: 6px 0 6px; font-variant-numeric: tabular-nums; animation: fesScore .5s cubic-bezier(.2,1.4,.4,1) .1s both; text-shadow: 0 0 30px rgba(255,220,120,.6); }
+  .fes-score.done { animation: fesBump .35s ease-out; }
   .fes-score small { font-size: 16px; opacity: .7; margin-left: 4px; }
-  .fes-sub { opacity: .8; font-size: 14px; margin-bottom: 14px; }
-  .fes-newrec { display: inline-block; margin: 6px 0 10px; padding: 4px 14px; border-radius: 999px; font-weight: 900; font-size: 13px; letter-spacing: .15em;
-    background: linear-gradient(90deg,#ff4d8d,#ffb347); box-shadow: 0 0 20px rgba(255,120,80,.6); animation: fesPop .6s .3s both; }
-  .fes-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px,1fr)); gap: 8px; margin: 12px 0 16px; }
+  .fes-sub { opacity: .8; font-size: 14px; margin-bottom: 12px; }
+  .fes-newrec { display: inline-block; margin: 4px 0 10px; padding: 5px 16px; border-radius: 999px; font-weight: 900; font-size: 14px; letter-spacing: .15em;
+    background: linear-gradient(90deg,#ff4d8d,#ffb347); box-shadow: 0 0 24px rgba(255,120,80,.6); animation: fesPop .6s .3s both; }
+  .fes-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px,1fr)); gap: 8px; margin: 10px 0 14px; }
   .fes-stat { background: rgba(255,255,255,.07); border-radius: 12px; padding: 8px 6px; }
   .fes-stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
   .fes-stat span { font-size: 11px; opacity: .65; letter-spacing: .1em; }
-  .fes-name { display: flex; gap: 8px; justify-content: center; margin: 8px 0 14px; }
-  .fes-name input { pointer-events: auto; width: 180px; font-size: 22px; text-align: center; padding: 8px 10px; border-radius: 12px; border: 2px solid rgba(255,255,255,.35);
-    background: rgba(0,0,0,.4); color: #fff; outline: none; font-weight: 700; letter-spacing: .1em; }
-  .fes-name input:focus { border-color: #ffd36e; box-shadow: 0 0 16px rgba(255,211,110,.5); }
-  .fes-name button { padding: 8px 18px; }
+  /* スタンプの進み具合 */
+  .fes-stamps { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 4px 0 12px; }
+  .fes-stamp { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; background: rgba(255,255,255,.06); border: 2px dashed rgba(255,255,255,.22); filter: grayscale(1); opacity: .45; }
+  .fes-stamp.on { filter: none; opacity: 1; border: 2px solid #fff; background: var(--c, #ff4d8d); box-shadow: 0 4px 12px rgba(0,0,0,.35); transform: rotate(-6deg); }
+  .fes-stamp.new { animation: fesStamp .55s cubic-bezier(.2,1.2,.4,1) both; }
+  .fes-stamp-lbl { font-size: 12px; opacity: .75; margin-bottom: 4px; letter-spacing: .1em; }
+  .fes-stamp-lbl b { color: #ffd36e; }
   .fes-namebox { margin: 4px 0 14px; }
   .fes-pick { margin-bottom: 12px; }
   .fes-pick-lbl { font-size: 11px; letter-spacing: .2em; opacity: .6; margin: 8px 0 4px; }
-  .fes-pick-name { font-size: 30px; font-weight: 900; margin: 2px 0 4px; color: #ffd36e; text-shadow: 0 0 18px rgba(255,211,110,.5); }
+  .fes-pick-name { font-size: 30px; font-weight: 900; margin: 2px 0 4px; color: #ffd36e; text-shadow: 0 0 18px rgba(0,0,0,.5); }
+  .fes-pick-name.bump { animation: fesBump .3s ease-out; }
   .fes-pick-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-  .fes-chip { pointer-events: auto; padding: 7px 11px; min-height: 38px; border-radius: 10px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08);
-    color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; transition: transform .1s, background .1s; }
+  .fes-chip { pointer-events: auto; padding: 7px 11px; min-height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08);
+    color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; transition: transform .1s, background .1s; display: inline-flex; align-items: center; gap: 6px; -webkit-tap-highlight-color: transparent; }
   .fes-chip:hover { background: rgba(255,255,255,.18); }
   .fes-chip:active { transform: scale(.94); }
-  .fes-chip.on { background: linear-gradient(135deg,#6a5cff,#b04dff); border-color: transparent; box-shadow: 0 4px 14px rgba(120,80,255,.5); }
+  .fes-chip.on { background: linear-gradient(135deg,#6a5cff,#b04dff); border-color: transparent; box-shadow: 0 4px 14px rgba(120,80,255,.5); transform: scale(1.06); }
   .fes-chip.omakase { margin-top: 8px; }
-  .fes-rank { text-align: left; margin: 0 0 14px; padding: 0; list-style: none; max-height: 220px; overflow: auto; font-variant-numeric: tabular-nums; }
+  .fes-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 1px rgba(255,255,255,.5) inset; }
+  .fes-rank { text-align: left; margin: 0 0 14px; padding: 0; list-style: none; max-height: 210px; overflow: auto; font-variant-numeric: tabular-nums; scrollbar-width: thin; }
   .fes-rank li { display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 8px; font-size: 14px; }
   .fes-rank li:nth-child(odd) { background: rgba(255,255,255,.05); }
-  .fes-rank li.me { background: linear-gradient(90deg, rgba(255,211,110,.35), rgba(255,77,141,.25)); font-weight: 900; box-shadow: 0 0 0 1px rgba(255,211,110,.5) inset; }
+  .fes-rank li.me { background: linear-gradient(90deg, rgba(255,211,110,.35), rgba(255,77,141,.25)); font-weight: 900; box-shadow: 0 0 0 1px rgba(255,211,110,.5) inset; animation: fesBump .4s ease-out; }
   .fes-rank .r { width: 28px; font-weight: 900; opacity: .8; }
   .fes-rank .r.g1 { color: #ffd36e; } .fes-rank .r.g2 { color: #d9d9e6; } .fes-rank .r.g3 { color: #e8a26a; }
   .fes-rank .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fes-rank .s { font-weight: 700; }
   .fes-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-  .fes-act { pointer-events: auto; padding: 12px 26px; border-radius: 14px; border: 0; font-size: 16px; font-weight: 900; cursor: pointer; color: #fff; letter-spacing: .05em;
-    background: linear-gradient(135deg,#6a5cff,#b04dff); box-shadow: 0 8px 24px rgba(120,80,255,.45); transition: transform .12s, filter .12s; text-decoration: none; display: inline-block; }
+  .fes-act { pointer-events: auto; padding: 13px 26px; min-height: 48px; border-radius: 14px; border: 0; font-size: 16px; font-weight: 900; cursor: pointer; color: #fff; letter-spacing: .05em;
+    background: linear-gradient(135deg,#6a5cff,#b04dff); box-shadow: 0 8px 24px rgba(120,80,255,.45); transition: transform .12s, filter .12s; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; -webkit-tap-highlight-color: transparent; }
   .fes-act.alt { background: rgba(255,255,255,.12); box-shadow: none; }
+  .fes-act.next { background: linear-gradient(135deg,#ff4d8d,#ff9f43); box-shadow: 0 8px 24px rgba(255,100,120,.4); }
   .fes-act:hover { transform: translateY(-2px); filter: brightness(1.15); }
   .fes-act:active { transform: translateY(1px) scale(.97); }
+  .fes-act:focus-visible { outline: 3px solid #ffd36e; outline-offset: 2px; }
   .fes-report { display: inline-block; margin-top: 12px; font-size: 12px; color: rgba(255,255,255,.55); text-decoration: none; pointer-events: auto; }
   .fes-report:hover { color: #fff; text-decoration: underline; }
-  .fes-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px; background: rgba(0,0,0,.7); color: #fff;
-    font-size: 14px; font-weight: 700; pointer-events: none; animation: fesFade .3s; z-index: 9500; }
+  .fes-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 12px 22px; border-radius: 999px; background: rgba(0,0,0,.75); color: #fff; border: 1px solid rgba(255,255,255,.18);
+    font-size: 15px; font-weight: 800; pointer-events: none; animation: fesPop .4s cubic-bezier(.2,1.4,.4,1); z-index: 9500; max-width: 92vw; text-align: center; }
+  .fes-confetti { position: fixed; inset: 0; pointer-events: none; z-index: 9100; }
+  /* カウントダウン */
+  .fes-count { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 8900; }
+  .fes-count .n { font-size: min(34vh, 40vw); font-weight: 900; line-height: 1; color: #fff; text-shadow: 0 0 40px rgba(255,211,110,.8), 0 6px 0 rgba(0,0,0,.35); animation: fesCount .8s cubic-bezier(.2,1.2,.4,1) both; }
+  .fes-count .n.go { color: #ffd36e; animation: fesGo .7s ease-out both; }
+  /* ポーズ */
+  .fes-pause .fes-title { font-size: 40px; letter-spacing: .3em; }
+  .fes-pause .fes-sub { margin-bottom: 18px; }
+  .fes-pause .fes-actions { flex-direction: column; align-items: stretch; }
+  .fes-pause .fes-act { width: 100%; }
+  /* エラー */
+  .fes-err { font-size: 12px; opacity: .55; word-break: break-all; margin: 6px 0 14px; max-height: 60px; overflow: hidden; }
   `;
 
   /* ------------------------------------------------------------ UI */
@@ -317,13 +497,14 @@
     (children || []).forEach(c => c && e.appendChild(c));
     return e;
   }
+  FES.el = el;
 
   let ui = null;
   function ensureUI() {
     if (ui) return ui;
     const style = document.createElement('style'); style.textContent = CSS; document.head.appendChild(style);
     ui = el('div', { id: 'fes-ui' });
-    document.body.appendChild(ui);
+    (document.body || document.documentElement).appendChild(ui);
     return ui;
   }
 
@@ -334,19 +515,57 @@
       if (cfg.buttons !== false) {
         ui.appendChild(el('a', { id: 'fes-home', class: 'fes-btn', href: '../index.html', title: 'ホームへ', text: '🏠', onclick: () => FES.sfx('select') }));
         ui.appendChild(el('div', { id: 'fes-mute', class: 'fes-btn', title: 'ミュート', text: muted ? '🔇' : '🔊', onclick: () => { FES.setMuted(!muted); if (!muted) FES.sfx('select'); } }));
-        ui.appendChild(el('div', { id: 'fes-full', class: 'fes-btn', title: '全画面', text: '⛶', onclick: FES.toggleFullscreen }));
+        if (document.documentElement.requestFullscreen) ui.appendChild(el('div', { id: 'fes-full', class: 'fes-btn', title: '全画面', text: '⛶', onclick: FES.toggleFullscreen }));
       }
       // 最初の操作で音を解放
       const unlock = () => { ensureAudio(); };
       ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, unlock, { passive: true }));
-      // ページ内の a[href] クリック音
+      // タブに戻ってきたとき、音が止まったままにならないように
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && actx && actx.state === 'suspended') actx.resume().catch(() => {}); });
       document.title = cfg.title ? `${cfg.title} | NEON FESTA` : document.title;
       // 部屋の PC: 起動時と 20 秒ごとに共有ランキングを取ってくる（ハイスコア表示・ランクイン判定用）
       if (FES.isRoomPC()) { FES.sync(); setInterval(FES.sync, 20000); armIdleReset(); }
+      armErrorGuard();
     };
     if (document.body) build(); else document.addEventListener('DOMContentLoaded', build);
     return FES;
   };
+
+  /* ------------------------------------------------------------ エラー時の自動復帰 */
+  // 文化祭の最中にスクリプトエラーで画面が固まると、スタッフが気づくまで誰も遊べない。
+  // エラーが起きたら案内を出し、部屋の PC なら数秒で自動的に読み込み直す。
+  let errShown = false;
+  function armErrorGuard() {
+    const onErr = msg => {
+      msg = String(msg || '');
+      if (errShown || /ResizeObserver|Script error\.?$/.test(msg)) return;
+      errShown = true;
+      try {
+        ensureUI();
+        const isHub = cfg.id === 'hub';
+        const home = isHub ? 'index.html' : '../index.html';
+        let left = 8;
+        const cnt = el('span', { text: String(left) });
+        const card = el('div', { class: 'fes-card' }, [
+          el('h2', { text: 'おっと' }),
+          el('div', { class: 'fes-title', text: 'エラーが起きました' }),
+          el('div', { class: 'fes-sub', text: 'ごめんなさい！ 読み込み直すと直ることがほとんどです。' }),
+          el('div', { class: 'fes-err', text: msg.slice(0, 160) }),
+          el('div', { class: 'fes-actions' }, [
+            el('button', { class: 'fes-act', text: '🔄 読み込み直す', onclick: () => location.reload() }),
+            el('a', { class: 'fes-act alt', href: home, text: '🏠 ホームへ' }),
+          ]),
+          FES.isRoomPC() ? el('div', { class: 'fes-sub', style: 'margin-top:12px' }, [document.createTextNode('あと '), cnt, document.createTextNode(' 秒で自動的に読み込み直します')]) : null,
+        ]);
+        ui.appendChild(el('div', { class: 'fes-overlay', style: 'z-index:9900' }, [card]));
+        if (FES.isRoomPC()) {
+          const tm = setInterval(() => { left--; cnt.textContent = String(left); if (left <= 0) { clearInterval(tm); location.reload(); } }, 1000);
+        }
+      } catch (e) { /* ここで失敗しても何もしない */ }
+    };
+    global.addEventListener('error', e => onErr(e && (e.message || (e.error && e.error.message))));
+    global.addEventListener('unhandledrejection', e => { const r = e && e.reason; onErr(r && (r.message || r)); });
+  }
 
   /* ------------------------------------------------------------ 次の人へ自動リセット（部屋の PC） */
   // スタッフが少ないので、しばらく誰も触らなければ自動で「次の人」の状態に戻す。
@@ -371,7 +590,7 @@
       const left = Math.max(0, Math.ceil(IDLE_RESET_SEC - idle));
       if (!warnEl) {
         ensureUI();
-        warnEl = el('div', { id: 'fes-overlay', style: 'z-index:9800' }, [el('div', { class: 'fes-card' }, [
+        warnEl = el('div', { class: 'fes-overlay', style: 'z-index:9800' }, [el('div', { class: 'fes-card' }, [
           el('h2', { text: 'まだ あそんでる？' }),
           el('div', { class: 'fes-title', text: 'つぎの人に交代します' }),
           el('div', { class: 'fes-score', text: String(left) }),
@@ -379,7 +598,8 @@
         ])]);
         ui.appendChild(warnEl);
       }
-      warnEl.querySelector('.fes-score').textContent = String(left);
+      const sc = warnEl.querySelector('.fes-score');
+      if (sc.textContent !== String(left)) { sc.textContent = String(left); if (left <= 5) FES.sfx('tick'); }
       if (left <= 0) {
         FES.newStampCard('');
         try { localStorage.removeItem('fes:lastName'); } catch (e) {}
@@ -394,15 +614,90 @@
     else if (d.exitFullscreen) d.exitFullscreen();
   };
 
+  let toastEl = null;
   FES.toast = function (msg, ms) {
     ensureUI();
-    const t = el('div', { class: 'fes-toast', text: msg });
-    ui.appendChild(t);
-    setTimeout(() => t.remove(), ms || 1500);
+    if (toastEl) toastEl.remove();
+    toastEl = el('div', { class: 'fes-toast', text: msg });
+    ui.appendChild(toastEl);
+    const me = toastEl;
+    setTimeout(() => { me.remove(); if (toastEl === me) toastEl = null; }, ms || 1500);
   };
 
+  /* ------------------------------------------------------------ カウントダウン / ポーズ（任意で使う） */
+  /** 3・2・1・GO! を大きく出す。 FES.countdown(() => startPlay()) 。戻り値は cancel() */
+  FES.countdown = function (onGo, o) {
+    ensureUI(); o = o || {};
+    const labels = o.labels || ['3', '2', '1', 'GO!'];
+    const step = o.interval == null ? 0.75 : o.interval;
+    const box = el('div', { class: 'fes-count' });
+    ui.appendChild(box);
+    let i = 0, tm = null, cancelled = false;
+    const show = () => {
+      if (cancelled) return;
+      box.innerHTML = '';
+      const last = i === labels.length - 1;
+      box.appendChild(el('div', { class: 'n' + (last ? ' go' : ''), text: labels[i] }));
+      FES.sfx(last ? 'go' : 'countdown');
+      if (last) { if (onGo) onGo(); tm = setTimeout(() => box.remove(), 700); }
+      else { i++; tm = setTimeout(show, step * 1000); }
+    };
+    show();
+    return () => { cancelled = true; clearTimeout(tm); box.remove(); };
+  };
+  let pauseEl = null;
+  /** ポーズ画面。 FES.pause(true, { onResume, onRetry }) / FES.pause(false) */
+  FES.pause = function (show, o) {
+    ensureUI(); o = o || {};
+    if (pauseEl) { pauseEl.remove(); pauseEl = null; }
+    if (!show) return;
+    const card = el('div', { class: 'fes-card fes-pause' }, [
+      el('h2', { text: cfg.title || '' }),
+      el('div', { class: 'fes-title', text: 'PAUSE' }),
+      el('div', { class: 'fes-sub', text: o.hint || 'Esc か P でも再開できます' }),
+      el('div', { class: 'fes-actions' }, [
+        el('button', { class: 'fes-act', text: '▶ つづける', onclick: () => { FES.sfx('select'); FES.pause(false); o.onResume && o.onResume(); } }),
+        o.onRetry ? el('button', { class: 'fes-act alt', text: '↺ はじめから', onclick: () => { FES.sfx('select'); FES.pause(false); o.onRetry(); } }) : null,
+        el('a', { class: 'fes-act alt', href: '../index.html', text: '🏠 ホームへ' }),
+      ]),
+    ]);
+    pauseEl = el('div', { class: 'fes-overlay', style: 'z-index:9400' }, [card]);
+    ui.appendChild(pauseEl);
+  };
+  FES.isPaused = () => !!pauseEl;
+
+  /* ------------------------------------------------------------ 紙吹雪（リザルトのランクイン時） */
+  function confetti(ms, colors) {
+    ensureUI();
+    const cv = el('canvas', { class: 'fes-confetti' });
+    ui.appendChild(cv);
+    const ctx = cv.getContext('2d');
+    const W = cv.width = innerWidth, H = cv.height = innerHeight;
+    const cols = colors || ['#ffd36e', '#ff4d8d', '#5ee7ff', '#8a6bff', '#5cff8d', '#fff'];
+    const ps = Array.from({ length: Math.min(160, Math.round(W * H / 9000)) }, () => ({
+      x: Math.random() * W, y: -20 - Math.random() * H * 0.5, vx: (Math.random() - .5) * 120, vy: 120 + Math.random() * 220,
+      w: 6 + Math.random() * 8, h: 10 + Math.random() * 10, rot: Math.random() * 6.3, vr: (Math.random() - .5) * 8, c: cols[(Math.random() * cols.length) | 0], ph: Math.random() * 6.3,
+    }));
+    const t0 = performance.now(); let last = t0;
+    (function frame(now) {
+      if (!cv.isConnected) return;
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const life = (now - t0) / ms;
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalAlpha = life > 0.75 ? Math.max(0, 1 - (life - 0.75) / 0.25) : 1;
+      for (const p of ps) {
+        p.x += (p.vx + Math.sin(now / 300 + p.ph) * 60) * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+        if (p.y > H + 30 && life < 0.6) { p.y = -20; p.x = Math.random() * W; }
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.scale(1, Math.cos(now / 150 + p.ph)); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+      }
+      if (life < 1) requestAnimationFrame(frame); else cv.remove();
+    })(t0);
+    return cv;
+  }
+  FES.confetti = confetti;
+
   let overlay = null;
-  FES.hideResult = function () { if (overlay) { overlay.remove(); overlay = null; } };
+  FES.hideResult = function () { if (overlay) { overlay.remove(); overlay = null; } document.querySelectorAll('.fes-confetti').forEach(c => c.remove()); };
 
   /**
    * リザルト画面を表示する。
@@ -414,47 +709,59 @@
    *   stats: [{label:'MAX COMBO', value: 120}, ...],
    *   ranking: true,            // false でランキング登録なし
    *   retryLabel: 'もう一度',
+   *   stamp: true,              // false でスタンプを押さない
    * }, onRetry)
    */
   FES.showResult = function (o, onRetry) {
-    ensureUI(); FES.hideResult();
+    ensureUI(); FES.hideResult(); FES.pause(false);
     o = o || {};
     const score = Math.max(0, Math.floor(o.score || 0));
     const useRank = (o.ranking != null ? o.ranking : cfg.ranking) && score > 0;
     const rankIn = useRank && FES.isRankIn(score);
-    if (rankIn) FES.sfx('fanfare'); else FES.sfx('gameover');
+    const prev = FES.getRanking();
+    const isTop = rankIn && (!prev.length || score > prev[0].score);
+    const games = FES.games();
     // スタンプラリー: 1回遊び終えたらスタンプ（同じゲームは1枚のカードに1つ）
-    if (cfg.id !== 'hub' && o.stamp !== false) {
-      const st = FES.addStamp(cfg.id);
-      if (st.added) setTimeout(() => {
-        if (st.complete) { FES.sfx('powerup'); FES.toast('🎉 スタンプ コンプリート！ ホームで殿堂入りを確認しよう', 4000); }
-        else FES.toast(`🎟 スタンプ GET！ ${st.count}${st.total ? ' / ' + st.total : ''}`, 2500);
-      }, 900);
-    }
+    let st = null;
+    if (cfg.id !== 'hub' && o.stamp !== false) st = FES.addStamp(cfg.id);
 
-    const card = el('div', { class: 'fes-card' });
+    const card = el('div', { class: 'fes-card' + (rankIn ? ' rankin' : '') });
     card.appendChild(el('h2', { text: cfg.title || '' }));
     card.appendChild(el('div', { class: 'fes-title', text: o.title || 'RESULT' }));
+    let scoreEl = null;
     if (o.score != null) {
-      const s = el('div', { class: 'fes-score', text: score.toLocaleString() });
-      if (o.scoreLabel) s.appendChild(el('small', { text: o.scoreLabel }));
-      card.appendChild(s);
+      scoreEl = el('div', { class: 'fes-score', text: '0' });
+      if (o.scoreLabel) scoreEl.appendChild(el('small', { text: o.scoreLabel }));
+      card.appendChild(scoreEl);
     }
     if (o.subtitle) card.appendChild(el('div', { class: 'fes-sub', text: o.subtitle }));
-    if (rankIn) {
-      const r = FES.getRanking();
-      const isTop = !r.length || score > r[0].score;
-      card.appendChild(el('div', { class: 'fes-newrec', text: isTop ? '★ NEW RECORD! 1位 ★' : '★ RANK IN! ★' }));
-    }
+    const recBox = el('div');
+    card.appendChild(recBox);
     if (o.stats && o.stats.length) {
       const g = el('div', { class: 'fes-stats' });
-      o.stats.forEach(st => g.appendChild(el('div', { class: 'fes-stat', html: `<b>${String(st.value)}</b><span>${st.label}</span>` })));
+      o.stats.forEach(s => g.appendChild(el('div', { class: 'fes-stat' }, [el('b', { text: String(s.value) }), el('span', { text: String(s.label) })])));
       card.appendChild(g);
+    }
+    // スタンプの進み具合（ホームがゲーム一覧を登録していれば出す）
+    const cardNow = FES.stampCard();
+    if (games.length && cardNow && cfg.id !== 'hub') {
+      const have = cardNow.stamps || {};
+      const n = Object.keys(have).filter(k => games.some(g => g.id === k)).length;
+      const lbl = el('div', { class: 'fes-stamp-lbl' });
+      lbl.innerHTML = cardNow.done ? '🏅 スタンプ <b>コンプリート！</b> 殿堂入り' : `🎟 スタンプ <b>${n} / ${games.length}</b>${n < games.length ? `　あと ${games.length - n} 個で殿堂入り` : ''}`;
+      const row = el('div', { class: 'fes-stamps' });
+      games.forEach(g => {
+        const on = !!have[g.id];
+        const isNew = st && st.added && FES.stampBase(cfg.id) === g.id;
+        row.appendChild(el('div', { class: 'fes-stamp' + (on ? ' on' : '') + (isNew ? ' new' : ''), style: `--c:${g.accent || '#ff4d8d'}`, text: g.icon || '★', title: g.title || '' }));
+      });
+      card.appendChild(lbl); card.appendChild(row);
+      if (st && st.added) setTimeout(() => { FES.sfx('stamp'); FES.vibrate(30); }, 650);
+      if (st && st.complete) setTimeout(() => { FES.sfx('powerup'); FES.toast('🎉 スタンプ コンプリート！ ホームで殿堂入りを確認しよう', 4000); confetti(4000); }, 1300);
     }
 
     const rankBox = el('div');
     card.appendChild(rankBox);
-
     const renderRank = (mine) => {
       rankBox.innerHTML = '';
       if (!useRank) return;
@@ -463,18 +770,27 @@
       const ul = el('ul', { class: 'fes-rank' });
       r.forEach((e, i) => {
         const li = el('li', { class: mine && e.date === mine ? 'me' : '' });
-        li.appendChild(el('span', { class: 'r g' + (i + 1), text: (i + 1) + '.' }));
+        li.appendChild(el('span', { class: 'r g' + (i + 1), text: ['🥇', '🥈', '🥉'][i] || (i + 1) + '.' }));
         li.appendChild(el('span', { class: 'n', text: e.name }));
         li.appendChild(el('span', { class: 's', text: e.score.toLocaleString() }));
         ul.appendChild(li);
       });
       rankBox.appendChild(ul);
+      const me = ul.querySelector('li.me'); if (me) me.scrollIntoView({ block: 'nearest' });
     };
 
     const actions = el('div', { class: 'fes-actions' });
-    const retryBtn = el('button', { class: 'fes-act', text: o.retryLabel || 'もう一度' , onclick: () => { FES.sfx('start'); FES.hideResult(); onRetry && onRetry(); } });
-    const homeBtn = el('a', { class: 'fes-act alt', href: '../index.html', text: 'ホームへ' });
-    actions.appendChild(retryBtn); actions.appendChild(homeBtn);
+    const retryBtn = el('button', { class: 'fes-act', text: o.retryLabel || 'もう一度', onclick: () => { FES.sfx('start'); FES.hideResult(); onRetry && onRetry(); } });
+    actions.appendChild(retryBtn);
+    // つぎのおすすめ: まだスタンプのないゲームからひとつ
+    if (games.length && cardNow && !cardNow.done) {
+      const rest = games.filter(g => !(cardNow.stamps || {})[g.id] && g.id !== FES.stampBase(cfg.id));
+      if (rest.length) {
+        const g = rest[(Math.random() * rest.length) | 0];
+        actions.appendChild(el('a', { class: 'fes-act next', href: `./${g.id}.html`, text: `つぎは ${g.icon || ''} ${g.title}` }));
+      }
+    }
+    actions.appendChild(el('a', { class: 'fes-act alt', href: '../index.html', text: '🏠 ホームへ' }));
 
     let submitName = null;
     if (rankIn) {
@@ -491,6 +807,7 @@
         nameBox.remove(); submitName = null;
         renderRank(mine ? mine.date : null);
         FES.sfx('coin');
+        FES.toast(`${name} で登録しました！`, 1800);
       };
       ok.addEventListener('click', submitName);
     } else {
@@ -503,6 +820,20 @@
     }
     overlay = el('div', { id: 'fes-overlay' }, [card]);
     ui.appendChild(overlay);
+
+    // スコアのカウントアップ → 結果の音（ランクインならファンファーレ＋紙吹雪）
+    const finish = () => {
+      if (scoreEl) { scoreEl.classList.add('done'); }
+      if (rankIn) {
+        FES.sfx(isTop ? 'fanfare' : 'rankin'); FES.vibrate([30, 40, 60]);
+        recBox.appendChild(el('div', { class: 'fes-newrec', text: isTop ? '★ NEW RECORD! 1位 ★' : '★ RANK IN! ★' }));
+        confetti(isTop ? 4500 : 2800);
+      } else if (o.score != null && score > 0) FES.sfx('coin');
+      else FES.sfx('gameover');
+    };
+    if (scoreEl && score > 0) FES.countUp(v => { scoreEl.firstChild.nodeValue = Math.round(v).toLocaleString(); }, 0, score, Math.min(1.2, 0.4 + Math.log10(score + 1) * 0.18), finish);
+    else { if (scoreEl) scoreEl.firstChild.nodeValue = score.toLocaleString(); finish(); }
+
     // キー操作: Enter/Space でリトライ（名前入力中は除く）
     // 名前がまだ登録されていなければ、Enter は「登録」（うっかりリトライで記録が消えないように）
     const key = e => {
@@ -510,7 +841,7 @@
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (submitName) submitName(); else retryBtn.click(); }
     };
-    setTimeout(() => document.addEventListener('keydown', key), 400);
+    setTimeout(() => document.addEventListener('keydown', key), 600);
     return overlay;
   };
 
@@ -570,6 +901,7 @@
   FES.randInt = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
   FES.pick = arr => arr[Math.floor(Math.random() * arr.length)];
   FES.pad = (n, w) => String(n).padStart(w || 2, '0');
+  FES.isTouch = () => ('ontouchstart' in global) || (global.navigator && global.navigator.maxTouchPoints > 0);
 
   /**
    * キャンバスを画面に合わせる。 FES.fitCanvas(canvas, 960, 540) → 内部解像度固定・CSSで拡縮。
@@ -592,6 +924,7 @@
     st.toGame = (cx, cy) => ({ x: (cx - st.offsetX) / st.scale, y: (cy - st.offsetY) / st.scale });
     st.resize = resize;
     global.addEventListener('resize', resize);
+    global.addEventListener('orientationchange', () => setTimeout(resize, 50));
     resize();
     return st;
   };
