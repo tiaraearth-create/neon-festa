@@ -174,9 +174,9 @@
   .mission.done { color: #b8ffd0; } .mission.done .chk { background: #5cff8d; border-color: #5cff8d; color: #053; }
   .mission .prog { margin-left: auto; font-size: 11px; color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; }
   .badges { display: flex; flex-wrap: wrap; gap: 6px; }
-  .badge { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; line-height: 1; font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); filter: grayscale(1); opacity: .35; cursor: help; transition: .2s; }
-  .badge.on { filter: none; opacity: 1; background: linear-gradient(135deg, rgba(255,211,110,.25), rgba(255,77,141,.2)); border-color: rgba(255,211,110,.6); box-shadow: 0 0 14px rgba(255,211,110,.3); }
-  .badge.pop { animation: pulseTag .8s ease-out 3; }
+  .bdg { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; line-height: 1; font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); filter: grayscale(1); opacity: .35; cursor: help; transition: .2s; }
+  .bdg.on { filter: none; opacity: 1; background: linear-gradient(135deg, rgba(255,211,110,.25), rgba(255,77,141,.2)); border-color: rgba(255,211,110,.6); box-shadow: 0 0 14px rgba(255,211,110,.3); }
+  .bdg.pop { animation: pulseTag .8s ease-out 3; }
   .prize-cta { margin-top: 8px; width: 100%; padding: 10px; border-radius: 12px; border: 0; font-weight: 900; font-size: 14px; cursor: pointer; color: #2a2200; background: linear-gradient(90deg, var(--gold), #ffb347); box-shadow: 0 0 18px rgba(255,211,110,.45); animation: pulseTag 1.6s ease-in-out infinite; font-family: inherit; }
   .guide-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 12px; }
   @media (max-width: 560px) { .guide-steps { grid-template-columns: 1fr; } }
@@ -414,21 +414,21 @@
 
 /* ============================== ゲーム一覧 ============================== */
 const GAMES = [
+  { id: 'fps',      title: 'ネオンストライク',      genre: 'FPSシューティング', icon: '🎯', accent: '#ff7ab8', desc: '一人称視点。奥から迫るドローンを60秒で撃ちまくれ。コアに当ててCRITICAL、連続撃破でフィーバー！', ctrl: ['マウス','クリック','タップ'], isNew: true },
+  { id: 'mole',     title: 'もぐらパニック',        genre: '反射神経',      icon: '🔨', accent: '#8bd346', desc: '60秒間のもぐらたたき。金もぐらとフィーバーで大量得点！', ctrl: ['クリック','タッチ'] },
   { id: 'rhythm',   title: 'リズムスターズ',       genre: '音楽',        icon: '🎵', accent: '#ff4d8d', desc: '6曲・ロングノーツ・最大16レーンのTAS曲つき。難易度3段階、満点は100万点。', ctrl: ['D','F','J','K'],
     ids: [{ id: 'rhythm_easy', label: 'やさしい' }, { id: 'rhythm', label: 'ふつう' }, { id: 'rhythm_hard', label: 'むずかしい' }, { id: 'rhythm_tas', label: 'TAS' }, { id: 'rhythm_tas2', label: 'TAS∞' }] },
-  { id: 'shooter',  title: 'ギャラクシーブラスター', genre: 'シューティング', icon: '🚀', accent: '#5ee7ff', desc: '押し寄せる敵とボスを撃ち落とす縦スクロールSTG。パワーアップで無双。', ctrl: ['↑↓←→','Shift'] },
-  { id: 'puzzle',   title: 'ジュエルラッシュ',      genre: 'パズル',       icon: '💎', accent: '#b06bff', desc: '90秒のマッチ3タイムアタック。連鎖でスコアが爆発する。', ctrl: ['マウス','タッチ'] },
-  { id: 'typing',   title: 'タイピングバトル',      genre: 'タイピング',    icon: '⌨️', accent: '#5cff8d', desc: '60秒でどれだけ打てる？ローマ字入力でモンスターを倒せ。', ctrl: ['キーボード'] },
-  { id: 'racing',   title: 'ネオンドライブ',        genre: 'レース',       icon: '🏎️', accent: '#ff9f43', desc: '夕焼けのハイウェイを疾走する疑似3Dレース。ニトロで限界突破。', ctrl: ['← →','↑','Space'] },
-  { id: 'runner',   title: 'ダッシュ！ネコ忍者',    genre: 'アクション',    icon: '🐱', accent: '#ffd36e', desc: '走り続けるネコ忍者。ジャンプとスライドで障害物をかわし小判を集めろ。', ctrl: ['Space','↓'] },
-  { id: 'mole',     title: 'もぐらパニック',        genre: '反射神経',      icon: '🔨', accent: '#8bd346', desc: '60秒間のもぐらたたき。金もぐらとフィーバーで大量得点！', ctrl: ['クリック','タッチ'] },
   { id: 'hockey',   title: 'ネオンエアホッケー',    genre: '対戦',         icon: '🏒', accent: '#3fd8ff', desc: '2人対戦 or CPU戦。マルチタッチ対応で友だちと白熱バトル。', ctrl: ['WASD','↑↓←→'] },
-  { id: 'quiz',     title: '早押しクイズ王',        genre: 'クイズ',       icon: '❓', accent: '#ff6b6b', desc: '4択クイズ10問。早く答えるほど高得点。ジャンル選択あり。', ctrl: ['1〜4','クリック'] },
-  { id: 'breakout', title: 'ネオンブレイカー',      genre: 'アーケード',    icon: '🧱', accent: '#a5f3fc', desc: 'ブロック崩し進化版。マルチボール・レーザーで全8ステージを攻略。', ctrl: ['← →','マウス'] },
   { id: 'duel',     title: 'ネオンデュエル',        genre: '2人対戦',       icon: '⚔️', accent: '#ff5e5e', desc: '1台のPCで2人対決！早押し・連打・タイミング・色よみの5番勝負。', ctrl: ['A','L','タッチ'] },
+  { id: 'shooter',  title: 'ギャラクシーブラスター', genre: 'シューティング', icon: '🚀', accent: '#5ee7ff', desc: '押し寄せる敵とボスを撃ち落とす縦スクロールSTG。パワーアップで無双。', ctrl: ['↑↓←→','Shift'] },
+  { id: 'runner',   title: 'ダッシュ！ネコ忍者',    genre: 'アクション',    icon: '🐱', accent: '#ffd36e', desc: '走り続けるネコ忍者。ジャンプとスライドで障害物をかわし小判を集めろ。', ctrl: ['Space','↓'] },
   { id: 'stack',    title: 'ネオンスタック',        genre: 'タイミング',    icon: '🏗️', accent: '#ffb347', desc: '動くブロックをぴったり重ねて積み上げろ。ずれた分は落ちて細くなる。PERFECTで連鎖！', ctrl: ['Space','タップ'], isNew: true },
+  { id: 'racing',   title: 'ネオンドライブ',        genre: 'レース',       icon: '🏎️', accent: '#ff9f43', desc: '夕焼けのハイウェイを疾走する疑似3Dレース。ニトロで限界突破。', ctrl: ['← →','↑','Space'] },
+  { id: 'puzzle',   title: 'ジュエルラッシュ',      genre: 'パズル',       icon: '💎', accent: '#b06bff', desc: '90秒のマッチ3タイムアタック。連鎖でスコアが爆発する。', ctrl: ['マウス','タッチ'] },
+  { id: 'breakout', title: 'ネオンブレイカー',      genre: 'アーケード',    icon: '🧱', accent: '#a5f3fc', desc: 'ブロック崩し進化版。マルチボール・レーザーで全8ステージを攻略。', ctrl: ['← →','マウス'] },
+  { id: 'quiz',     title: '早押しクイズ王',        genre: 'クイズ',       icon: '❓', accent: '#ff6b6b', desc: '4択クイズ10問。早く答えるほど高得点。ジャンル選択あり。', ctrl: ['1〜4','クリック'] },
   { id: 'memory',   title: 'メモリーフラッシュ',    genre: '記憶',         icon: '🧠', accent: '#c86bff', desc: '光った順番をおぼえて同じ順に押す。1回ごとに1つ長くなる。何ラウンドいける？', ctrl: ['タップ','QWE/ASD/ZXC'], isNew: true },
-  { id: 'fps',      title: 'ネオンストライク',      genre: 'FPSシューティング', icon: '🎯', accent: '#ff7ab8', desc: '一人称視点。奥から迫るドローンを60秒で撃ちまくれ。コアに当ててCRITICAL、連続撃破でフィーバー！', ctrl: ['マウス','クリック','タップ'], isNew: true },
+  { id: 'typing',   title: 'タイピングバトル',      genre: 'タイピング',    icon: '⌨️', accent: '#5cff8d', desc: '60秒でどれだけ打てる？ローマ字入力でモンスターを倒せ。', ctrl: ['キーボード'] },
 ];
 document.getElementById('gameCount').textContent = GAMES.length;
 document.getElementById('gameCount2').textContent = GAMES.length;
@@ -580,7 +580,7 @@ function renderExtras(card) {
   const have = card.badges || {};
   const bb = document.getElementById('badgeBox');
   bb.innerHTML = `<div class="lbl"><span>🎖 バッジ</span><b>${Object.keys(have).length} / ${FES.badgeDefs().length}</b></div><div class="badges">` +
-    FES.badgeDefs().map(b => `<div class="badge${have[b.id] ? ' on' : ''}${fresh.some(f => f.id === b.id) ? ' pop' : ''}" title="${esc(b.name)}：${esc(b.desc)}">${b.icon}</div>`).join('') + '</div>';
+    FES.badgeDefs().map(b => `<div class="bdg${have[b.id] ? ' on' : ''}${fresh.some(f => f.id === b.id) ? ' pop' : ''}" title="${esc(b.name)}：${esc(b.desc)}">${b.icon}</div>`).join('') + '</div>';
   if (fresh.length && stampSeen.size) { FES.sfx('powerup'); FES.toast(`🎖 バッジ獲得！ ${fresh.map(b => b.icon + ' ' + b.name).join('　')}`, 3000); }
   // 景品
   const old = bb.querySelector('.prize-cta'); if (old) old.remove();

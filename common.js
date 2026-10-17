@@ -553,10 +553,10 @@
   .fes-howto.out { animation: fesFeverOut .4s ease both; }
   .fes-howto .lbl { width: 100%; text-align: center; font-size: 12px; letter-spacing: .3em; font-weight: 900; color: rgba(255,255,255,.7); text-shadow: 0 2px 8px rgba(0,0,0,.8); }
   .fes-howto .chip { padding: 9px 16px; border-radius: 999px; background: rgba(8,8,28,.86); border: 1px solid rgba(255,255,255,.28); color: #fff; font-weight: 900; font-size: clamp(14px, 2.2vw, 18px); box-shadow: 0 6px 24px rgba(0,0,0,.5); animation: fesPop .5s cubic-bezier(.2,1.4,.4,1) both; white-space: nowrap; }
-  .fes-wipe { position: fixed; inset: 0; z-index: 9950; pointer-events: none; background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--wc, #7a5cff) 55%, #07071a), #07071a 70%); }
-  .fes-wipe.out { animation: fesWipeOut .6s cubic-bezier(.4,0,.2,1) both; }
-  .fes-wipe.in { pointer-events: auto; animation: fesWipeIn .25s ease both; }
-  @keyframes fesWipeOut { 0% { opacity: 1; clip-path: circle(120% at 50% 50%) } 100% { opacity: 1; clip-path: circle(0% at 50% 50%) } }
+  .fes-wipe { position: fixed; inset: 0; z-index: 9950; pointer-events: none; background: #07071a; }
+  .fes-wipe.out { animation: fesWipeOut .45s ease both; }
+  .fes-wipe.in { pointer-events: auto; animation: fesWipeIn .22s ease both; }
+  @keyframes fesWipeOut { from { opacity: 1 } to { opacity: 0 } }
   @keyframes fesWipeIn { from { opacity: 0 } to { opacity: 1 } }
   .fes-lite .fes-fever { animation: fesFeverIn .35s ease both; }
   .fes-lite .fes-fever::before { display: none; }
@@ -660,7 +660,7 @@
       document.addEventListener('visibilitychange', () => { if (!document.hidden && actx && actx.state === 'suspended') actx.resume().catch(() => {}); });
       document.title = cfg.title ? `${cfg.title} | NEON FESTA` : document.title;
       if (FES.lite()) document.documentElement.classList.add('fes-lite');
-      if (cfg.wipe !== false) FES.wipeIn();
+      // ページを開くときの演出はしない（描画後に重なって不自然に見えるため）。出るときだけ暗転
       // 共通UI内のリンク（🏠・つぎは・ホームへ）は暗転してから移動
       ui.addEventListener('click', e => {
         const a = e.target && e.target.closest && e.target.closest('a[href]'); if (!a || !ui.contains(a)) return;
