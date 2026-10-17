@@ -1909,7 +1909,7 @@ function update(dt, now) {
   if (G.song.def.ext) {
     // 音声ファイルの再生位置に、ゲームの時計をゆっくり合わせる（ズレがたまらないように）
     const at = Music.audioTime();
-    if (at != null && G.state === 'play') { const target = clock() - at; G.songStart += (target - G.songStart) * Math.min(1, dt * 5); st = songTime(); }
+    if (at != null && (G.state === 'play' || G.state === 'countin')) { const target = clock() - at; G.songStart += (target - G.songStart) * Math.min(1, dt * 6); st = songTime(); }
     // ビジュアライザー: 拍でキック、ノーツが通るたびに光る
     if (st >= 0) { const b = st / G.song.beat, ph = b - Math.floor(b); if (ph < 0.08) VIS.kick = Math.max(VIS.kick, 0.9); if (ph >= 0.5 && ph < 0.58) VIS.hat = Math.max(VIS.hat, 0.8); }
     while (G.visIdx < G.notes.length && G.notes[G.visIdx].t <= st) { const n = G.notes[G.visIdx++]; VIS.lead = 1; if (n.lane === 0 || n.lane === 3) VIS.bass = 1; if (n.chord) { VIS.snare = 1; if (theme.fx === 'embers') spawnBolt(now); } }
