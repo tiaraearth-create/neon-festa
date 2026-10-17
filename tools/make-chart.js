@@ -23,8 +23,7 @@ fs.mkdirSync(musicDir, { recursive: true });
 const SR = 22050;
 const m4a = path.join(musicDir, `${id}.m4a`);
 const raw = path.join(os.tmpdir(), `neonfesta-${id}.raw`);
-console.log('変換中…');
-execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', input, '-ac', '2', '-c:a', 'aac', '-b:a', '128k', m4a]);
+console.log('解析用に読み込み中…');
 execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', input, '-ac', '1', '-ar', String(SR), '-f', 'f32le', raw]);
 const buf = fs.readFileSync(raw);
 const pcm = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
@@ -124,27 +123,29 @@ console.log(`  グリッド上の音 ${usable.length} 個`);
 
 function rmsAt(t) { const f = Math.round((t * SR - N / 2) / HOP); return rms[Math.max(0, Math.min(frames - 1, f))]; }
 function pickLane(o, prev, prevT, rnd) {
-  const tot = o.lo + o.mi + o.hi + 1e-9, lo = o.lo / tot, hi = o.hi / tot;
-  let lane;
-  if (prev != null && o.t - prevT < STEP * 2.5) { lane = prev + (rnd() < 0.5 ? -1 : 1); if (lane < 0) lane = 1; if (lane > 3) lane = 2; }   // 速い連打はとなりへ
-  else if (lo > 0.45) lane = prev === 0 ? 3 : prev === 3 ? 0 : (rnd() < 0.5 ? 0 : 3);
-  else if (hi > 0.45) lane = prev === 1 ? 2 : prev === 2 ? 1 : (rnd() < 0.5 ? 1 : 2);
-  else { lane = Math.floor(rnd() * 4); if (lane === prev) lane = (lane + 1 + Math.floor(rnd() * 3)) % 4; }
+  // 音の高さ（低音→左、高音→右）でレーンを決めると、譜面が曲に沿って見える
+  const tot = o.lo + o.mi + o.hi + 1e-9, lo = o.lo / tot, hi = o.hi / tot, mi = o.mi / tot;
+  const c = (mi * 1.5 + hi * 3) / (lo + mi + hi);          // 0（低い）〜 3（高い）の重心
+  let lane = FES_clamp(Math.round(c), 0, 3);
+  if (prev != null && o.t - prevT < STEP * 2.5) {           // 速い連打は同じレーンにしない（となりへ）
+    if (lane === prev) lane = prev + (prev === 3 ? -1 : prev === 0 ? 1 : (rnd() < 0.5 ? -1 : 1));
+  } else if (lane === prev && rnd() < 0.35) { lane = FES_clamp(prev + (rnd() < 0.5 ? -1 : 1), 0, 3); }
   return lane;
 }
+const FES_clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 function lcg(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 function makeChart(di) {
   const rnd = lcg(1234 + di * 77);
-  const thr = [pct(0.3), pct(0.35), pct(0.2)][di];
-  const maxPerSec = [2.2, 4.2, 7.5][di], minGap = [0.28, 0.14, 0.09][di];
+  const thr = [pct(0.45), pct(0.4), pct(0.25)][di];
+  const maxPerSec = [1.8, 3.4, 6.0][di], minGap = [0.3, 0.16, 0.1][di];
   const notes = []; let prevLane = null, prevT = -9;
   for (let i = 0; i < usable.length; i++) {
     const o = usable[i];
     const onBeat = o.g % 4 === 0, on8 = o.g % 2 === 0;
     let ok;
-    if (di === 0) ok = (onBeat && o.v >= thr) || (on8 && o.v >= pct(0.82));
-    else if (di === 1) ok = (on8 && o.v >= thr) || (o.v >= pct(0.88));
-    else ok = o.v >= thr;
+    if (di === 0) ok = (onBeat && o.v >= thr) || (on8 && o.v >= pct(0.9));
+    else if (di === 1) ok = on8 && o.v >= thr;                    // ふつう は 8分まで
+    else ok = (on8 && o.v >= thr) || o.v >= pct(0.55);            // むずかしい は 16分も（強い音だけ）
     if (!ok) continue;
     if (o.t - prevT < minGap) continue;
     // 直近1秒の密度
@@ -175,10 +176,13 @@ let charts = [makeChart(0), makeChart(1), makeChart(2)];
 const firstT = Math.min(...charts.map(c => c.length ? c[0][0] : Infinity));
 let start = 0;
 if (firstT > 6) { start = Math.max(0, Math.floor((firstT - BEAT * 2 - offset) / BEAT) * BEAT + offset); start = Math.round(start * 1000) / 1000; }
-if (start > 0) { charts = charts.map(c => c.map(([t, l, e]) => [Math.round((t - start) * 1000) / 1000, l, e ? Math.round((e - start) * 1000) / 1000 : 0])); console.log(`  再生開始位置 ${start} 秒（イントロを飛ばす）`); }
+if (start > 0) { charts = charts.map(c => c.map(([t, l, e]) => [Math.round((t - start) * 1000) / 1000, l, e ? Math.round((e - start) * 1000) / 1000 : 0])); console.log(`  イントロ ${start} 秒を切り落として音声を作ります`); }
+console.log('音声を変換中…');
+const ffArgs = ['-v', 'error', '-y'].concat(start > 0 ? ['-ss', String(start)] : []).concat(['-i', input, '-ac', '2', '-c:a', 'aac', '-b:a', '128k', m4a]);
+execFileSync('ffmpeg', ffArgs);
 charts.forEach((c, i) => console.log(`  ${['やさしい', 'ふつう', 'むずかしい'][i]}: ${c.length} ノーツ（ロング ${c.filter(n => n[2]).length}）`));
 const hx = hex.replace('#', ''); const color = [parseInt(hx.slice(0, 2), 16), parseInt(hx.slice(2, 4), 16), parseInt(hx.slice(4, 6), 16)];
-const entry = { id, name, genre, bpm: BPM, offset: Math.round(offset * 1000) / 1000, start, length: Math.round((duration - start) * 10) / 10, audio: `music/${id}.m4a`, hex, color, theme, charts };
+const entry = { id, name, genre, bpm: BPM, offset: Math.round(offset * 1000) / 1000, start: 0, trimmed: start, length: Math.round((duration - start) * 10) / 10, audio: `music/${id}.m4a`, hex, color, theme, charts };
 
 // ---------- 4. charts.js に書く ----------
 const out = path.join(musicDir, 'charts.js');
