@@ -114,7 +114,7 @@ document.addEventListener('keydown', e => {
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   const g = view.toGame(e.clientX, e.clientY);
-  if (G.paused) { togglePause(); return; }
+  if (G.paused) return;
   // 上端中央のポーズボタン
   if (G.state !== 'title' && Math.abs(g.x - W / 2) < 30 && g.y < 44) { togglePause(); return; }
   pressed(g.x < W / 2 ? 0 : 1);
@@ -122,11 +122,14 @@ canvas.addEventListener('pointerdown', e => {
 function togglePause() {
   G.paused = !G.paused;
   if (G.mini && G.mini.onPause) G.mini.onPause(G.paused);
+  if (G.paused) FES.pause(true, { hint: 'Esc か P でも再開できます（再開後すぐ勝負が続きます）', onResume: () => { if (G.paused) togglePause(); }, onRetry: () => { FES.pause(false); G.paused = false; startMatch(); } });
+  else { FES.pause(false); last = performance.now(); }
   FES.sfx(G.paused ? 'select' : 'go');
 }
 
 /* ================================================================ 進行 */
 function startMatch() {
+  FES.hideResult(); FES.pause(false); G.paused = false;
   FES.sfx('start');
   G.round = 0; G.wins = [0, 0]; G.lastType = null; G.history = []; G.fastest = [9, 9];
   nextRound();
@@ -471,10 +474,6 @@ function draw() {
   ctx.globalAlpha = 1;
   if (G.flash > 0) { ctx.fillStyle = G.flashColor; ctx.globalAlpha = G.flash; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   ctx.restore();
-  if (G.paused) {
-    ctx.fillStyle = 'rgba(5,5,20,.7)'; ctx.fillRect(0, 0, W, H);
-    glowText('PAUSE', W / 2, H / 2 - 10, 72, '#fff'); text('Esc / P / タップ でもどる', W / 2, H / 2 + 60, 22, 'rgba(255,255,255,.7)');
-  }
 }
 
 /* ================================================================ ループ */

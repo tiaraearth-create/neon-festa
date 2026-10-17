@@ -170,7 +170,21 @@ const ITEM_DEFS = {
 /* ------------------------------------------------------------ キャンバス */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const view = FES.fitCanvas(canvas, W, H);
+// 画面いっぱいに描く。プレイ画面（720×960）は中央に置き、横長モニターで左右に余る場所はサイドパネル（スコア・ステージ・アイテム）に使う。
+const view = { scale: 1, offsetX: 0, offsetY: 0, vw: 0, vh: 0, dpr: 1, wide: false, sideStars: [],
+  toGame(cx, cy) { return { x: (cx - view.offsetX) / view.scale, y: (cy - view.offsetY) / view.scale }; } };
+function fit() {
+  const vw = innerWidth, vh = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  view.vw = vw; view.vh = vh; view.dpr = dpr;
+  canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+  canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px'; canvas.style.position = 'absolute'; canvas.style.left = '0'; canvas.style.top = '0';
+  const s = Math.min(vw / W, vh / H);
+  view.scale = s; view.offsetX = (vw - W * s) / 2; view.offsetY = (vh - H * s) / 2;
+  view.wide = view.offsetX >= 170;
+  view.sideStars = [];
+  for (let i = 0; i < 120; i++) view.sideStars.push({ x: Math.random(), y: Math.random(), s: Math.random() * 1.6 + 0.4, v: Math.random() * 0.03 + 0.01, ph: Math.random() * Math.PI * 2 });
+}
+addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 50)); fit();
 
 /* ------------------------------------------------------------ ゲーム状態 */
 let G = null;
@@ -671,7 +685,7 @@ const BGM = {
 /* ------------------------------------------------------------ 進行 */
 function startGame() {
   if (resultTimer) { clearTimeout(resultTimer); resultTimer = null; }
-  FES.hideResult();
+  FES.hideResult(); FES.pause(false);
   G = newGame();
   G.stage = 0;
   buildStage(0);
@@ -735,8 +749,8 @@ function togglePause() {
   if (!['play', 'stageintro', 'stageclear', 'countdown'].includes(G.state)) return;
   G.paused = !G.paused;
   FES.sfx('select');
-  if (G.paused) BGM.stop();
-  else if (G.state === 'play') BGM.start();
+  if (G.paused) { BGM.stop(); FES.pause(true, { onResume: () => { if (G.paused) togglePause(); }, onRetry: () => { FES.pause(false); startGame(); } }); }
+  else { FES.pause(false); if (G.state === 'play') BGM.start(); }
 }
 
 function doAction() {
@@ -1129,24 +1143,37 @@ function drawPops() {
   ctx.globalAlpha = 1;
 }
 
+function activeFx() {
+  const p = G.paddle, fx = [];
+  if (p.sizeMode === 'big') fx.push(['拡大', p.sizeT, '#4dff88', 12]);
+  if (p.sizeMode === 'small') fx.push(['縮小', p.sizeT, '#8a8a9a', 8]);
+  if (p.laserT > 0) fx.push(['レーザー', p.laserT, '#ff4d4d', 10]);
+  if (G.slowT > 0) fx.push(['スロー', G.slowT, '#6ab0ff', 8]);
+  if (G.pierceT > 0) fx.push(['貫通', G.pierceT, '#ffb347', 8]);
+  if (G.barrier) fx.push(['バリア', 0, '#b07cff', 0]);
+  return fx;
+}
 function drawHUD() {
   if (G.state === 'title') return;
   const hue = stageHue();
-  // 背景バー
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  rrect(160, HUD_Y - 24, 400, 48, 16); ctx.fill();
-  ctx.strokeStyle = `hsla(${hue},100%,70%,0.5)`; ctx.lineWidth = 1.5; rrect(160, HUD_Y - 24, 400, 48, 16); ctx.stroke();
-  // ステージ
-  text(`STAGE ${G.stage + 1}/${TOTAL_STAGES}`, 236, HUD_Y, 19, `hsl(${hue},100%,75%)`);
-  // スコア
-  ctx.font = font(30); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#fff'; ctx.fillText(Math.floor(G.dispScore).toLocaleString(), 372, HUD_Y);
-  // ライフ
-  const lives = Math.min(G.lives, 6);
-  for (let i = 0; i < lives; i++) {
-    const x = 470 + i * 15, y = HUD_Y;
-    ctx.fillStyle = 'rgba(120,240,255,0.4)'; ctx.beginPath(); ctx.arc(x, y, 8, 0, 6.29); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 6.29); ctx.fill();
+  const wide = view.wide;   // 横長モニター: スコア・ステージ・ライフはサイドパネルに出す
+  if (!wide) {
+    // 背景バー
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    rrect(160, HUD_Y - 24, 400, 48, 16); ctx.fill();
+    ctx.strokeStyle = `hsla(${hue},100%,70%,0.5)`; ctx.lineWidth = 1.5; rrect(160, HUD_Y - 24, 400, 48, 16); ctx.stroke();
+    // ステージ
+    text(`STAGE ${G.stage + 1}/${TOTAL_STAGES}`, 236, HUD_Y, 19, `hsl(${hue},100%,75%)`);
+    // スコア
+    ctx.font = font(30); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.fillText(Math.floor(G.dispScore).toLocaleString(), 372, HUD_Y);
+    // ライフ
+    const lives = Math.min(G.lives, 6);
+    for (let i = 0; i < lives; i++) {
+      const x = 470 + i * 15, y = HUD_Y;
+      ctx.fillStyle = 'rgba(120,240,255,0.4)'; ctx.beginPath(); ctx.arc(x, y, 8, 0, 6.29); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 6.29); ctx.fill();
+    }
   }
   // コンボ
   if (G.combo >= 2 && G.state === 'play') {
@@ -1155,21 +1182,18 @@ function drawHUD() {
     text(`COMBO ${G.combo}  ×${comboMult().toFixed(1)}`, 0, 0, 16, '#ffe36e');
     ctx.restore();
   }
-  // アクティブ効果
+  // アクティブ効果（横長モニターではサイドパネルに出す）
   const p = G.paddle;
-  const fx = [];
-  if (p.sizeMode === 'big') fx.push(['拡大', p.sizeT, '#4dff88']);
-  if (p.sizeMode === 'small') fx.push(['縮小', p.sizeT, '#8a8a9a']);
-  if (p.laserT > 0) fx.push(['レーザー', p.laserT, '#ff4d4d']);
-  if (G.slowT > 0) fx.push(['スロー', G.slowT, '#6ab0ff']);
-  if (G.pierceT > 0) fx.push(['貫通', G.pierceT, '#ffb347']);
-  let fxX = 16;
-  for (const [label, t, color] of fx) {
-    const w = 92;
-    ctx.fillStyle = hexA(color, 0.25); rrect(fxX, H - 22, w, 20, 10); ctx.fill();
-    ctx.fillStyle = hexA(color, 0.9); rrect(fxX, H - 22, w * clamp(t / 12, 0.02, 1), 20, 10); ctx.fill();
-    text(`${label} ${Math.ceil(t)}`, fxX + w / 2, H - 12, 12, '#fff');
-    fxX += w + 8;
+  if (!wide) {
+    let fxX = 16;
+    for (const [label, t, color, max] of activeFx()) {
+      if (!max) continue;
+      const w = 92;
+      ctx.fillStyle = hexA(color, 0.25); rrect(fxX, H - 22, w, 20, 10); ctx.fill();
+      ctx.fillStyle = hexA(color, 0.9); rrect(fxX, H - 22, w * clamp(t / max, 0.02, 1), 20, 10); ctx.fill();
+      text(`${label} ${Math.ceil(t)}`, fxX + w / 2, H - 12, 12, '#fff');
+      fxX += w + 8;
+    }
   }
   // 発射ヒント
   if (G.state === 'play' && G.ballWaiting && !G.paused) {
@@ -1295,16 +1319,120 @@ function drawOverlays() {
   }
 }
 
-function drawPause() {
-  if (!G.paused) return;
-  ctx.fillStyle = 'rgba(5,5,20,0.6)'; ctx.fillRect(0, 0, W, H);
-  glowText('PAUSE', W / 2, 440, 72, '#fff', '#7ff5ff');
-  text('Esc / P / タップ で再開', W / 2, 520, 22, 'rgba(255,255,255,0.8)');
+/* ------------------------------------------------------------ サイドパネル（横長モニター用。座標は画面の CSS px） */
+function panelRect(side) {
+  const pad = 16, pw = view.offsetX - pad * 2;
+  return { x: side === 'L' ? pad : view.vw - pad - pw, y: pad, w: pw, h: view.vh - pad * 2 };
+}
+function drawSidePanels() {
+  const { vw, vh, offsetX: ox, offsetY: oy, scale: sc } = view;
+  const hue = G.state === 'title' ? (bgTime * 25) % 360 : stageHue();
+  const g = ctx.createLinearGradient(0, 0, 0, vh); g.addColorStop(0, `hsl(${hue},50%,5%)`); g.addColorStop(1, '#0a0820');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, vw, vh);
+  const t = bgTime;
+  for (const st of view.sideStars) {
+    const y = ((st.y + t * st.v) % 1) * vh, x = st.x * vw;
+    if (x > ox - 4 && x < ox + W * sc + 4) continue;
+    ctx.fillStyle = `rgba(200,220,255,${0.25 + 0.35 * Math.sin(t * 2 + st.ph)})`; ctx.fillRect(x, y, st.s, st.s);
+  }
+  const accent = `hsl(${hue},100%,70%)`;
+  ctx.save(); ctx.shadowColor = accent; ctx.shadowBlur = 24; ctx.strokeStyle = `hsla(${hue},100%,70%,0.55)`; ctx.lineWidth = 2; ctx.strokeRect(ox - 1, oy - 1, W * sc + 2, H * sc + 2); ctx.restore();
+  const L = panelRect('L'), R = panelRect('R');
+  const u = clamp(L.w / 280, 0.75, 1.5);
+  const panel = (r) => {
+    ctx.fillStyle = 'rgba(10,12,34,.72)'; rrect(r.x, r.y, r.w, r.h, 18); ctx.fill();
+    ctx.strokeStyle = `hsla(${hue},100%,70%,0.35)`; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = `hsla(${hue},100%,70%,0.8)`; rrect(r.x + 18, r.y, r.w - 36, 3, 2); ctx.fill();
+  };
+  panel(L); panel(R);
+  const title = G.state === 'title';
+  const hi = FES.getHiScore();
+  // ---- 左パネル ----
+  const lx = L.x + 22 * u, lw = L.w - 44 * u;
+  let y = L.y + 34 * u;
+  const line = (s, size, color, w, dy) => { text(s, lx, y, size * u, color, 'left', w || 700); y += (dy || size * 1.5) * u; };
+  text('NEON', lx, y, 12 * u, '#8ed6ff', 'left'); y += 18 * u;
+  text('BREAKER', lx, y, 22 * u, '#fff', 'left'); y += 40 * u;
+  if (title) {
+    line('RANKING  TOP 5', 12, 'rgba(255,255,255,.6)', 900, 26);
+    const r = FES.getRanking().slice(0, 5);
+    if (!r.length) line('まだ記録なし。1番乗りを狙おう！', 14, '#ffe36e', 700, 26);
+    r.forEach((e, i) => {
+      text(['🥇', '🥈', '🥉'][i] || (i + 1) + '.', lx, y, 16 * u, '#fff', 'left');
+      text(e.name, lx + 34 * u, y, 16 * u, i === 0 ? '#ffe36e' : '#fff', 'left');
+      text(e.score.toLocaleString(), lx + lw, y, 16 * u, 'rgba(255,255,255,.85)', 'right', 700);
+      y += 28 * u;
+    });
+    y += 10 * u;
+    line('HI-SCORE', 12, 'rgba(255,255,255,.6)', 900, 24);
+    line(hi.toLocaleString(), 30, '#ffe36e', 900, 44);
+  } else {
+    line('SCORE', 12, 'rgba(255,255,255,.6)', 900, 24);
+    line(Math.floor(G.dispScore).toLocaleString(), 40, '#fff', 900, 52);
+    line('HI-SCORE', 11, 'rgba(255,255,255,.5)', 900, 20);
+    line(Math.max(hi, Math.floor(G.score)).toLocaleString(), 20, G.score > hi && hi > 0 ? '#ffe36e' : 'rgba(255,255,255,.8)', 900, 38);
+    line(`STAGE ${G.stage + 1} / ${TOTAL_STAGES}`, 18, accent, 900, 28);
+    line(`「${stageDef().name}」`, 15, 'rgba(255,255,255,.85)', 700, 26);
+    // 残りブロックのバー
+    const total = G.blocks.filter(b => b.type !== 'm').length || 1, left = remainingBlocks();
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; rrect(lx, y, lw, 10 * u, 5 * u); ctx.fill();
+    ctx.fillStyle = accent; rrect(lx, y, lw * clamp(1 - left / total, 0, 1), 10 * u, 5 * u); ctx.fill(); y += 24 * u;
+    line(`のこり ${left} ブロック`, 13, 'rgba(255,255,255,.7)', 700, 34);
+    line('LIVES', 12, 'rgba(255,255,255,.6)', 900, 26);
+    for (let i = 0; i < Math.min(G.lives, 6); i++) { ctx.fillStyle = 'rgba(120,240,255,0.4)'; ctx.beginPath(); ctx.arc(lx + 12 * u + i * 30 * u, y, 11 * u, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(lx + 12 * u + i * 30 * u, y, 7 * u, 0, 6.29); ctx.fill(); }
+    y += 40 * u;
+    line('COMBO', 12, 'rgba(255,255,255,.6)', 900, 24);
+    if (G.combo >= 2) { text(`${G.combo}`, lx, y + 14 * u, 46 * u, '#ffe36e', 'left'); text(`x${comboMult().toFixed(1)}`, lx + lw, y + 14 * u, 16 * u, '#ffe36e', 'right'); y += 60 * u; }
+    else line('—', 30, 'rgba(255,255,255,.25)', 900, 56);
+  }
+  // ---- 右パネル ----
+  const rx = R.x + 22 * u, rw = R.w - 44 * u;
+  y = R.y + 34 * u;
+  const rline = (s, size, color, w, dy) => { text(s, rx, y, size * u, color, 'left', w || 700); y += (dy || size * 1.5) * u; };
+  if (!title) {
+    rline('ITEMS', 12, 'rgba(255,255,255,.6)', 900, 26);
+    const fx = activeFx();
+    if (!fx.length) rline('アイテムをパドルでキャッチ！', 13, 'rgba(255,255,255,.45)', 700, 26);
+    for (const [label, tt, color, max] of fx) {
+      ctx.fillStyle = hexA(color, 0.25); rrect(rx, y - 10 * u, rw, 24 * u, 12 * u); ctx.fill();
+      ctx.fillStyle = hexA(color, 0.9); rrect(rx, y - 10 * u, rw * (max ? clamp(tt / max, 0.02, 1) : 1), 24 * u, 12 * u); ctx.fill();
+      text(max ? `${label}  ${Math.ceil(tt)}` : label, rx + rw / 2, y + 2 * u, 13 * u, '#fff', 'center'); y += 32 * u;
+    }
+    y += 10 * u;
+    rline('STAGES', 12, 'rgba(255,255,255,.6)', 900, 26);
+    STAGES.forEach((s, i) => {
+      const done = i < G.stage, cur = i === G.stage;
+      ctx.fillStyle = done ? '#7dff8a' : cur ? accent : 'rgba(255,255,255,.15)'; ctx.beginPath(); ctx.arc(rx + 8 * u, y, 6 * u, 0, 6.29); ctx.fill();
+      text(`${i + 1}. ${s.name}`, rx + 24 * u, y, 13 * u, cur ? '#fff' : done ? 'rgba(125,255,138,.85)' : 'rgba(255,255,255,.4)', 'left', cur ? 900 : 700);
+      y += 24 * u;
+    });
+  } else {
+    rline('HOW TO PLAY', 12, 'rgba(255,255,255,.6)', 900, 30);
+    rline(`全 ${TOTAL_STAGES} ステージ。ブロックを全部こわせ！`, 14, '#ffe36e', 900, 30);
+    rline('アイテムをパドルでキャッチすると強くなる', 13, 'rgba(255,255,255,.8)', 700, 40);
+    rline('ITEMS', 12, 'rgba(255,255,255,.6)', 900, 26);
+    for (const k of Object.keys(ITEM_DEFS)) {
+      const d = ITEM_DEFS[k];
+      ctx.fillStyle = d.color; rrect(rx, y - 9 * u, 26 * u, 18 * u, 9 * u); ctx.fill();
+      text(d.label, rx + 13 * u, y + 1, 12 * u, d.bad ? '#222' : '#101030', 'center');
+      text(d.name, rx + 36 * u, y, 13 * u, d.bad ? 'rgba(255,255,255,.55)' : '#fff', 'left', 700); y += 24 * u;
+    }
+  }
+  const help = [['移動', '← → / A D / マウス'], ['発射', 'SPACE / クリック'], ['レーザー', 'SPACE / クリック'], ['ポーズ', 'Esc / P']];
+  y = R.y + R.h - (help.length * 30 + 40) * u;
+  text('CONTROLS', rx, y, 11 * u, 'rgba(255,255,255,.5)', 'left'); y += 26 * u;
+  help.forEach(([k, v]) => { text(k, rx, y, 13 * u, '#8ed6ff', 'left'); text(v, rx + 70 * u, y, 13 * u, '#fff', 'left', 700); y += 30 * u; });
 }
 
 function draw() {
+  const { dpr, scale: sc, offsetX: ox0, offsetY: oy0, vw, vh } = view;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (view.wide) drawSidePanels();
+  else { ctx.fillStyle = '#07071a'; ctx.fillRect(0, 0, vw, vh); }
   ctx.save();
-  ctx.clearRect(0, 0, W, H);
+  ctx.beginPath(); ctx.rect(ox0, oy0, W * sc, H * sc); ctx.clip();
+  ctx.translate(ox0, oy0); ctx.scale(sc, sc);
+  ctx.save();
   let ox = 0, oy = 0;
   if (G.shake > 0) { ox = rand(-G.shake, G.shake); oy = rand(-G.shake, G.shake); }
   ctx.translate(ox, oy);
@@ -1326,7 +1454,7 @@ function draw() {
   }
   ctx.restore();
   if (G.flash > 0) { ctx.globalAlpha = G.flash * 0.7; ctx.fillStyle = G.flashColor; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
-  drawPause();
+  ctx.restore();
 }
 
 /* ------------------------------------------------------------ 入力 */
@@ -1366,7 +1494,7 @@ canvas.addEventListener('pointerdown', e => {
   if (G.state === 'result') return;
   const dx = g.x - PAUSE_BTN.x, dy = g.y - PAUSE_BTN.y;
   if (dx * dx + dy * dy <= (PAUSE_BTN.r + 8) * (PAUSE_BTN.r + 8)) { togglePause(); return; }
-  if (G.paused) { togglePause(); return; }
+  if (G.paused) return;
   movePaddleTo(g.x);
   doAction();
 });
