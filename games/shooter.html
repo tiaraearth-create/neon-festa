@@ -23,8 +23,22 @@ FES.init({ id: 'shooter', title: 'ギャラクシーブラスター', ranking: t
 const W = 540, H = 960;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const view = FES.fitCanvas(canvas, W, H);
 const { clamp, lerp, rand, randInt, pick } = FES;
+// 画面いっぱいに描く。プレイ画面（540×960）は中央に置き、横長モニターで左右に余る場所はサイドパネル（スコア・ライフ・操作説明）に使う。
+const view = { scale: 1, offsetX: 0, offsetY: 0, vw: 0, vh: 0, dpr: 1, wide: false, sideStars: [],
+  toGame(cx, cy) { return { x: (cx - view.offsetX) / view.scale, y: (cy - view.offsetY) / view.scale }; } };
+function fit() {
+  const vw = innerWidth, vh = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  view.vw = vw; view.vh = vh; view.dpr = dpr;
+  canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+  canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px'; canvas.style.position = 'absolute'; canvas.style.left = '0'; canvas.style.top = '0';
+  const s = Math.min(vw / W, vh / H);
+  view.scale = s; view.offsetX = (vw - W * s) / 2; view.offsetY = (vh - H * s) / 2;
+  view.wide = view.offsetX >= 170;   // 左右に 170px 以上あればサイドパネルを出す
+  view.sideStars = [];
+  for (let i = 0; i < 120; i++) view.sideStars.push({ x: Math.random(), y: Math.random(), s: Math.random() * 1.6 + 0.4, v: Math.random() * 0.03 + 0.01, ph: Math.random() * Math.PI * 2 });
+}
+addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 50)); fit();
 const TAU = Math.PI * 2;
 const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
 
@@ -971,9 +985,12 @@ function drawBoss(b) {
 /* ------------------------------------------------------------ HUD・オーバーレイ */
 function drawHUD() {
   const p = S.player;
+  const wide = view.wide;   // 横長モニター: スコア・ライフなどはサイドパネルに出すので、プレイ画面の中はすっきりさせる
   // スコア（上中央: common.js ボタンを避ける）
-  text('SCORE', W / 2, 20, 12, 'rgba(255,255,255,.6)', 'center', 700);
-  text(Math.floor(S.dispScore).toLocaleString(), W / 2, 48, 36, '#fff', 'center', 900, 5);
+  if (!wide) {
+    text('SCORE', W / 2, 20, 12, 'rgba(255,255,255,.6)', 'center', 700);
+    text(Math.floor(S.dispScore).toLocaleString(), W / 2, 48, 36, '#fff', 'center', 900, 5);
+  }
   // ボス HP バー
   const b = S.boss;
   if (b && !b.entering) {
@@ -984,33 +1001,35 @@ function drawHUD() {
     const g = ctx.createLinearGradient(bx, 0, bx + bw, 0); g.addColorStop(0, b.def.color2); g.addColorStop(1, b.def.color);
     ctx.fillStyle = g; if (ratio > 0) { roundRect(bx, by, bw * ratio, 12, 6); ctx.fill(); }
     ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(bx + bw / 3 - 1, by, 2, 12); ctx.fillRect(bx + bw * 2 / 3 - 1, by, 2, 12);
-  } else if (!S.boss && !S.cleared && S.warning <= 0) {
+  } else if (!wide && !S.boss && !S.cleared && S.warning <= 0) {
     // WAVE 進捗
     text(`WAVE ${S.wave}`, W / 2, 84, 16, '#8ed6ff', 'center', 900, 3);
     const bw = 200, bx = (W - bw) / 2;
     ctx.fillStyle = 'rgba(255,255,255,.15)'; roundRect(bx, 98, bw, 6, 3); ctx.fill();
     ctx.fillStyle = '#8ed6ff'; roundRect(bx, 98, bw * clamp(S.waveT / WAVE_DUR, 0, 1), 6, 3); ctx.fill();
   }
-  // 下部バー
-  const by = H - 46;
-  ctx.fillStyle = 'rgba(0,0,20,.45)'; roundRect(12, by - 22, W - 24, 44, 14); ctx.fill();
-  // ライフ
-  text('LIFE', 26, by, 11, 'rgba(255,255,255,.6)', 'left', 700);
-  for (let i = 0; i < 3; i++) {
-    ctx.save(); ctx.translate(70 + i * 26, by); ctx.scale(0.5, 0.5); ctx.globalAlpha = i < p.lives ? 1 : 0.18;
-    ctx.fillStyle = '#5cd4ff'; ctx.beginPath(); ctx.moveTo(0, -24); ctx.lineTo(20, 14); ctx.lineTo(0, 6); ctx.lineTo(-20, 14); ctx.closePath(); ctx.fill(); ctx.restore();
-  }
-  // ボム
-  text('BOMB', 160, by, 11, 'rgba(255,255,255,.6)', 'left', 700);
-  for (let i = 0; i < 5; i++) {
-    ctx.globalAlpha = i < p.bombs ? 1 : 0.15; ctx.fillStyle = '#ff4dd8'; ctx.beginPath(); ctx.arc(210 + i * 20, by, 7, 0, TAU); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-  // パワー
-  text('POWER', 322, by, 11, 'rgba(255,255,255,.6)', 'left', 700);
-  for (let i = 0; i < 5; i++) {
-    ctx.fillStyle = i < p.power ? (i === 4 ? '#ffe66d' : '#5cd4ff') : 'rgba(255,255,255,.15)';
-    roundRect(378 + i * 18, by - 7, 14, 14, 3); ctx.fill();
+  if (!wide) {
+    // 下部バー
+    const by = H - 46;
+    ctx.fillStyle = 'rgba(0,0,20,.45)'; roundRect(12, by - 22, W - 24, 44, 14); ctx.fill();
+    // ライフ
+    text('LIFE', 26, by, 11, 'rgba(255,255,255,.6)', 'left', 700);
+    for (let i = 0; i < 3; i++) {
+      ctx.save(); ctx.translate(70 + i * 26, by); ctx.scale(0.5, 0.5); ctx.globalAlpha = i < p.lives ? 1 : 0.18;
+      ctx.fillStyle = '#5cd4ff'; ctx.beginPath(); ctx.moveTo(0, -24); ctx.lineTo(20, 14); ctx.lineTo(0, 6); ctx.lineTo(-20, 14); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+    // ボム
+    text('BOMB', 160, by, 11, 'rgba(255,255,255,.6)', 'left', 700);
+    for (let i = 0; i < 5; i++) {
+      ctx.globalAlpha = i < p.bombs ? 1 : 0.15; ctx.fillStyle = '#ff4dd8'; ctx.beginPath(); ctx.arc(210 + i * 20, by, 7, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // パワー
+    text('POWER', 322, by, 11, 'rgba(255,255,255,.6)', 'left', 700);
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = i < p.power ? (i === 4 ? '#ffe66d' : '#5cd4ff') : 'rgba(255,255,255,.15)';
+      roundRect(378 + i * 18, by - 7, 14, 14, 3); ctx.fill();
+    }
   }
   // コンボ
   if (S.combo >= 2) {
@@ -1135,10 +1154,103 @@ function drawCountdown() {
   ctx.strokeStyle = `rgba(140,214,255,${1 - Math.min(1, k)})`; ctx.lineWidth = 6 * (1 - Math.min(1, k)) + 1;
   ctx.beginPath(); ctx.arc(W / 2, H * 0.4, 60 + k * 160, 0, TAU); ctx.stroke();
 }
-function drawPause() {
-  ctx.fillStyle = 'rgba(0,0,20,.62)'; ctx.fillRect(0, 0, W, H);
-  text('PAUSE', W / 2, H * 0.44, 64, '#fff', 'center', 900, 8, true);
-  text('Esc / P / タップで再開', W / 2, H * 0.44 + 56, 18, '#8ed6ff', 'center', 700);
+/* ------------------------------------------------------------ サイドパネル（横長モニター用。座標は画面の CSS px） */
+function panelRect(side) {
+  const pad = 16, pw = view.offsetX - pad * 2;
+  return { x: side === 'L' ? pad : view.vw - pad - pw, y: pad, w: pw, h: view.vh - pad * 2 };
+}
+function drawSidePanels() {
+  const { vw, vh, offsetX: ox, offsetY: oy, scale: sc } = view;
+  // 画面全体の背景（プレイ画面の外）
+  const g = ctx.createLinearGradient(0, 0, 0, vh); g.addColorStop(0, '#040414'); g.addColorStop(1, '#0a0820');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, vw, vh);
+  const t = S.t;
+  for (const st of view.sideStars) {
+    const y = ((st.y + t * st.v) % 1) * vh, x = st.x * vw;
+    if (x > ox - 4 && x < ox + W * sc + 4) continue;
+    ctx.fillStyle = `rgba(255,255,255,${0.25 + 0.35 * Math.sin(t * 2 + st.ph)})`; ctx.fillRect(x, y, st.s, st.s * 2.5);
+  }
+  // プレイ画面のふち（光る枠）
+  ctx.save(); ctx.shadowColor = 'rgba(94,212,255,.55)'; ctx.shadowBlur = 24;
+  ctx.strokeStyle = 'rgba(94,212,255,.5)'; ctx.lineWidth = 2; ctx.strokeRect(ox - 1, oy - 1, W * sc + 2, H * sc + 2); ctx.restore();
+  const L = panelRect('L'), R = panelRect('R');
+  const u = clamp(L.w / 280, 0.75, 1.5);   // パネル幅に合わせた文字の倍率
+  const panel = (r, accent) => {
+    ctx.fillStyle = 'rgba(10,12,34,.72)'; roundRect(r.x, r.y, r.w, r.h, 18); ctx.fill();
+    ctx.strokeStyle = hexToRgba(accent, 0.35); ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = hexToRgba(accent, 0.8); roundRect(r.x + 18, r.y, r.w - 36, 3, 2); ctx.fill();
+  };
+  const p = S.player, title = S.phase === 'title';
+  const boss = S.boss && !S.boss.entering ? S.boss : null;
+  panel(L, boss ? boss.def.color : '#5cd4ff'); panel(R, '#ff4dd8');
+  const lx = L.x + 22 * u, lw = L.w - 44 * u;
+  let y = L.y + 34 * u;
+  const line = (s, size, color, w, dy) => { text(s, lx, y, size * u, color, 'left', w || 700); y += (dy || size * 1.5) * u; };
+  const bar = (ratio, color, h) => { ctx.fillStyle = 'rgba(255,255,255,.12)'; roundRect(lx, y, lw, h * u, h * u / 2); ctx.fill(); if (ratio > 0) { ctx.fillStyle = color; roundRect(lx, y, lw * clamp(ratio, 0, 1), h * u, h * u / 2); ctx.fill(); } y += (h + 18) * u; };
+  // ---- 左パネル ----
+  text('GALAXY', lx, y, 12 * u, '#8ed6ff', 'left', 900); y += 18 * u;
+  text('BLASTER', lx, y, 22 * u, '#fff', 'left', 900); y += 40 * u;
+  if (title) {
+    line('RANKING  TOP 5', 12, 'rgba(255,255,255,.6)', 900, 26);
+    const r = FES.getRanking().slice(0, 5);
+    if (!r.length) line('まだ記録なし。1番乗りを狙おう！', 14, '#ffe66d', 700, 26);
+    r.forEach((e, i) => {
+      text(['🥇', '🥈', '🥉'][i] || (i + 1) + '.', lx, y, 16 * u, '#fff', 'left', 900);
+      text(e.name, lx + 34 * u, y, 16 * u, i === 0 ? '#ffe66d' : '#fff', 'left', 900);
+      text(e.score.toLocaleString(), lx + lw, y, 16 * u, 'rgba(255,255,255,.85)', 'right', 700);
+      y += 28 * u;
+    });
+    y += 10 * u;
+    line('HI-SCORE', 12, 'rgba(255,255,255,.6)', 900, 24);
+    line(hiScore.toLocaleString(), 30, '#ffe66d', 900, 44);
+  } else {
+    line('SCORE', 12, 'rgba(255,255,255,.6)', 900, 24);
+    line(Math.floor(S.dispScore).toLocaleString(), 40, '#fff', 900, 52);
+    line('HI-SCORE', 11, 'rgba(255,255,255,.5)', 900, 20);
+    line(Math.max(hiScore, Math.floor(S.score)).toLocaleString(), 20, S.score > hiScore && hiScore > 0 ? '#ffe66d' : 'rgba(255,255,255,.8)', 900, 38);
+    if (boss) {
+      line('BOSS', 12, boss.def.color, 900, 22);
+      line(boss.def.name, 18, '#fff', 900, 30);
+      bar(boss.hp / boss.maxHp, boss.def.color, 14);
+    } else if (!S.cleared) {
+      line(`WAVE ${S.wave} / ${FINAL_WAVE}`, 18, '#8ed6ff', 900, 28);
+      bar(S.warning > 0 ? 1 : S.waveT / WAVE_DUR, '#8ed6ff', 10);
+    }
+    y += 6 * u;
+    line('COMBO', 12, 'rgba(255,255,255,.6)', 900, 24);
+    if (S.combo >= 2) {
+      const scp = 1 + S.comboPop * 0.2;
+      ctx.save(); ctx.translate(lx, y + 14 * u); ctx.scale(scp, scp); text(`${S.combo}`, 0, 0, 46 * u, '#ff9ee8', 'left', 900); ctx.restore();
+      text(`x${comboMult().toFixed(2)}`, lx + lw, y + 14 * u, 16 * u, '#ffe66d', 'right', 900); y += 60 * u;
+    } else { line('—', 30, 'rgba(255,255,255,.25)', 900, 56); }
+    line(`撃破 ${S.kills}　　GRAZE ${S.graze}`, 13, 'rgba(255,255,255,.7)', 700, 24);
+  }
+  // ---- 右パネル ----
+  const rx = R.x + 22 * u, rw = R.w - 44 * u;
+  y = R.y + 34 * u;
+  const rline = (s, size, color, w, dy) => { text(s, rx, y, size * u, color, 'left', w || 700); y += (dy || size * 1.5) * u; };
+  if (!title) {
+    rline('LIFE', 12, 'rgba(255,255,255,.6)', 900, 30);
+    for (let i = 0; i < 3; i++) {
+      ctx.save(); ctx.translate(rx + 16 * u + i * 40 * u, y); ctx.scale(0.8 * u, 0.8 * u); ctx.globalAlpha = i < p.lives ? 1 : 0.15;
+      ctx.fillStyle = '#5cd4ff'; ctx.beginPath(); ctx.moveTo(0, -24); ctx.lineTo(20, 14); ctx.lineTo(0, 6); ctx.lineTo(-20, 14); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+    y += 44 * u;
+    rline('BOMB', 12, 'rgba(255,255,255,.6)', 900, 28);
+    for (let i = 0; i < 5; i++) { ctx.globalAlpha = i < p.bombs ? 1 : 0.15; ctx.fillStyle = '#ff4dd8'; ctx.beginPath(); ctx.arc(rx + 12 * u + i * 30 * u, y, 10 * u, 0, TAU); ctx.fill(); }
+    ctx.globalAlpha = 1; y += 40 * u;
+    rline('POWER', 12, 'rgba(255,255,255,.6)', 900, 28);
+    for (let i = 0; i < 5; i++) { ctx.fillStyle = i < p.power ? (i === 4 ? '#ffe66d' : '#5cd4ff') : 'rgba(255,255,255,.15)'; roundRect(rx + i * 30 * u, y - 9 * u, 24 * u, 18 * u, 4); ctx.fill(); }
+    y += 46 * u;
+    if (p.power >= 5) rline('LASER 搭載中！', 14, '#ffe66d', 900, 30);
+  } else {
+    rline('HOW TO PLAY', 12, 'rgba(255,255,255,.6)', 900, 30);
+    rline('約3分。WAVE 9 の最終ボスを倒せ！', 14, '#ffe66d', 900, 36);
+  }
+  const help = [['移動', '矢印 / WASD / マウス'], ['ボム', 'Shift / Z / クリック'], ['ポーズ', 'Esc / P'], ['ショット', '自動連射']];
+  y = R.y + R.h - (help.length * 30 + 40) * u;
+  text('CONTROLS', rx, y, 11 * u, 'rgba(255,255,255,.5)', 'left', 900); y += 26 * u;
+  help.forEach(([k, v]) => { text(k, rx, y, 13 * u, '#8ed6ff', 'left', 900); text(v, rx + 60 * u, y, 13 * u, '#fff', 'left', 700); y += 30 * u; });
 }
 
 /* ------------------------------------------------------------ ゲーム進行 */
@@ -1153,11 +1265,14 @@ function beginPlay() {
   input.mouseMoved = false; input.dx = 0; input.dy = 0; input.touchId = null;
   canvas.style.cursor = 'none';
 }
-function restartGame() { bgmStop(); FES.hideResult(); beginPlay(); }
+function restartGame() { bgmStop(); FES.hideResult(); FES.pause(false); beginPlay(); }
 function togglePause() {
   if (S.phase !== 'play' || S.over) return;
   S.paused = !S.paused; FES.sfx('select');
-  if (S.paused) bgmStop(); else bgmStart(S.bgmMode);
+  if (S.paused) {
+    bgmStop();
+    FES.pause(true, { onResume: () => { if (S.paused) togglePause(); }, onRetry: restartGame });
+  } else { bgmStart(S.bgmMode); FES.pause(false); }
 }
 function finishGame() {
   if (S.resultShown) return;
@@ -1210,8 +1325,13 @@ function update(dtRaw) {
   }
 }
 function render() {
+  const { dpr, scale: sc, offsetX: ox, offsetY: oy, vw, vh } = view;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (view.wide) drawSidePanels();
+  else { ctx.fillStyle = '#07071a'; ctx.fillRect(0, 0, vw, vh); }
   ctx.save();
-  ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+  ctx.beginPath(); ctx.rect(ox, oy, W * sc, H * sc); ctx.clip();
+  ctx.translate(ox, oy); ctx.scale(sc, sc);
   ctx.save();
   if (S.shake > 0) ctx.translate(rand(-S.shake, S.shake), rand(-S.shake, S.shake));
   drawBg();
@@ -1233,7 +1353,6 @@ function render() {
   if (S.phase !== 'title') {
     drawHUD(); drawWarning(); drawAnnounce();
     if (S.phase === 'count') drawCountdown();
-    if (S.paused) drawPause();
   }
   ctx.restore();
 }
