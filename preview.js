@@ -140,9 +140,20 @@
       const s = Math.min(w / 3.6, h / 3.6), gx = w / 2 - s * 1.5 - 4, gy = h / 2 - s * 1.5 - 4, lit = Math.floor(t * 1.8) % 9;
       for (let i = 0; i < 9; i++) { const x = gx + (i % 3) * (s + 4), y = gy + Math.floor(i / 3) * (s + 4); c.save(); c.shadowColor = cols[i]; c.shadowBlur = i === lit ? 14 : 0; c.fillStyle = i === lit ? cols[i] : 'rgba(255,255,255,.1)'; c.beginPath(); c.roundRect(x, y, s, s, s * .22); c.fill(); c.restore(); }
     },
+    fps(c, w, h, t, col) {
+      // 一人称の通路: 奥へ収束する床の線、迫るドローン（六角形）、照準
+      const cx = w / 2, hz = h * 0.42;
+      c.strokeStyle = 'rgba(94,231,255,.3)'; c.lineWidth = 1;
+      for (let i = -3; i <= 3; i++) { c.beginPath(); c.moveTo(cx + i * 8, hz); c.lineTo(cx + i * w * 0.32, h); c.stroke(); }
+      for (let i = 0; i < 6; i++) { const z = (i / 6 + (t * 0.25) % (1 / 6)) % 1, y = hz + (1 - z) * (1 - z) * (h - hz); c.globalAlpha = 0.6 * (1 - z) + 0.1; c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
+      c.globalAlpha = 1;
+      [[0.3, -0.5, 0], [0.75, 0.6, 1.3], [0.55, -0.1, 2.6]].forEach(([zb, x, ph]) => { const z = ((zb + t * 0.18 + ph) % 1), s = 0.06 + (1 - z) * (1 - z) * 1.1, px = cx + x * s * w * 0.55, py = hz + s * h * 0.12, r = 4 + s * 16; c.save(); c.shadowColor = col; c.shadowBlur = 8; c.strokeStyle = col; c.lineWidth = 1.5; c.fillStyle = 'rgba(20,16,50,.9)'; c.beginPath(); for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + t; c.lineTo(px + Math.cos(a) * r, py + Math.sin(a) * r); } c.closePath(); c.fill(); c.stroke(); c.fillStyle = '#fff'; c.beginPath(); c.arc(px, py, r * 0.3, 0, 6.28); c.fill(); c.restore(); });
+      const ax = cx + Math.sin(t * 1.1) * w * 0.12, ay = h * 0.5 + Math.cos(t * 0.9) * h * 0.1;
+      c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.beginPath(); c.arc(ax, ay, 9, 0, 6.28); c.stroke(); c.beginPath(); c.moveTo(ax - 13, ay); c.lineTo(ax - 5, ay); c.moveTo(ax + 5, ay); c.lineTo(ax + 13, ay); c.moveTo(ax, ay - 13); c.lineTo(ax, ay - 5); c.moveTo(ax, ay + 5); c.lineTo(ax, ay + 13); c.stroke();
+    },
   };
 
-  const TITLES = { rhythm: 'リズムスターズ', shooter: 'ギャラクシーブラスター', puzzle: 'ジュエルラッシュ', typing: 'タイピングバトル', racing: 'ネオンドライブ', runner: 'ダッシュ！ネコ忍者', mole: 'もぐらパニック', hockey: 'ネオンエアホッケー', quiz: '早押しクイズ王', breakout: 'ネオンブレイカー', duel: 'ネオンデュエル', stack: 'ネオンスタック', memory: 'メモリーフラッシュ' };
+  const TITLES = { rhythm: 'リズムスターズ', shooter: 'ギャラクシーブラスター', puzzle: 'ジュエルラッシュ', typing: 'タイピングバトル', racing: 'ネオンドライブ', runner: 'ダッシュ！ネコ忍者', mole: 'もぐらパニック', hockey: 'ネオンエアホッケー', quiz: '早押しクイズ王', breakout: 'ネオンブレイカー', duel: 'ネオンデュエル', stack: 'ネオンスタック', memory: 'メモリーフラッシュ', fps: 'ネオンストライク' };
   /** 模擬プレイ画面: 角丸の枠 ＋ 上部の小さな HUD ＋ 中にモチーフ。座標は呼び出し側の ctx の単位 */
   function drawScreen(c, id, x, y, w, h, t, col, opts) {
     opts = opts || {};
