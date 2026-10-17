@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#07071a">
+<title>景品 | NEON FESTA</title>
+<style>
+  :root { --bg: #07071a; --card: rgba(255,255,255,.06); --line: rgba(255,255,255,.14); --text: #fff; --muted: rgba(255,255,255,.65); --gold: #ffd36e; --pink: #ff4d8d; --cyan: #5ee7ff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
+  body { min-height: 100vh; background: radial-gradient(circle at 50% -10%, #2a1b5e, var(--bg) 60%); }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 22px 16px 60px; }
+  .top { text-align: center; margin-bottom: 14px; }
+  .top .lbl { font-size: 11px; letter-spacing: .35em; color: var(--muted); font-weight: 800; }
+  .top h1 { margin: 6px 0 2px; font-size: 30px; font-weight: 900; background: linear-gradient(90deg, var(--pink), var(--gold), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .top p { margin: 0; color: var(--muted); font-size: 14px; font-weight: 700; }
+  .prize { background: var(--card); border: 1px solid rgba(255,211,110,.45); border-radius: 22px; padding: 18px 16px 16px; margin: 14px 0; box-shadow: 0 20px 60px rgba(0,0,0,.4), 0 0 40px rgba(255,211,110,.12); animation: pop .5s cubic-bezier(.2,1.4,.4,1) both; }
+  .prize + .prize { animation-delay: .1s; }
+  @keyframes pop { from { transform: scale(.92) translateY(20px); opacity: 0 } }
+  .prize .ic { font-size: 44px; line-height: 1; }
+  .prize h2 { margin: 6px 0 4px; font-size: 22px; font-weight: 900; }
+  .prize .d { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 14px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 16px; border-radius: 16px; border: 0; font-weight: 900; font-size: 18px; text-decoration: none; color: #fff; background: linear-gradient(135deg, var(--pink), #ff9f43); box-shadow: 0 10px 30px rgba(255,77,141,.4); font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .btn.alt { background: rgba(255,255,255,.1); border: 1px solid var(--line); box-shadow: none; font-size: 15px; padding: 13px; margin-top: 8px; color: #fff; }
+  .note { font-size: 12px; color: var(--muted); margin: 10px 0 0; line-height: 1.6; }
+  .how { background: rgba(0,0,0,.3); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; margin-top: 18px; }
+  .how h3 { margin: 0 0 8px; font-size: 15px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .tab { flex: 1; padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.05); color: #fff; font-weight: 900; font-family: inherit; font-size: 13px; cursor: pointer; }
+  .tab.on { background: var(--cyan); color: #06243a; border-color: transparent; }
+  .steps { display: none; } .steps.on { display: block; }
+  .step { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px dashed rgba(255,255,255,.1); font-size: 14px; line-height: 1.5; }
+  .step:last-child { border-bottom: 0; }
+  .step b { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--gold); color: #2a2200; display: grid; place-items: center; font-size: 13px; }
+  .step kbd { font-family: inherit; background: rgba(255,255,255,.12); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-size: 13px; }
+  .foot { text-align: center; margin-top: 26px; font-size: 12px; color: var(--muted); }
+  .foot a { color: var(--cyan); font-weight: 800; text-decoration: none; }
+  #installBtn { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="lbl">NEON FESTA — PRIZE</div>
+    <h1>🎁 景品ゲット！</h1>
+    <p>おめでとう！ 文化祭のあとも、家で遊べる自作ゲームをプレゼント</p>
+  </div>
+  <div id="list"></div>
+
+  <div class="how">
+    <h3>📲 ホーム画面に追加すると、アプリみたいに1タップで遊べます</h3>
+    <div class="tabs"><button class="tab" data-os="android">Android</button><button class="tab" data-os="ios">iPhone / iPad</button></div>
+    <div class="steps" data-os="android">
+      <div class="step"><b>1</b><div>上の「▶ ゲームをひらく」でゲームを開く</div></div>
+      <div class="step"><b>2</b><div>Chrome の右上 <kbd>⋮</kbd> をタップ</div></div>
+      <div class="step"><b>3</b><div><kbd>アプリをインストール</kbd> か <kbd>ホーム画面に追加</kbd> をタップ</div></div>
+      <div class="step"><b>4</b><div>ホーム画面にアイコンが増える。次からはそれをタップするだけ！</div></div>
+    </div>
+    <div class="steps" data-os="ios">
+      <div class="step"><b>1</b><div>上の「▶ ゲームをひらく」で <b>Safari</b> で開く（カメラから開いたなら そのままでOK）</div></div>
+      <div class="step"><b>2</b><div>画面下の 共有ボタン <kbd>⬆</kbd>（四角から矢印が出ているマーク）をタップ</div></div>
+      <div class="step"><b>3</b><div>下にスクロールして <kbd>ホーム画面に追加</kbd> → 右上の <kbd>追加</kbd></div></div>
+      <div class="step"><b>4</b><div>ホーム画面にアイコンが増える。次からはそれをタップするだけ！</div></div>
+    </div>
+    <p class="note">※ QRコードを読んだだけで自動で追加することは、スマホのしくみ上できません。上の手順（2〜3タップ）でお願いします。</p>
+  </div>
+  <div class="foot">文化祭ゲームセンター <a href="./">NEON FESTA</a> に戻る</div>
+</div>
+<script>
+'use strict';
+// 景品の一覧（ホーム画面の「景品の設定」と同じ既定。QR の ?p=ID で1つだけ出す。無ければ全部）
+const PRIZES = [
+  { id: 'blitz', title: 'Block Blitz Arena', desc: 'ブロックパズル × オンライン対戦。1v1 ランクマッチ・2v2 チーム戦・レイドボス・100階ダンジョン。無料・スマホOK。', icon: '🧩', url: 'https://block-blitz-arena.onrender.com/' },
+  { id: 'core', title: 'コア工場タイクーン', desc: '拠点に施設を建ててコインを稼ぎ、攻めてくる敵からコアを守るタイクーン × 防衛ゲーム。1人用・PC/スマホ・無料。', icon: '🏭', url: 'https://core-factory-tycoon.onrender.com/' },
+];
+const params = new URLSearchParams(location.search);
+const want = params.get('p');
+const show = want ? PRIZES.filter(p => p.id === want) : [];
+const list = show.length ? show : PRIZES;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const box = document.getElementById('list');
+list.forEach(p => {
+  const d = document.createElement('div'); d.className = 'prize';
+  d.innerHTML = `<div class="ic">${p.icon}</div><h2>${esc(p.title)}</h2><p class="d">${esc(p.desc)}</p>` +
+    `<a class="btn" href="${esc(p.url)}" rel="noopener">▶ ゲームをひらく</a>` +
+    `<button class="btn alt" data-copy="${esc(p.url)}">🔗 リンクをコピー</button>` +
+    `<p class="note">最初に開くとき、起動に 20〜30 秒かかることがあります（無料サーバーのため）。そのまま待ってね。</p>`;
+  box.appendChild(d);
+});
+box.addEventListener('click', e => {
+  const b = e.target.closest('[data-copy]'); if (!b) return;
+  const url = b.dataset.copy;
+  (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => { b.textContent = '✅ コピーしました'; setTimeout(() => { b.textContent = '🔗 リンクをコピー'; }, 1500); })
+    .catch(() => { prompt('このリンクをコピーしてね', url); });
+});
+// OS に合わせて手順のタブを選ぶ
+const ua = navigator.userAgent;
+const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function pick(os) { document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.os === os)); document.querySelectorAll('.steps').forEach(s => s.classList.toggle('on', s.dataset.os === os)); }
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => pick(t.dataset.os)));
+pick(isIOS ? 'ios' : 'android');
+</script>
+</body>
+</html>

@@ -185,6 +185,14 @@
   .gstep .gi { font-size: 40px; line-height: 1.1; }
   .gstep .gn { font-size: 12px; color: var(--gold); font-weight: 900; margin: 6px 0 2px; }
   .gstep .gt { font-size: 14px; font-weight: 800; line-height: 1.4; }
+  .prize-list { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin: 8px 0 4px; }
+  .prize-item { background: rgba(255,255,255,.06); border: 1px solid rgba(255,211,110,.4); border-radius: 16px; padding: 12px 14px 10px; width: min(100%, 250px); text-align: center; }
+  .prize-item .pt { font-size: 16px; font-weight: 900; color: var(--gold); margin-bottom: 2px; }
+  .prize-item .pd { font-size: 11px; color: var(--muted); min-height: 30px; margin-bottom: 8px; line-height: 1.4; }
+  .prize-item .qrwrap svg { width: 170px; height: 170px; }
+  .prize-row { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px 0; border-bottom: 1px dashed rgba(255,255,255,.12); }
+  .prize-row label { font-size: 11px; color: var(--muted); font-weight: 800; display: block; margin-bottom: 2px; }
+  .prize-row input, .prize-row select { width: 100%; background: rgba(0,0,0,.35); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; }
   .qrwrap { display: inline-block; padding: 12px; background: #fff; border-radius: 14px; }
   .qrwrap svg { display: block; width: 220px; height: 220px; }
   .card .stamped { position: absolute; top: 12px; left: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--gold); color: #2a2200; font-size: 14px; font-weight: 900; display: grid; place-items: center; z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,.5); transform: rotate(-12deg); }
@@ -318,6 +326,20 @@
   </div>
 </div>
 
+<div class="modal" id="prizeSetM">
+  <div class="mbox">
+    <h3>PRIZE SETTINGS</h3>
+    <div class="t">🎁 景品の設定（スタッフ用・このPCだけ）</div>
+    <div id="prizeRows"></div>
+    <div style="color:var(--muted);font-size:12px;margin:8px 0">QRコードの行き先は公開サイトの「景品ページ」で、そこからゲームが開けて「ホーム画面に追加」のしかたも出ます。URL を空にするとその景品は出ません。</div>
+    <div class="mact">
+      <button class="act" id="prizeSave">保存</button>
+      <button class="act alt" id="prizeDefault">最初の設定に戻す</button>
+      <button class="act alt" id="prizeSetClose">とじる</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="guideM">
   <div class="mbox" style="text-align:center">
     <h3>HOW TO</h3>
@@ -336,9 +358,8 @@
   <div class="mbox" style="text-align:center">
     <h3>PRIZE</h3>
     <div class="complete-big" style="font-size:30px">🎁 景品ゲット！</div>
-    <div id="prizeLabel" style="font-size:15px;font-weight:800;margin:4px 0 10px"></div>
-    <div class="qrwrap" id="prizeQR"></div>
-    <div style="color:var(--muted);font-size:13px;margin:10px 0 14px">スマホのカメラで QRコード を読んでね。<br>読み取れないときはスタッフに声をかけてください。</div>
+    <div id="prizeList" class="prize-list"></div>
+    <div style="color:var(--muted);font-size:13px;margin:10px 0 14px">スマホのカメラで QRコード を読むと、ゲームと「ホーム画面に追加」のしかたが出ます。<br>読み取れないときはスタッフに声をかけてください。</div>
     <div class="mact"><button class="act" id="prizeClose">とじる</button></div>
   </div>
 </div>
@@ -565,7 +586,8 @@ function renderExtras(card) {
   if (FES.prizeEligible(card)) {
     const btn = document.createElement('button'); btn.className = 'prize-cta'; btn.textContent = '🎁 景品のQRコードを見る';
     btn.onclick = () => openPrize(card); bb.appendChild(btn);
-    if (!card.prizeShown) { card.prizeShown = true; try { localStorage.setItem('fes:stamp:card', JSON.stringify(card)); } catch (e) {} setTimeout(() => openPrize(card), 900); }
+    const key = FES.eligiblePrizes(card).map(p => p.id).sort().join(',');
+    if (card.prizeShown !== key) { card.prizeShown = key; try { localStorage.setItem('fes:stamp:card', JSON.stringify(card)); } catch (e) {} setTimeout(() => openPrize(card), 900); }
   }
 }
 const prizeM = document.getElementById('prizeM');
@@ -575,33 +597,49 @@ function drawQR(box, url) {
   catch (e) { box.textContent = url; }
 }
 function openPrize(card) {
-  const p = FES.prize(); if (!p) return;
-  document.getElementById('prizeLabel').textContent = p.label || '';
-  drawQR(document.getElementById('prizeQR'), p.url);
+  const list = FES.eligiblePrizes(card); if (!list.length) return;
+  const box = document.getElementById('prizeList'); box.innerHTML = '';
+  list.forEach(p => {
+    const d = document.createElement('div'); d.className = 'prize-item';
+    d.innerHTML = `<div class="pt">${esc(p.icon || '🎁')} ${esc(p.title)}</div><div class="pd">${esc(p.desc || '')}</div><div class="qrwrap"></div>`;
+    box.appendChild(d); drawQR(d.querySelector('.qrwrap'), FES.prizeQrUrl(p));
+  });
   prizeM.classList.add('open'); FES.sfx('fanfare'); if (window.__fesBurst) window.__fesBurst(120);
 }
+// 景品の設定（スタッフ用）
+const prizeSetM = document.getElementById('prizeSetM');
+function openPrizeSettings() {
+  const rows = document.getElementById('prizeRows'); rows.innerHTML = '';
+  FES.prizes().forEach((p, i) => {
+    const d = document.createElement('div'); d.className = 'prize-row'; d.dataset.id = p.id;
+    d.innerHTML = `<div><label>景品 ${i + 1}：なまえ</label><input data-k="title" value="${esc(p.title)}"></div>` +
+      `<div><label>ひとこと</label><input data-k="desc" value="${esc(p.desc || '')}"></div>` +
+      `<div><label>ゲームの URL（空にすると出さない）</label><input data-k="url" value="${esc(p.url || '')}" placeholder="https://..."></div>` +
+      `<div><label>もらえる条件</label><select data-k="cond">${['mission', 'complete', 'any', 'off'].map(c => `<option value="${c}"${p.cond === c ? ' selected' : ''}>${esc(FES.prizeCondLabel(c))}</option>`).join('')}</select></div>`;
+    d.dataset.icon = p.icon || '🎁';
+    rows.appendChild(d);
+  });
+  prizeSetM.classList.add('open');
+}
+document.getElementById('prizeSave').onclick = () => {
+  const list = [...document.querySelectorAll('#prizeRows .prize-row')].map(d => ({ id: d.dataset.id, icon: d.dataset.icon, title: d.querySelector('[data-k=title]').value, desc: d.querySelector('[data-k=desc]').value, url: d.querySelector('[data-k=url]').value, cond: d.querySelector('[data-k=cond]').value }));
+  FES.setPrizes(list); prizeSetM.classList.remove('open'); FES.toast('景品の設定を保存しました'); FES.sfx('coin'); render();
+};
+document.getElementById('prizeDefault').onclick = () => { FES.setPrizes(null); openPrizeSettings(); FES.toast('最初の設定に戻しました'); };
+document.getElementById('prizeSetClose').onclick = () => prizeSetM.classList.remove('open');
+prizeSetM.addEventListener('click', e => { if (e.target === prizeSetM) prizeSetM.classList.remove('open'); });
 document.getElementById('prizeClose').onclick = () => prizeM.classList.remove('open');
 prizeM.addEventListener('click', e => { if (e.target === prizeM) prizeM.classList.remove('open'); });
 const liteBtn = document.getElementById('liteBtn');
 const refreshLite = () => { liteBtn.textContent = `🐢 軽量モード: ${FES.lite() ? 'ON' : 'OFF'}`; liteBtn.classList.toggle('on', FES.lite()); };
 liteBtn.onclick = () => { FES.setLite(!FES.lite()); refreshLite(); FES.sfx('select'); FES.toast(FES.lite() ? '軽量モード ON（粒子・紙吹雪を減らします）' : '軽量モード OFF'); };
 refreshLite();
-document.getElementById('prizeBtn').onclick = () => {
-  const cur = FES.prize() || { url: '', cond: 'complete', label: '' };
-  const url = prompt('景品のQRコードで開く URL（空にすると景品なし）', cur.url); if (url === null) return;
-  if (!url.trim()) { FES.setPrize(null); FES.toast('景品をなしにしました'); render(); return; }
-  const cond = prompt('もらえる条件を番号で：\n1 = 全部のゲームを遊んだ（殿堂入り）\n2 = 今日のミッションを全部クリア\n3 = 1回でも遊んだ人みんな', cur.cond === 'mission' ? '2' : cur.cond === 'any' ? '3' : '1');
-  if (cond === null) return;
-  const label = prompt('QRの上に出す ひとこと（例: 自作ゲーム「○○」をプレゼント！）', cur.label || '');
-  if (label === null) return;
-  FES.setPrize({ url, cond: cond.trim() === '2' ? 'mission' : cond.trim() === '3' ? 'any' : 'complete', label });
-  FES.toast('景品を設定しました'); render();
-};
+document.getElementById('prizeBtn').onclick = () => { openPrizeSettings(); FES.sfx('select'); };
 function celebrate(card) {
   FES.sfx('fanfare');
   const cp = document.getElementById('cPrize'); cp.innerHTML = '';
-  const p = FES.prize();
-  if (p && FES.prizeEligible(card)) { cp.innerHTML = `<div style="font-weight:900;color:var(--gold);margin-bottom:6px">🎁 景品ゲット！ ${esc(p.label || '')}</div><div class="qrwrap" id="cQR"></div><div style="color:var(--muted);font-size:12px;margin-top:6px">スマホのカメラで読んでね</div>`; drawQR(document.getElementById('cQR'), p.url); }
+  const ep = FES.eligiblePrizes(card);
+  if (ep.length) { cp.innerHTML = `<div style="font-weight:900;color:var(--gold);margin-bottom:6px">🎁 景品ゲット！</div><div class="prize-list"></div><div style="color:var(--muted);font-size:12px;margin-top:6px">スマホのカメラで読んでね</div>`; const box = cp.querySelector('.prize-list'); ep.forEach(p => { const d = document.createElement('div'); d.className = 'prize-item'; d.innerHTML = `<div class="pt">${esc(p.icon || '🎁')} ${esc(p.title)}</div><div class="qrwrap"></div>`; box.appendChild(d); drawQR(d.querySelector('.qrwrap'), FES.prizeQrUrl(p)); }); }
   document.getElementById('cName').textContent = (card.name || 'ななし') + ' さん';
   document.getElementById('cTime').textContent = `${GAMES.length} 個のスタンプを ${FES.formatDuration(card.done - card.started)} で集めました`;
   document.getElementById('complete').classList.add('open');

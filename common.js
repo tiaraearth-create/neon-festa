@@ -931,8 +931,9 @@
         card.appendChild(box);
         setTimeout(() => { FES.sfx('powerup'); FES.vibrate([20, 30, 40]); }, 1000);
       }
-      if (FES.prizeEligible(FES.stampCard())) {
-        card.appendChild(el('div', { class: 'fes-prize', text: '🎁 景品ゲット！ ホーム画面で QRコード を見せてね' }));
+      const ep = FES.eligiblePrizes(FES.stampCard());
+      if (ep.length) {
+        card.appendChild(el('div', { class: 'fes-prize', text: `🎁 景品ゲット！ ${ep.map(p => p.icon + ' ' + p.title).join('　')} — ホーム画面で QRコード を読んでね` }));
       }
     }
 
@@ -1141,15 +1142,26 @@
     return fresh;
   };
 
-  /* ------------------------------------------------------------ 景品（QRコードの行き先。スタッフがホームで設定） */
-  const PRIZE_KEY = 'fes:prize';
-  FES.prize = () => LS.get(PRIZE_KEY, null);   // { url, cond: 'complete'|'mission'|'any', label }
-  FES.setPrize = o => { if (!o || !o.url) { LS.set(PRIZE_KEY, null); return null; } const p = { url: String(o.url).trim(), cond: o.cond || 'complete', label: (o.label || '').trim() }; LS.set(PRIZE_KEY, p); return p; };
-  FES.prizeEligible = function (c) {
-    const p = FES.prize(); c = c || FES.stampCard(); if (!p || !c) return false;
-    const n = Object.keys(c.stamps || {}).length;
-    return p.cond === 'any' ? n >= 1 : p.cond === 'mission' ? FES.missionsDone(c) : !!c.done;
-  };
+  /* ------------------------------------------------------------ 景品（QRコードの行き先。既定は自作ゲーム2本。スタッフがホームで変えられる） */
+  const PRIZES_KEY = 'fes:prizes';
+  const PRIZE_PAGE = 'https://tiaraearth-create.github.io/neon-festa/prize.html';   // QR の行き先（ホーム画面に追加のしかた付き）
+  const DEFAULT_PRIZES = [
+    { id: 'blitz', title: 'Block Blitz Arena', desc: 'ブロックパズル × オンライン対戦。1v1 ランクマッチ・2v2・レイドボス', icon: '🧩', url: 'https://block-blitz-arena.onrender.com/', cond: 'mission' },
+    { id: 'core', title: 'コア工場タイクーン', desc: '施設を建ててコインを稼ぎ、敵からコアを守るタイクーン × 防衛', icon: '🏭', url: 'https://core-factory-tycoon.onrender.com/', cond: 'complete' },
+  ];
+  const COND_LABEL = { complete: '全部のゲームを遊ぶ（殿堂入り）', mission: '今日のミッションを全部クリア', any: '1回でも遊んだ人みんな', off: '配らない' };
+  FES.prizeCondLabel = c => COND_LABEL[c] || c;
+  FES.defaultPrizes = () => DEFAULT_PRIZES.map(p => Object.assign({}, p));
+  FES.prizes = () => { const v = LS.get(PRIZES_KEY, null); return Array.isArray(v) && v.length ? v : FES.defaultPrizes(); };
+  FES.setPrizes = list => { if (!list) { LS.set(PRIZES_KEY, null); return FES.prizes(); } LS.set(PRIZES_KEY, list.map(p => ({ id: p.id, title: String(p.title || '').trim(), desc: String(p.desc || '').trim(), icon: p.icon || '🎁', url: String(p.url || '').trim(), cond: p.cond || 'complete' }))); return FES.prizes(); };
+  FES.prizeQrUrl = p => `${PRIZE_PAGE}?p=${encodeURIComponent(p.id)}`;
+  const condMet = (cond, c) => { const n = Object.keys(c.stamps || {}).length; return cond === 'any' ? n >= 1 : cond === 'mission' ? FES.missionsDone(c) : cond === 'complete' ? !!c.done : false; };
+  /** いまのカードでもらえる景品の一覧 */
+  FES.eligiblePrizes = function (c) { c = c || FES.stampCard(); if (!c) return []; return FES.prizes().filter(p => p.url && condMet(p.cond, c)); };
+  FES.prizeEligible = c => FES.eligiblePrizes(c).length > 0;
+  // 互換（古い呼び出し）
+  FES.prize = () => FES.prizes()[0] || null;
+  FES.setPrize = o => { if (!o || !o.url) return FES.setPrizes(null); return FES.setPrizes([{ id: 'custom', title: o.label || '景品', desc: '', icon: '🎁', url: o.url, cond: o.cond || 'complete' }]); };
 
   FES.formatDuration = function (ms) {
     const s = Math.max(0, Math.round(ms / 1000));
