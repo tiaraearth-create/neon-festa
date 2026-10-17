@@ -445,7 +445,7 @@ function resetGame() {
   });
 }
 function startGame() {
-  FES.hideResult();
+  FES.hideResult(); FES.pause(false);
   resetGame();
   BGM.stop();
   countdown = { t: 0, n: 3 };
@@ -489,8 +489,11 @@ function endGame() {
   }, 900);
 }
 function togglePause() {
-  if (state === 'play') { state = 'pause'; BGM.stop(); FES.sfx('select'); pauseBtn.textContent = '▶'; }
-  else if (state === 'pause') { state = 'play'; lastTs = 0; BGM.start(); FES.sfx('select'); pauseBtn.textContent = 'II'; }
+  if (state === 'play') {
+    state = 'pause'; BGM.stop(); FES.sfx('select'); pauseBtn.textContent = '▶';
+    FES.pause(true, { onResume: () => { if (state === 'pause') togglePause(); }, onRetry: () => { FES.pause(false); state = 'title'; startGame(); } });
+  }
+  else if (state === 'pause') { state = 'play'; lastTs = 0; BGM.start(); FES.sfx('select'); pauseBtn.textContent = 'II'; FES.pause(false); }
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') togglePause(); });
 
@@ -985,11 +988,6 @@ function drawCountdown() {
   ctx.restore();
   text('READY...', W / 2, H / 2 + 80, 22, '#fff', { stroke: 4 });
 }
-function drawPause() {
-  ctx.fillStyle = 'rgba(5,3,25,.6)'; ctx.fillRect(0, 0, W, H);
-  text('PAUSE', W / 2, H / 2 - 20, 64, '#fff', { stroke: 8 });
-  text('Esc / Enter / タップ で再開', W / 2, H / 2 + 40, 18, 'rgba(255,255,255,.8)', { weight: 700 });
-}
 
 /* =====================================================================
    メインループ
@@ -1007,10 +1005,16 @@ function render() {
     drawParticles();
     if (state !== 'countdown') { drawWordPanel(); drawHUD(); }
     if (state === 'countdown') drawCountdown();
-    if (state === 'pause') drawPause();
     if (state === 'result') { ctx.fillStyle = 'rgba(5,3,25,.4)'; ctx.fillRect(0, 0, W, H); text('TIME UP!', W / 2, H / 2, 70, '#ffd36e', { stroke: 10 }); }
   }
   ctx.restore();
+  // 残り10秒: 画面のふちが赤く脈打つ
+  if (state === 'play' && G.time <= 10 && G.time > 0) {
+    const beat = Math.max(0, Math.sin(G.bgT * 10));
+    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
+    vg.addColorStop(0, 'rgba(255,59,92,0)'); vg.addColorStop(1, `rgba(255,59,92,${0.18 + beat * 0.22})`);
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
   if (G.flashRed > 0) { ctx.fillStyle = `rgba(255,40,80,${(G.flashRed * 0.9).toFixed(2)})`; ctx.fillRect(0, 0, W, H); }
   if (G.flashWhite > 0) { ctx.fillStyle = `rgba(255,255,255,${(G.flashWhite * 2).toFixed(2)})`; ctx.fillRect(0, 0, W, H); }
 }
