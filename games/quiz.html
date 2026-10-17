@@ -129,13 +129,6 @@
   #pbtn { position: absolute; right: 12px; bottom: 12px; width: 48px; height: 48px; border-radius: 14px; border: 1px solid rgba(255,255,255,.3); background: rgba(0,0,0,.5); color: #fff; font-size: 20px; font-weight: 900; cursor: pointer; z-index: 5; }
   #pbtn:active { transform: scale(.94); }
 
-  /* ---------------- ポーズ ---------------- */
-  #pause { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 2vmin; background: rgba(5,5,20,.62); backdrop-filter: blur(6px); z-index: 60; }
-  #pause.on { display: flex; }
-  #pause h1 { margin: 0; font-size: clamp(48px, 12vmin, 130px); letter-spacing: .3em; margin-left: .3em; color: #fff; text-shadow: 0 0 30px rgba(142,214,255,.8); }
-  #pause p { margin: 0; font-size: clamp(14px, 2.6vmin, 24px); opacity: .8; font-weight: 700; }
-  #resume { border: 0; color: #fff; border-radius: 999px; padding: 12px 40px; font-size: clamp(18px, 3.2vmin, 30px); font-weight: 900; cursor: pointer; background: linear-gradient(135deg, #6a5cff, #b04dff); box-shadow: 0 8px 24px rgba(120,80,255,.45); }
-
   #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 40; }
   #flash.go { animation: flashOut .5s ease-out; }
 
@@ -216,12 +209,7 @@
     <button id="pbtn" type="button" title="ポーズ">❚❚</button>
   </section>
 
-  <!-- ポーズ -->
-  <div id="pause">
-    <h1>PAUSE</h1>
-    <p>Esc / P / Enter で再開</p>
-    <button id="resume" type="button">再開する</button>
-  </div>
+  <!-- ポーズ画面は共通の FES.pause を使う -->
 </div>
 <div id="flash"></div>
 
@@ -476,12 +464,12 @@ const KEYMAP = {
    ===================================================================== */
 const $ = id => document.getElementById(id);
 const el = {
-  app: $('app'), title: $('title'), play: $('play'), count: $('count'), pause: $('pause'), flash: $('flash'),
+  app: $('app'), title: $('title'), play: $('play'), count: $('count'), flash: $('flash'),
   cats: $('cats'), hiscore: $('hiscore'), start: $('start'),
   hudQ: $('hud-q'), hudScore: $('hud-score'), hudCombo: $('hud-combo'),
   qcard: $('qcard'), qcat: $('qcat'), qdiff: $('qdiff'), qtext: $('qtext'), fb: $('fb'),
   tfill: $('tfill'), tnum: $('tnum'), opts: $('opts'), last: $('last'),
-  cdnum: $('cdnum'), cdcat: $('cdcat'), pbtn: $('pbtn'), resume: $('resume'),
+  cdnum: $('cdnum'), cdcat: $('cdcat'), pbtn: $('pbtn'),
 };
 
 /* =====================================================================
@@ -716,7 +704,7 @@ function cycleCat(dir) {
 }
 function goTitle() {
   S.screen = 'title'; S.bgm = false; S.paused = false;
-  el.pause.classList.remove('on');
+  FES.pause(false);
   el.hiscore.textContent = fmt(FES.getHiScore());
   showScreen('title');
 }
@@ -725,7 +713,7 @@ function goTitle() {
    ゲーム開始 / カウントダウン
    ===================================================================== */
 function startGame(cat) {
-  FES.hideResult();
+  FES.hideResult(); FES.pause(false);
   clearTasks();
   bg.confetti.length = 0;
   Object.assign(S, {
@@ -734,7 +722,6 @@ function startGame(cat) {
     timeLeft: Q_TIME, timerOn: false, answered: false, tickAcc: 0,
     paused: false, bgm: false, bgmAcc: 0, bgmStep: 0,
   });
-  el.pause.classList.remove('on');
   el.app.classList.remove('shake');
   el.opts.innerHTML = ''; el.opts.classList.remove('out');
   el.qcard.className = ''; el.fb.className = ''; el.fb.innerHTML = '';
@@ -950,7 +937,8 @@ function togglePause(force) {
   const next = force == null ? !S.paused : !!force;
   if (next === S.paused) return;
   S.paused = next;
-  el.pause.classList.toggle('on', S.paused);
+  if (S.paused) FES.pause(true, { onResume: () => togglePause(false), onRetry: () => { FES.pause(false); S.paused = false; startGame(S.cat); } });
+  else FES.pause(false);
   FES.sfx('select');
 }
 
@@ -1010,7 +998,6 @@ document.addEventListener('keydown', e => {
 });
 el.start.addEventListener('click', () => { if (S.screen === 'title') startGame(S.cat); });
 el.pbtn.addEventListener('click', () => togglePause());
-el.resume.addEventListener('click', () => togglePause(false));
 document.addEventListener('visibilitychange', () => { if (document.hidden) togglePause(true); });
 window.addEventListener('blur', () => { if (S.screen === 'play' && S.timerOn) togglePause(true); });
 
