@@ -560,7 +560,7 @@ function resetGame() {
   buildHoles(3);
 }
 function startGame() {
-  FES.hideResult();
+  FES.hideResult(); FES.pause(false);
   resetGame();
   G.state = 'countdown';
   G.cdT = 0; G.cdStep = -1;
@@ -599,7 +599,9 @@ function showResult() {
 function togglePause() {
   if (G.state !== 'play') return;
   G.paused = !G.paused;
-  if (G.paused) FES.sfx('select'); else { FES.sfx('select'); bgmResume(); }
+  FES.sfx('select');
+  if (G.paused) FES.pause(true, { onResume: () => { if (G.paused) togglePause(); }, onRetry: () => { FES.pause(false); startGame(); } });
+  else { FES.pause(false); bgmResume(); }
 }
 
 function updatePlay(dt) {
@@ -1130,10 +1132,13 @@ function drawCountdown() {
   ctx.restore();
   text('READY...', W / 2, H / 2 + 80, 24, '#fff', 'center', {});
 }
-function drawPause() {
-  ctx.fillStyle = 'rgba(5,5,20,.6)'; ctx.fillRect(0, 0, W, H);
-  text('PAUSE', W / 2, H / 2 - 30, 72, '#fff', 'center', { lineWidth: 10 });
-  text('Esc / P / タップ で再開', W / 2, H / 2 + 40, 22, '#cfd8ff', 'center', {});
+function drawUrgency() {
+  // 残り10秒: 画面のふちが赤く脈打つ
+  if (G.state !== 'play' || G.timeLeft > 10 || G.timeLeft <= 0 || G.fever > 0) return;
+  const beat = Math.max(0, Math.sin(G.bgT * 10));
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, H * 0.95);
+  vg.addColorStop(0, 'rgba(255,59,92,0)'); vg.addColorStop(1, `rgba(255,59,92,${(0.18 + beat * 0.22).toFixed(3)})`);
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
 }
 
 /* ================================================================ 描画: メイン */
@@ -1146,10 +1151,11 @@ function draw() {
   drawTexts();
   drawHammer();
   ctx.restore();
+  drawUrgency();
   if (G.flash > 0) { ctx.globalAlpha = Math.min(0.85, G.flash); ctx.fillStyle = G.flashColor; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   if (G.state === 'title') drawTitle();
   else if (G.state === 'countdown') { drawHUD(); drawCountdown(); }
-  else if (G.state === 'play') { drawHUD(); if (G.paused) drawPause(); }
+  else if (G.state === 'play') { drawHUD(); }
   else if (G.state === 'timeup' || G.state === 'result') drawHUD();
   canvas.style.cursor = (G.state === 'play' && !G.paused && hammer.visible) ? 'none' : 'default';
 }
@@ -1163,7 +1169,7 @@ canvas.addEventListener('pointerdown', e => {
   hammer.hideT = e.pointerType === 'touch' ? 0.9 : 0;
   if (G.state === 'title') { startGame(); return; }
   if (G.state === 'play') {
-    if (G.paused) { togglePause(); return; }
+    if (G.paused) return;
     swing(p.x, p.y);
   }
 });
