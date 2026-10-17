@@ -204,7 +204,7 @@ function wallHit(x, y, orient) {
    試合の開始・進行
    ===================================================================== */
 function startMatch(mode, lvl) {
-  FES.hideResult();
+  FES.hideResult(); FES.pause(false);
   G.mode = mode; G.cpuLevel = lvl;
   G.score = [0, 0]; G.scorePop = [0, 0]; G.goalGlow = [0, 0];
   G.time = MATCH_TIME; G.sudden = false; G.paused = false;
@@ -300,7 +300,8 @@ function onTimeUp() {
 function togglePause() {
   if (!inGame()) return;
   G.paused = !G.paused;
-  if (G.paused) BGM.stop(); else BGM.start();
+  if (G.paused) { BGM.stop(); FES.pause(true, { onResume: () => { if (G.paused) togglePause(); }, onRetry: () => { FES.pause(false); startMatch(G.mode, G.cpuLevel); } }); }
+  else { BGM.start(); FES.pause(false); }
   FES.sfx('select');
 }
 
@@ -655,7 +656,7 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (!inGame()) return;
-  if (G.paused) { togglePause(); return; }
+  if (G.paused) return;
   if (hitPauseBtn(p.x, p.y)) { togglePause(); return; }
   if (e.pointerType === 'touch') assignTouch(e.pointerId, p);
   else { const m = G.mallets[0]; m.ctrl = 'pointer'; setPointerTarget(m, p); }
@@ -746,7 +747,6 @@ function draw() {
   drawFrame();
   drawHUD();
   drawMessages();
-  if (G.paused) drawPause();
   ctx.restore();
   if (G.flash > 0.01) { ctx.fillStyle = rgba(WHITE, G.flash * 0.8); ctx.fillRect(0, 0, W, H); }
 }
@@ -1013,11 +1013,6 @@ function drawMessages() {
     ctx.fillStyle = rgba(n.color, 1); ctx.fillText(n.text, 0, 0);
     ctx.restore();
   }
-}
-function drawPause() {
-  ctx.fillStyle = 'rgba(5,5,20,0.62)'; ctx.fillRect(-20, -20, W + 40, H + 40);
-  text('PAUSE', CX, CY - 20, 84, '#fff', 'center', '900');
-  text('Esc / P / タップ で再開', CX, CY + 50, 22, 'rgba(255,255,255,0.75)', 'center', '700');
 }
 
 function drawTitle() {
