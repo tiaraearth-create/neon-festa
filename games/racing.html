@@ -575,6 +575,7 @@ function resetGame() {
   resetCars(18);
 }
 function startGame() {
+  FES.howto(['← → でハンドル', '↑ アクセル ／ Space ニトロ', '🏁 60 秒でどこまで走れる？']);
   FES.hideResult(); FES.pause(false);
   resetGame();
   G.state = 'countdown';

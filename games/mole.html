@@ -561,6 +561,7 @@ function resetGame() {
   buildHoles(3);
 }
 function startGame() {
+  FES.howto(['🔨 クリック / タップ でもぐらをたたく', '⭐ 金もぐら +500', '💣 ばくだん と 🌸 花 はたたかない']);
   FES.hideResult(); FES.pause(false);
   resetGame();
   G.state = 'countdown';

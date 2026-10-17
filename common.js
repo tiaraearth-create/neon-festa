@@ -328,6 +328,20 @@
     }
   };
   FES.isFever = () => feverOn;
+
+  /* ------------------------------------------------------------ あそびかたチップ（ゲーム開始のカウントダウン中に数秒だけ出す） */
+  let howtoEl = null, howtoTm = null;
+  /** FES.howto(['🔨 クリックでたたく', '⭐ 金もぐら +500']) / FES.howto(false) で消す */
+  FES.howto = function (hints, ms) {
+    ensureUI();
+    clearTimeout(howtoTm);
+    if (howtoEl) { howtoEl.remove(); howtoEl = null; }
+    if (hints === false || !hints || !hints.length) return;
+    howtoEl = el('div', { class: 'fes-howto' }, [el('div', { class: 'lbl', text: 'あそびかた' })].concat(hints.map((h, i) => el('div', { class: 'chip', style: `animation-delay:${0.12 + i * 0.13}s`, text: h }))));
+    ui.appendChild(howtoEl);
+    const me = howtoEl;
+    howtoTm = setTimeout(() => { me.classList.add('out'); setTimeout(() => me.remove(), 450); if (howtoEl === me) howtoEl = null; }, ms || 4500);
+  };
   FES.sfxNames = Object.keys(SFX);
 
   /* ------------------------------------------------------------ 演出ヘルパー（Canvas 用） */
@@ -508,6 +522,10 @@
   .fes-badge.mission { background: linear-gradient(135deg, rgba(92,255,141,.2), rgba(94,231,255,.16)); border-color: rgba(92,255,141,.5); box-shadow: 0 0 24px rgba(92,255,141,.2); }
   .fes-badge.mission b { color: #8dffb5; }
   .fes-prize { margin: 10px 0 2px; padding: 10px 14px; border-radius: 14px; font-weight: 900; color: #2a2200; background: linear-gradient(90deg, #ffd36e, #ffb347); animation: fesBump 1.2s ease-in-out infinite; }
+  .fes-howto { position: fixed; left: 50%; bottom: 9vh; transform: translateX(-50%); z-index: 8980; pointer-events: none; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; max-width: min(94vw, 900px); animation: fesFade .3s ease both; }
+  .fes-howto.out { animation: fesFeverOut .4s ease both; }
+  .fes-howto .lbl { width: 100%; text-align: center; font-size: 12px; letter-spacing: .3em; font-weight: 900; color: rgba(255,255,255,.7); text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  .fes-howto .chip { padding: 9px 16px; border-radius: 999px; background: rgba(8,8,28,.86); border: 1px solid rgba(255,255,255,.28); color: #fff; font-weight: 900; font-size: clamp(14px, 2.2vw, 18px); box-shadow: 0 6px 24px rgba(0,0,0,.5); animation: fesPop .5s cubic-bezier(.2,1.4,.4,1) both; white-space: nowrap; }
   .fes-newrec { display: inline-block; margin: 4px 0 10px; padding: 5px 16px; border-radius: 999px; font-weight: 900; font-size: 14px; letter-spacing: .15em;
     background: linear-gradient(90deg,#ff4d8d,#ffb347); box-shadow: 0 0 24px rgba(255,120,80,.6); animation: fesPop .6s .3s both; }
   .fes-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px,1fr)); gap: 8px; margin: 10px 0 14px; }

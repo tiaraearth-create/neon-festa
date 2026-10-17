@@ -129,6 +129,7 @@ function togglePause() {
 
 /* ================================================================ 進行 */
 function startMatch() {
+  FES.howto(['🅰 左の人：A キー / 画面の左をタップ', '🅻 右の人：L キー / 画面の右をタップ', '🏆 先に 3 勝したほうの勝ち']);
   FES.hideResult(); FES.pause(false); G.paused = false;
   FES.sfx('start');
   G.round = 0; G.wins = [0, 0]; G.lastType = null; G.history = []; G.fastest = [9, 9];

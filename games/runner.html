@@ -412,6 +412,7 @@ function newRun() {
 }
 
 function startGame() {
+  FES.howto(['Space / タップ でジャンプ', '↓ / 下スワイプ でスライド', '🪙 小判を続けて取るとコンボ']);
   FES.hideResult(); FES.pause(false);
   G = newRun();
   setStage(0);

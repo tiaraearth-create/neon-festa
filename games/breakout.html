@@ -685,6 +685,7 @@ const BGM = {
 
 /* ------------------------------------------------------------ 進行 */
 function startGame() {
+  FES.howto(['← → / マウス でパドルを動かす', '🧱 ブロックを全部こわす', '⚡ 落ちてくるアイテムでパワーアップ']);
   if (resultTimer) { clearTimeout(resultTimer); resultTimer = null; }
   FES.hideResult(); FES.pause(false);
   G = newGame();

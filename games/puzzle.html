@@ -568,6 +568,7 @@ function updateShuffle(dt) {
 
 /* ---------------------------------------------------------------- ゲーム進行 */
 function startGame() {
+  FES.howto(['💎 となりの宝石と入れかえる', '3 つそろうと消える', '🔗 連鎖でスコアが倍増']);
   FES.hideResult(); FES.pause(false); timeUpT = -1;
   score = 0; dispScore = 0; scoreBump = 0; timeLeft = TIME_START; lastTickSec = -1;
   chain = 0; maxChain = 0; gemsCleared = 0; specialsUsed = 0;

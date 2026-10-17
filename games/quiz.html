@@ -713,6 +713,7 @@ function goTitle() {
    ゲーム開始 / カウントダウン
    ===================================================================== */
 function startGame(cat) {
+  FES.howto(['1〜4 キー / タップ で答える', '⏱ 早く答えるほど高得点', '🔥 連続正解でボーナス']);
   FES.hideResult(); FES.pause(false);
   clearTasks();
   bg.confetti.length = 0;

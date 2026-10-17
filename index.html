@@ -178,6 +178,13 @@
   .badge.on { filter: none; opacity: 1; background: linear-gradient(135deg, rgba(255,211,110,.25), rgba(255,77,141,.2)); border-color: rgba(255,211,110,.6); box-shadow: 0 0 14px rgba(255,211,110,.3); }
   .badge.pop { animation: pulseTag .8s ease-out 3; }
   .prize-cta { margin-top: 8px; width: 100%; padding: 10px; border-radius: 12px; border: 0; font-weight: 900; font-size: 14px; cursor: pointer; color: #2a2200; background: linear-gradient(90deg, var(--gold), #ffb347); box-shadow: 0 0 18px rgba(255,211,110,.45); animation: pulseTag 1.6s ease-in-out infinite; font-family: inherit; }
+  .guide-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 12px; }
+  @media (max-width: 560px) { .guide-steps { grid-template-columns: 1fr; } }
+  .gstep { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 14px 10px; animation: pop .5s cubic-bezier(.2,1.4,.4,1) both; }
+  .gstep:nth-child(2) { animation-delay: .12s } .gstep:nth-child(3) { animation-delay: .24s }
+  .gstep .gi { font-size: 40px; line-height: 1.1; }
+  .gstep .gn { font-size: 12px; color: var(--gold); font-weight: 900; margin: 6px 0 2px; }
+  .gstep .gt { font-size: 14px; font-weight: 800; line-height: 1.4; }
   .qrwrap { display: inline-block; padding: 12px; background: #fff; border-radius: 14px; }
   .qrwrap svg { display: block; width: 220px; height: 220px; }
   .card .stamped { position: absolute; top: 12px; left: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--gold); color: #2a2200; font-size: 14px; font-weight: 900; display: grid; place-items: center; z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,.5); transform: rotate(-12deg); }
@@ -307,6 +314,20 @@
       <button class="act" id="cHall">🏅 殿堂を見る</button>
       <button class="act alt" id="cClose">とじる</button>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="guideM">
+  <div class="mbox" style="text-align:center">
+    <h3>HOW TO</h3>
+    <div class="complete-big" style="font-size:28px">あそびかた は かんたん！</div>
+    <div class="guide-steps">
+      <div class="gstep"><div class="gi">🎮</div><div class="gn">①</div><div class="gt">すきなゲームをえらぶ</div></div>
+      <div class="gstep"><div class="gi">▶</div><div class="gn">②</div><div class="gt">1回あそぶ（1〜3分）</div></div>
+      <div class="gstep"><div class="gi">🎟</div><div class="gn">③</div><div class="gt">スタンプがたまる。全部で 🏅 殿堂入り</div></div>
+    </div>
+    <div style="color:var(--muted);font-size:13px;margin:4px 0 14px">ランク <b style="color:var(--gold)">S</b> をねらうと バッジ がもらえるよ 💎</div>
+    <div class="mact"><button class="act" id="guideOk">わかった！ はじめる</button></div>
   </div>
 </div>
 
@@ -591,7 +612,14 @@ function openNamePicker() {
 stampNameEl.addEventListener('click', openNamePicker);
 document.getElementById('startBtn').onclick = () => { FES.sfx('start'); openNamePicker(); };
 stampNameEl.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNamePicker(); } });
-document.getElementById('nameOk').onclick = () => { FES.setCurrentName(namePicker.value()); nameM.classList.remove('open'); render(); FES.sfx('coin'); };
+const guideM = document.getElementById('guideM');
+document.getElementById('nameOk').onclick = () => {
+  FES.setCurrentName(namePicker.value()); nameM.classList.remove('open'); render(); FES.sfx('coin');
+  const c = FES.stampCard();
+  if (c && !Object.keys(c.stamps || {}).length) { setTimeout(() => { guideM.classList.add('open'); FES.sfx('select'); }, 250); }
+};
+document.getElementById('guideOk').onclick = () => { guideM.classList.remove('open'); FES.sfx('start'); };
+guideM.addEventListener('click', e => { if (e.target === guideM) guideM.classList.remove('open'); });
 document.getElementById('nameCancel').onclick = () => nameM.classList.remove('open');
 nameM.addEventListener('click', e => { if (e.target === nameM) nameM.classList.remove('open'); });
 document.getElementById('stampNew').onclick = () => {

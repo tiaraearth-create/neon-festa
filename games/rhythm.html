@@ -1569,6 +1569,7 @@ function resetGame() {
 }
 function startGame(auto) {
   FES.hideResult();
+  if (!auto) FES.howto(['D F J K / タップ でノーツをたたく', '🎵 線にぴったりで PERFECT', '🔥 コンボをつなぐとフィーバー'], 5000);
   $('title').classList.add('hidden');
   $('pause').classList.add('hidden');
   $('calib').classList.add('hidden');

@@ -204,6 +204,7 @@ function wallHit(x, y, orient) {
    試合の開始・進行
    ===================================================================== */
 function startMatch(mode, lvl) {
+  FES.howto(['🏒 WASD / 矢印 / タッチ でパドルを動かす', '🥅 相手のゴールにパックを入れる', '7 点先取で勝ち']);
   FES.hideResult(); FES.pause(false);
   G.mode = mode; G.cpuLevel = lvl;
   G.score = [0, 0]; G.scorePop = [0, 0]; G.goalGlow = [0, 0];
