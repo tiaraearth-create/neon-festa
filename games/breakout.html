@@ -250,7 +250,7 @@ function buildStage(idx) {
   G.items = []; G.lasers = []; G.explosions = [];
   G.barrier = false; G.slowT = 0; G.pierceT = 0;
   G.paddle.laserT = 0; G.paddle.laserCd = 0; G.paddle.sizeMode = 'normal'; G.paddle.sizeT = 0;
-  G.stageTime = 0; G.combo = 0;
+  G.stageTime = 0; G.combo = 0; FES.fever(false);
   G.balls = [];
   spawnWaitingBall();
 }
@@ -318,6 +318,7 @@ function destroyBlock(b, cause) {
   G.blocksDestroyed++;
   G.combo++;
   if (G.combo > G.maxCombo) G.maxCombo = G.combo;
+  if (G.combo === 12) FES.fever(true);
   const mult = comboMult();
   let base = 100;
   if (b.type === 'h') base = 150 + 50 * b.maxHp;
@@ -397,7 +398,7 @@ function launchBall() {
   const sp = targetSpeed();
   ball.vx = Math.sin(ang) * sp; ball.vy = -Math.cos(ang) * sp; ball.speed = sp;
   G.ballWaiting = false;
-  G.combo = 0;
+  G.combo = 0; FES.fever(false);
   FES.tone({ freq: 400, slide: 900, dur: 0.12, type: 'square', vol: 0.18 });
   addRipple(ball.x, ball.y, 4, 40, 0.3, '#8ef6ff', 3);
 }
@@ -436,7 +437,7 @@ function paddleReflect(ball) {
   addRipple(ball.x, paddleTop(), 4, 60, 0.4, '#7ff5ff', 3);
   addRipple(ball.x, paddleTop(), 0, 30, 0.25, '#ffffff', 2);
   spawnParticles(ball.x, paddleTop(), 5, '#9ef7ff', 140, 3, 0.35);
-  G.combo = 0;
+  G.combo = 0; FES.fever(false);
 }
 
 function hitBlocks(ball, px, py) {
@@ -698,7 +699,7 @@ function loseLife() {
   G.shake = Math.max(G.shake, 14);
   G.flash = 0.35; G.flashColor = '#ff3355';
   G.lives--;
-  G.combo = 0;
+  G.combo = 0; FES.fever(false);
   G.items = []; G.lasers = [];
   G.pierceT = 0; G.slowT = 0; G.barrier = false;
   G.paddle.laserT = 0; G.paddle.sizeMode = 'normal'; G.paddle.sizeT = 0;
@@ -720,6 +721,7 @@ function gameOver(cleared) {
     resultTimer = null;
     FES.showResult({
       score, scoreLabel: 'pt',
+      rank: { S: 60000, A: 35000, B: 15000, C: 5000 }, titles: { S: 'ブロックの神', A: 'ブレイクマスター', B: 'いい調子！' },
       title: cleared ? 'ALL CLEAR!' : 'GAME OVER',
       subtitle: cleared ? `全 ${TOTAL_STAGES} ステージ制覇！` : `STAGE ${stageReached} まで到達`,
       stats: [

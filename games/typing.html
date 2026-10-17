@@ -478,7 +478,9 @@ function endGame() {
     if (state !== 'result') return;
     FES.showResult({
       score: Math.floor(G.score), scoreLabel: 'pt', title: 'TIME UP!',
-      subtitle: `称号: ${title}　（${G.words} 体撃破）`,
+      grade: title === 'タイピング神' ? 'S' : title === '達人' ? 'A' : title === '上級者' ? 'B' : title === '中級者' ? 'C' : 'D',
+      titles: { S: 'タイピング神', A: '達人', B: '上級者', C: '中級者', D: '初心者（これから！）' },
+      subtitle: `${G.words} 体撃破`,
       stats: [
         { label: '単語数', value: G.words },
         { label: 'KPM', value: kpm },
@@ -509,7 +511,7 @@ function handleChar(ch) {
     // 直前の単語を末尾「ん」= n で終えた直後の余分な n は無罰で吸収（nn 打ちも可）
     if (G.absorbN && ch === 'n') { G.absorbN = false; return; }
     G.absorbN = false;
-    G.miss++; G.combo = 0; G.mult = 1;
+    G.miss++; G.combo = 0; G.mult = 1; FES.fever(false);
     G.shake = Math.max(G.shake, 9); G.flashRed = 0.35; G.hero.hurt = 0.35; G.missAt = G.elapsed;
     FES.sfx('wrong');
     spawnFloat('MISS', HERO_X + 40, GROUND_Y - 150, '#ff5e7a', 30);
@@ -519,6 +521,7 @@ function handleChar(ch) {
   G.absorbN = G.absorbN && ch === 'n';
   G.correct++; G.combo++; if (G.combo > G.maxCombo) G.maxCombo = G.combo;
   G.mult = Math.min(4, 1 + Math.floor(G.combo / 10) * 0.5);
+  if (G.combo === 20) FES.fever(true);
   G.score += 10 * G.mult;
   G.hero.atk = 0.16;
   const en = G.enemy;

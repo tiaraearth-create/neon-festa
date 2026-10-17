@@ -1504,7 +1504,7 @@ function setTheme(name) {
 function showTitle() {
   Music.stop();
   G.state = 'title';
-  FES.hideResult();
+  FES.hideResult(); FES.pause(false); FES.fever(false);
   $('pause').classList.add('hidden');
   $('calib').classList.add('hidden');
   $('title').classList.remove('hidden');
@@ -1593,14 +1593,14 @@ function pauseGame() {
   const ac = Music.ctx();
   if (ac && ac.state === 'running') { try { ac.suspend(); } catch (e) { /* ignore */ } }
   pointers.clear(); keysDown.clear(); FX.press.fill(0);
-  $('pause').classList.remove('hidden');
+  FES.pause(true, { hint: 'Esc / P でも再開できます（再開は1秒後）', onResume: resumeGame, onRetry: () => { FES.pause(false); quitToTitle(); startGame(); } });
   FES.sfx('select');
 }
 function resumeGame() {
   if (G.state !== 'pause') return;
   const ac = Music.ctx();
   if (ac && ac.state !== 'running') { try { ac.resume(); } catch (e) { /* ignore */ } }
-  $('pause').classList.add('hidden');
+  FES.pause(false);
   const delay = 1.0;
   G.songStart = clock() + delay - G.pausedSongTime;
   G.readyUntil = performance.now() / 1000 + delay;
@@ -1643,6 +1643,7 @@ function finishGame() {
   }
   FES.showResult({
     score: G.score, scoreLabel: 'pt',
+    grade: G.failed ? 'D' : rank, titles: { S: 'リズムの神', A: 'リズムマスター', B: 'ノリノリ！', C: 'クリア！', D: 'つぎはクリアしよう' },
     title: G.failed ? 'STAGE FAILED' : rank === 'S' ? 'EXCELLENT!!' : 'CLEAR!',
     subtitle: sub, stats, retryLabel: 'もう一度',
   }, () => startGame());
@@ -1813,6 +1814,7 @@ function update(dt, now) {
   if (!G.frozen) updateBackground(dt, now);
 
   G.fever = G.combo >= 100 ? 2 : G.combo >= 50 ? 1 : 0;
+  if ((G.fever > 0) !== FES.isFever()) FES.fever(G.fever > 0, 'FEVER!');
   G.feverAmt += (G.fever - G.feverAmt) * Math.min(1, dt * 3);
   G.dispScore += (G.score - G.dispScore) * Math.min(1, dt * 10);
   if (Math.abs(G.score - G.dispScore) < 1) G.dispScore = G.score;

@@ -618,6 +618,7 @@ function showResult() {
   FES.showResult({
     score: Math.floor(G.score),
     scoreLabel: 'pt',
+    rank: { S: 9000, A: 6500, B: 4000, C: 2000 }, titles: { S: 'ハイウェイの帝王', A: 'スピードスター', B: 'いい走り！' },
     title: 'TIME UP',
     subtitle: `${Math.floor(G.distM).toLocaleString()} m 走破 / チェックポイント ${G.checkpoints} 回`,
     stats: [
@@ -649,6 +650,7 @@ function updatePlayer(dt) {
   G.playerX -= dt * 2.2 * pct * pct * seg.curve * CENTRIFUGAL;
 
   const maxNow = MAX_SPEED * (G.nitroT > 0 ? NITRO_MULT : 1);
+  { const nf = G.nitroT > 0; if (nf !== !!G.feverOn) { G.feverOn = nf; FES.fever(nf, 'NITRO!!'); } }
   if (G.crash > 0) G.speed = accelerate(G.speed, DECEL * 0.6, dt);
   else if (input.brake) G.speed = accelerate(G.speed, BRAKE, dt);
   else if (input.accel) G.speed = accelerate(G.speed, ACCEL * (G.nitroT > 0 ? 2.4 : 1), dt);

@@ -672,6 +672,7 @@ function updateCoins(dt) {
       G.coinList.splice(i, 1);
       const mult = G.x2 > 0 ? 2 : 1;
       G.combo++; G.comboT = 1.0; G.comboMax = Math.max(G.comboMax, G.combo); G.coins++; G.coinPts += mult;
+      if (G.combo === 15) FES.fever(true, 'COIN FEVER!');
       coinSfx(G.combo); sparkle(sx, c.y, 7);
       popup('+' + (10 * mult), sx, c.y - 18, { size: mult > 1 ? 24 : 18, color: mult > 1 ? '#d9a6ff' : '#ffe36e', max: 0.6, follow: 0.5 });
     }
@@ -741,6 +742,7 @@ function showResultScreen() {
   const kmh = Math.round(G.maxSpeed / PX_PER_M * 3.6);
   FES.showResult({
     score: G.score, scoreLabel: 'pt', title: 'GAME OVER',
+    rank: { S: 5000, A: 3500, B: 2000, C: 800 }, titles: { S: '伝説の忍者', A: '上忍', B: '中忍', C: '下忍', D: '見習い忍者' },
     subtitle: `${Math.floor(G.dist)} m 走破 — ${causeText}`,
     stats: [{ label: '距離', value: Math.floor(G.dist) + ' m' }, { label: '小判', value: G.coins }, { label: '最高速度', value: kmh + ' km/h' }, { label: 'MAX COMBO', value: G.comboMax }],
   }, () => startGame());
@@ -757,7 +759,7 @@ function updatePlay(dt) {
   updateObstacles(dt); if (mode !== 'play') return;
   updateCoins(dt); updateItems(dt); updateParticles(dt);
   for (const k of ['magnet', 'star', 'x2']) if (G[k] > 0) { G[k] -= dt; if (G[k] <= 0) { G[k] = 0; FES.sfx('tick'); } }
-  if (G.combo > 0) { G.comboT -= dt; if (G.comboT <= 0) G.combo = 0; }
+  if (G.combo > 0) { G.comboT -= dt; if (G.comboT <= 0) { G.combo = 0; FES.fever(false); } }
   if (G.dist >= G.nextMile) {
     const big = G.nextMile % 1000 === 0;
     bigPop(G.nextMile + 'm!', big ? '#ffd56e' : '#fff');

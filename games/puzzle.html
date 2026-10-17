@@ -479,8 +479,8 @@ function updateFalling(dt) {
 }
 function afterFall() {
   const groups = findMatches();
-  if (groups.length) { chain++; maxChain = Math.max(maxChain, chain); applyClear(groups, null); return; }
-  chain = 0; lastSwapCells = null;
+  if (groups.length) { chain++; maxChain = Math.max(maxChain, chain); if (chain === 3) FES.fever(true, 'CHAIN FEVER!'); applyClear(groups, null); return; }
+  chain = 0; lastSwapCells = null; FES.fever(false);
   hintMove = findHint();
   if (!hintMove) startShuffle(); else phase = 'idle';
 }
@@ -584,6 +584,7 @@ function endGame() {
   mode = 'result'; bgmStop(); sel = null; drag = null; paused = false; hintShown = false;
   FES.showResult({
     score, scoreLabel: 'pt', title: 'TIME UP!',
+    rank: { S: 30000, A: 18000, B: 9000, C: 3000 }, titles: { S: 'ジュエルの神', A: '連鎖の達人', B: 'いい連鎖！' },
     subtitle: `最大 ${maxChain} 連鎖 ／ 宝石 ${gemsCleared} 個を消した`,
     stats: [{ label: '最大連鎖', value: maxChain }, { label: '消した宝石', value: gemsCleared }, { label: '特殊ジュエル', value: specialsUsed }],
   }, () => startGame());

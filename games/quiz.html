@@ -808,6 +808,7 @@ function answer(i) {
 
   if (i === q.ans) {
     S.combo++; S.maxCombo = Math.max(S.maxCombo, S.combo); S.correct++;
+    if (S.combo === 5) FES.fever(true);
     const base = PT_BASE + Math.round(Math.max(0, S.timeLeft) * PT_SEC);
     const bonus = S.combo >= 2 ? Math.min(COMBO_MAX, (S.combo - 1) * COMBO_STEP) : 0;
     const mult = isLast ? 2 : 1;
@@ -826,7 +827,7 @@ function answer(i) {
     updateHud();
     if (S.combo >= 2) retrigger(el.hudCombo, 'bump');
   } else {
-    S.combo = 0;
+    S.combo = 0; FES.fever(false);
     btns.forEach((b, k) => b.classList.add(k === i ? 'wrong' : k === q.ans ? 'reveal' : 'dim'));
     showFeedback(false, { q, timeout: false });
     FES.sfx('wrong');
@@ -842,7 +843,7 @@ function timeUp() {
   if (S.answered) return;
   const q = S.questions[S.idx];
   const isLast = S.idx === S.questions.length - 1;
-  S.answered = true; S.timerOn = false; S.combo = 0;
+  S.answered = true; S.timerOn = false; S.combo = 0; FES.fever(false);
   S.times.push(Q_TIME);
   const btns = [...el.opts.children];
   btns.forEach((b, k) => { b.classList.remove('live', 'pop'); b.classList.add(k === q.ans ? 'reveal' : 'dim'); });
@@ -919,7 +920,8 @@ function finish() {
   FES.showResult({
     score: S.score, scoreLabel: 'pt',
     title: S.correct >= n ? 'PERFECT!!' : 'RESULT',
-    subtitle: '称号「' + t + '」 ／ ' + CATS[S.cat].name,
+    subtitle: CATS[S.cat].name,
+    rank: { S: 12000, A: 9000, B: 6000, C: 3000 }, titles: { S: t, A: t, B: t, C: t, D: t },
     stats: [
       { label: '正解数', value: S.correct + '/' + n },
       { label: 'MAX COMBO', value: S.maxCombo },

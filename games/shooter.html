@@ -564,6 +564,7 @@ function killEnemy(e, byBomb) {
   const idx = S.enemies.indexOf(e); if (idx >= 0) S.enemies.splice(idx, 1);
   S.kills++;
   S.combo++; S.comboT = 2.2; S.comboPop = 1; if (S.combo > S.maxCombo) S.maxCombo = S.combo;
+  if (S.combo === 15) FES.fever(true);
   if (S.combo % 10 === 0) { FES.sfx('combo'); popup(W / 2, H * 0.4, `${S.combo} COMBO!`, '#ff9ee8', 30, 1.0); }
   const mult = comboMult();
   let pts = Math.round(e.score * mult / 10) * 10;
@@ -590,7 +591,7 @@ function playerHit() {
   p.lives--;
   SND.death(); addFlash('#ff2040', 0.75); addShake(26); S.hitstop = 0.16;
   explode(p.x, p.y, 1.6, '#8ed6ff', '#fff');
-  S.combo = 0; S.comboT = 0;
+  S.combo = 0; S.comboT = 0; FES.fever(false);
   for (const b of S.bullets) spark(b.x, b.y, 1, '#fff', 80, 0.3);
   S.bullets.length = 0;
   if (p.lives <= 0) {
@@ -1285,6 +1286,7 @@ function finishGame() {
   }
   FES.showResult({
     score: S.score, scoreLabel: 'pt', title, subtitle,
+    rank: { S: 60000, A: 35000, B: 15000, C: 5000 }, titles: { S: '銀河の英雄', A: 'エースパイロット', B: 'いい腕だ！' },
     stats: [{ label: 'WAVE', value: S.wave }, { label: '撃破数', value: S.kills }, { label: 'MAX COMBO', value: S.maxCombo }, { label: 'GRAZE', value: S.graze }],
   }, restartGame);
 }
@@ -1315,7 +1317,7 @@ function update(dtRaw) {
   updateEnemies(dt); updateBullets(dt); updateShots(dt); updateItems(dt);
   if (S.phase === 'play') collisions();
   updateFx(dt);
-  S.comboT -= dt; if (S.comboT <= 0 && S.combo > 0) { S.combo = 0; }
+  S.comboT -= dt; if (S.comboT <= 0 && S.combo > 0) { S.combo = 0; FES.fever(false); }
   const diff = S.score - S.dispScore; S.dispScore += Math.abs(diff) < 1 ? diff : diff * Math.min(1, dtRaw * 8);
   if (S.over) { S.overT += dtRaw; if (S.overT > 1.7) finishGame(); }
   if (S.cleared) {

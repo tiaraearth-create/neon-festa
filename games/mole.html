@@ -374,6 +374,7 @@ function comboPop() {
   if (c % 10 === 0) confetti(W / 2, 130, 20);
 }
 function startFever() {
+  FES.fever(true, null);
   G.fever = 5;
   G.feverFlash = 0.6;
   G.flash = 0.6; G.flashColor = '#ffffff';
@@ -551,7 +552,7 @@ function resetGame() {
   G.combo = 0; G.maxCombo = 0;
   G.hits = 0; G.golds = 0; G.swings = 0; G.goodSwings = 0; G.bad = 0;
   G.spawnTimer = 0.6; G.bonusCd = 0;
-  G.fever = 0; G.feverFlash = 0;
+  G.fever = 0; G.feverFlash = 0; FES.fever(false);
   G.shake = 0; G.hitStop = 0; G.flash = 0;
   G.particles = []; G.texts = [];
   G.expanded = false;
@@ -587,6 +588,7 @@ function showResult() {
   const acc = G.swings ? Math.round(G.goodSwings / G.swings * 100) : 0;
   FES.showResult({
     score: G.score, scoreLabel: 'pt', title: 'TIME UP!',
+    rank: { S: 25000, A: 15000, B: 8000, C: 3000 }, titles: { S: 'もぐらの神', A: 'もぐらマスター', B: 'なかなかの腕！' },
     subtitle: `もぐらを ${G.hits} 匹 たたいた！`,
     stats: [
       { label: 'ヒット数', value: G.hits },
@@ -613,7 +615,7 @@ function updatePlay(dt) {
   if (!G.expanded && G.elapsed >= EXPAND_AT) expandHoles();
   if (G.bonusCd > 0) G.bonusCd -= dt;
   if (G.fever > 0) {
-    G.fever -= dt;
+    G.fever -= dt; if (G.fever <= 0) FES.fever(false);
     if (Math.random() < dt * 14) confetti(rand(0, W), -10, 1);
     if (G.fever <= 0) { G.fever = 0; addText(W / 2, 150, 'FEVER END', { size: 36, color: '#ffe0ff', life: 1.0, vy: 20 }); }
   }

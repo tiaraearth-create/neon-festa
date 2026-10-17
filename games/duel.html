@@ -174,7 +174,9 @@ function finishMatch() {
   const sub = G.history.map(h => TYPES[h.type].icon + (h.winner < 0 ? '－' : P[h.winner].name)).join('  ');
   setTimeout(() => {
     if (G.state !== 'matchend') return;
-    FES.showResult({ title: w < 0 ? 'ひきわけ！' : `${P[w].name} の勝ち！`, score: Math.max(G.wins[0], G.wins[1]), scoreLabel: '勝', subtitle: sub, stats, ranking: false, retryLabel: 'もう一回' }, () => { G.state = 'title'; G.titleT = 0; });
+    const diff = w < 0 ? 0 : G.wins[w] - G.wins[1 - w];
+    FES.showResult({ title: w < 0 ? 'ひきわけ！' : `${P[w].name} の勝ち！`, score: Math.max(G.wins[0], G.wins[1]), scoreLabel: '勝', subtitle: sub, stats, ranking: false, retryLabel: 'もう一回',
+      grade: w < 0 ? null : diff >= 3 ? 'S' : diff === 2 ? 'A' : 'B', titles: { S: 'ストレート勝ち！完全勝利', A: '圧勝！', B: '接戦を制した！' } }, () => { G.state = 'title'; G.titleT = 0; });
   }, 1700);
 }
 

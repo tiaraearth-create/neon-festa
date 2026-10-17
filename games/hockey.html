@@ -274,7 +274,7 @@ function finishMatch(winner) {
     const lv = CPU_LEVELS[G.cpuLevel];
     if (winner === 0) {
       const rs = (a - b) * lv.base + Math.round(G.time) * (G.cpuLevel + 1) * 4;
-      FES.showResult({ title: 'あなたの勝ち！', score: rs, scoreLabel: 'pt', subtitle: sub + '　vs CPU ' + lv.name, stats, ranking: true }, retry);
+      FES.showResult({ title: 'あなたの勝ち！', score: rs, scoreLabel: 'pt', subtitle: sub + '　vs CPU ' + lv.name, stats, ranking: true, rank: { S: 4500, A: 3000, B: 1500, C: 500 }, titles: { S: 'ホッケーの神', A: 'エースストライカー', B: 'ナイスゲーム！', C: 'まずは1勝！', D: '勝ったぞ！' } }, retry);
     } else {
       FES.showResult({ title: 'CPU の勝ち…', score: b, subtitle: sub + '　vs CPU ' + lv.name, stats, ranking: false }, retry);
     }

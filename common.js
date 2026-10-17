@@ -275,7 +275,56 @@
     whoosh:   () => FES.noise({ dur: 0.25, freq: 300, slide: 3000, vol: 0.15, filter: 'bandpass' }),
     levelup:  () => { [523, 659, 784, 1047, 1319].forEach((f, i) => FES.tone({ freq: f, dur: 0.12, delay: i * 0.06, type: 'triangle', vol: 0.2 })); },
   };
+  SFX.gradeS = () => { [0, 4, 7, 12, 16, 19, 24].forEach((n, i) => FES.tone({ freq: 523 * Math.pow(2, n / 12), dur: 0.5, delay: i * 0.06, type: 'triangle', vol: 0.18 })); FES.noise({ dur: 0.5, freq: 3000, slide: 600, vol: 0.12, delay: 0.3 }); };
+  SFX.gradeA = () => { [0, 4, 7, 12].forEach((n, i) => FES.tone({ freq: 523 * Math.pow(2, n / 12), dur: 0.35, delay: i * 0.07, type: 'triangle', vol: 0.18 })); };
+  SFX.gradeB = () => { [0, 4, 7].forEach((n, i) => FES.tone({ freq: 440 * Math.pow(2, n / 12), dur: 0.3, delay: i * 0.08, type: 'triangle', vol: 0.16 })); };
+  SFX.gradeC = () => { FES.tone({ freq: 440, dur: 0.25, type: 'triangle', vol: 0.15 }); FES.tone({ freq: 554, dur: 0.3, delay: 0.1, type: 'triangle', vol: 0.15 }); };
+  SFX.gradeD = () => { FES.tone({ freq: 330, dur: 0.3, type: 'triangle', vol: 0.12 }); FES.tone({ freq: 294, dur: 0.4, delay: 0.14, type: 'triangle', vol: 0.12 }); };
+  SFX.fever = () => { [0, 7, 12, 19, 24].forEach((n, i) => FES.tone({ freq: 392 * Math.pow(2, n / 12), dur: 0.18, delay: i * 0.05, type: 'square', vol: 0.1 })); FES.noise({ dur: 0.35, freq: 2500, slide: 300, vol: 0.15 }); };
   FES.sfx = function (name) { const f = SFX[name]; if (f) f(); };
+
+  /* ------------------------------------------------------------ ランク評価（S/A/B/C/D）と称号 */
+  const GRADES = ['S', 'A', 'B', 'C', 'D'];
+  const GRADE_TITLE = { S: '神ってる！', A: '達人！', B: '上手！', C: 'いい感じ', D: 'つぎはもっと！' };
+  const GRADE_COLOR = { S: '#ffd36e', A: '#ff4d8d', B: '#5ee7ff', C: '#5cff8d', D: '#b8b8c8' };
+  /** 点数としきい値 {S,A,B,C} からランクを決める。しきい値以上でそのランク */
+  FES.grade = function (score, bands) {
+    if (!bands) return null;
+    for (const g of ['S', 'A', 'B', 'C']) if (bands[g] != null && score >= bands[g]) return g;
+    return 'D';
+  };
+  FES.gradeTitle = (g, titles) => (titles && titles[g]) || GRADE_TITLE[g] || '';
+  FES.gradeColor = g => GRADE_COLOR[g] || '#fff';
+  FES.gradeIndex = g => GRADES.indexOf(g);   // 小さいほど上
+  const GRADES_KEY = 'fes:grades';
+  FES.bestGrades = () => LS.get(GRADES_KEY, {});           // { gameId: 'S' }
+  FES.bestGrade = id => FES.bestGrades()[id] || null;
+  FES.saveGrade = function (id, g) {
+    if (!g || !GRADES.includes(g)) return { grade: g, improved: false };
+    const all = FES.bestGrades(); const cur = all[id];
+    const improved = !cur || FES.gradeIndex(g) < FES.gradeIndex(cur);
+    if (improved) { all[id] = g; LS.set(GRADES_KEY, all); }
+    return { grade: g, improved, prev: cur || null };
+  };
+
+  /* ------------------------------------------------------------ フィーバー演出（画面ふちの虹色の光。DOM なのでどのゲームからも1行で使える） */
+  let feverEl = null, feverLbl = null, feverOn = false;
+  /** FES.fever(true, 'FEVER!') / FES.fever(false) */
+  FES.fever = function (on, label) {
+    ensureUI();
+    if (on && !feverOn) {
+      feverOn = true;
+      feverEl = el('div', { class: 'fes-fever' });
+      ui.appendChild(feverEl);
+      if (label !== null) { feverLbl = el('div', { class: 'fes-fever-lbl', text: label || 'FEVER!' }); ui.appendChild(feverLbl); setTimeout(() => { if (feverLbl) { feverLbl.remove(); feverLbl = null; } }, 1400); }
+      FES.sfx('fever'); FES.vibrate([20, 30, 20]);
+    } else if (!on && feverOn) {
+      feverOn = false;
+      const e = feverEl; feverEl = null; if (e) { e.classList.add('out'); setTimeout(() => e.remove(), 500); }
+      if (feverLbl) { feverLbl.remove(); feverLbl = null; }
+    }
+  };
+  FES.isFever = () => feverOn;
   FES.sfxNames = Object.keys(SFX);
 
   /* ------------------------------------------------------------ 演出ヘルパー（Canvas 用） */
@@ -425,6 +474,26 @@
   .fes-score.done { animation: fesBump .35s ease-out; }
   .fes-score small { font-size: 16px; opacity: .7; margin-left: 4px; }
   .fes-sub { opacity: .8; font-size: 14px; margin-bottom: 12px; }
+  .fes-grade-wrap { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 86px; margin: 2px 0 6px; flex-wrap: wrap; }
+  .fes-grade { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 84px; height: 84px; border-radius: 22px; border: 4px solid var(--gc, #fff);
+    background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.25), rgba(0,0,0,.35)); color: var(--gc, #fff); box-shadow: 0 0 30px color-mix(in srgb, var(--gc, #fff) 55%, transparent), inset 0 0 18px rgba(0,0,0,.4);
+    animation: fesStamp .55s cubic-bezier(.2,1.3,.4,1) both; transform: rotate(-6deg); }
+  .fes-grade .lbl { font-size: 10px; letter-spacing: .3em; font-weight: 800; opacity: .8; margin-bottom: -4px; }
+  .fes-grade .g { font-size: 50px; font-weight: 900; line-height: 1; text-shadow: 0 0 18px color-mix(in srgb, var(--gc, #fff) 70%, transparent); }
+  .fes-grade.gS { background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.45), rgba(120,70,0,.5)); animation: fesStamp .55s cubic-bezier(.2,1.3,.4,1) both, fesGlowS 1.6s ease-in-out .6s infinite; }
+  @keyframes fesGlowS { 0%,100% { box-shadow: 0 0 30px rgba(255,211,110,.6), inset 0 0 18px rgba(0,0,0,.4) } 50% { box-shadow: 0 0 60px rgba(255,211,110,.95), 0 0 120px rgba(255,180,60,.5), inset 0 0 18px rgba(0,0,0,.4) } }
+  .fes-grade-title { font-size: 20px; font-weight: 900; letter-spacing: .04em; animation: fesFade .4s ease .35s both; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  .fes-fever { position: fixed; inset: 0; pointer-events: none; z-index: 8990; border-radius: 0; animation: fesFeverIn .35s ease both, fesFeverHue 2.2s linear infinite;
+    box-shadow: inset 0 0 90px 34px rgba(255,80,160,.75), inset 0 0 200px 80px rgba(255,140,60,.35); mix-blend-mode: screen; }
+  .fes-fever.out { animation: fesFeverOut .45s ease both; }
+  .fes-fever::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(255,77,141,.18), rgba(255,211,110,.14), rgba(94,231,255,.18), rgba(176,107,255,.14), rgba(255,77,141,.18)); background-size: 300% 100%; animation: fesShine 1.4s linear infinite; mask: linear-gradient(#000, transparent 18%, transparent 82%, #000); -webkit-mask: linear-gradient(#000, transparent 18%, transparent 82%, #000); }
+  @keyframes fesFeverIn { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes fesFeverOut { from { opacity: 1 } to { opacity: 0 } }
+  @keyframes fesFeverHue { from { filter: hue-rotate(0deg) } to { filter: hue-rotate(360deg) } }
+  .fes-fever-lbl { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 8995; pointer-events: none; font-size: clamp(40px, 8vw, 96px); font-weight: 900; letter-spacing: .08em; font-style: italic;
+    background: linear-gradient(90deg, #ff4d8d, #ffd36e, #5ee7ff, #b06bff, #ff4d8d); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 18px rgba(255,120,200,.8)) drop-shadow(0 4px 0 rgba(0,0,0,.6));
+    animation: fesShine 1.2s linear infinite, fesFeverLbl 1.4s ease both; }
+  @keyframes fesFeverLbl { 0% { opacity: 0; transform: translateX(-50%) scale(.4) } 20% { opacity: 1; transform: translateX(-50%) scale(1.15) } 35% { transform: translateX(-50%) scale(1) } 80% { opacity: 1 } 100% { opacity: 0; transform: translateX(-50%) scale(1.3) } }
   .fes-newrec { display: inline-block; margin: 4px 0 10px; padding: 5px 16px; border-radius: 999px; font-weight: 900; font-size: 14px; letter-spacing: .15em;
     background: linear-gradient(90deg,#ff4d8d,#ffb347); box-shadow: 0 0 24px rgba(255,120,80,.6); animation: fesPop .6s .3s both; }
   .fes-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px,1fr)); gap: 8px; margin: 10px 0 14px; }
@@ -710,6 +779,8 @@
    *   ranking: true,            // false でランキング登録なし
    *   retryLabel: 'もう一度',
    *   stamp: true,              // false でスタンプを押さない
+   *   rank: { S: 50000, A: 30000, B: 15000, C: 5000 },   // ランクのしきい値（点数で判定）。または grade: 'S' を直接
+   *   titles: { S: 'タイピング神', A: '達人' }, // 称号の上書き（任意）
    * }, onRetry)
    */
   FES.showResult = function (o, onRetry) {
@@ -721,9 +792,13 @@
     const prev = FES.getRanking();
     const isTop = rankIn && (!prev.length || score > prev[0].score);
     const games = FES.games();
+    FES.fever(false);
+    // ランク（S/A/B/C/D）: しきい値 or 直接指定。対戦などランキング無しのゲームは grade 指定のときだけ
+    const grade = o.grade || ((o.ranking != null ? o.ranking : cfg.ranking) ? FES.grade(score, o.rank) : null);
+    const gradeInfo = grade && cfg.id !== 'hub' ? FES.saveGrade(FES.stampBase(cfg.id), grade) : null;
     // スタンプラリー: 1回遊び終えたらスタンプ（同じゲームは1枚のカードに1つ）
     let st = null;
-    if (cfg.id !== 'hub' && o.stamp !== false) st = FES.addStamp(cfg.id);
+    if (cfg.id !== 'hub' && o.stamp !== false) st = FES.addStamp(cfg.id, grade);
 
     const card = el('div', { class: 'fes-card' + (rankIn ? ' rankin' : '') });
     card.appendChild(el('h2', { text: cfg.title || '' }));
@@ -737,6 +812,12 @@
     if (o.subtitle) card.appendChild(el('div', { class: 'fes-sub', text: o.subtitle }));
     const recBox = el('div');
     card.appendChild(recBox);
+    // ランクの判子（スコアのカウントアップが終わってから押す）
+    let gradeBox = null;
+    if (grade) {
+      gradeBox = el('div', { class: 'fes-grade-wrap' });
+      card.appendChild(gradeBox);
+    }
     if (o.stats && o.stats.length) {
       const g = el('div', { class: 'fes-stats' });
       o.stats.forEach(s => g.appendChild(el('div', { class: 'fes-stat' }, [el('b', { text: String(s.value) }), el('span', { text: String(s.label) })])));
@@ -824,11 +905,21 @@
     // スコアのカウントアップ → 結果の音（ランクインならファンファーレ＋紙吹雪）
     const finish = () => {
       if (scoreEl) { scoreEl.classList.add('done'); }
+      if (grade && gradeBox) {
+        const col = FES.gradeColor(grade);
+        gradeBox.appendChild(el('div', { class: 'fes-grade g' + grade, style: `--gc:${col}` }, [
+          el('div', { class: 'lbl', text: 'RANK' }),
+          el('div', { class: 'g', text: grade }),
+        ]));
+        gradeBox.appendChild(el('div', { class: 'fes-grade-title', style: `color:${col}`, text: FES.gradeTitle(grade, o.titles) + (gradeInfo && gradeInfo.improved && gradeInfo.prev ? `　（${gradeInfo.prev} → ${grade} にアップ！）` : gradeInfo && gradeInfo.improved && !gradeInfo.prev ? '' : '') }));
+        setTimeout(() => { FES.sfx('grade' + grade); if (grade === 'S') { FES.vibrate([40, 40, 80]); confetti(2600, ['#ffd36e', '#fff6cc', '#ffb347', '#fff']); } }, 80);
+      }
       if (rankIn) {
-        FES.sfx(isTop ? 'fanfare' : 'rankin'); FES.vibrate([30, 40, 60]);
+        setTimeout(() => { FES.sfx(isTop ? 'fanfare' : 'rankin'); FES.vibrate([30, 40, 60]); }, grade ? 650 : 0);
         recBox.appendChild(el('div', { class: 'fes-newrec', text: isTop ? '★ NEW RECORD! 1位 ★' : '★ RANK IN! ★' }));
         confetti(isTop ? 4500 : 2800);
-      } else if (o.score != null && score > 0) FES.sfx('coin');
+      } else if (grade) { /* ランクの音だけ */ }
+      else if (o.score != null && score > 0) FES.sfx('coin');
       else FES.sfx('gameover');
     };
     if (scoreEl && score > 0) FES.countUp(v => { scoreEl.firstChild.nodeValue = Math.round(v).toLocaleString(); }, 0, score, Math.min(1.2, 0.4 + Math.log10(score + 1) * 0.18), finish);
@@ -865,9 +956,10 @@
   FES.stampHall = () => FES.isRoomPC() ? cloud().hall : LS.get(HALL_KEY, []);   // [{ name, date, timeMs, count }]
   FES.clearStampHall = () => LS.set(HALL_KEY, []);
   /** スタンプを押す。戻り値 { card, added, count, total, complete } */
-  FES.addStamp = function (id) {
+  FES.addStamp = function (id, grade) {
     const base = FES.stampBase(id);
     const c = FES.stampCard() || FES.newStampCard('');
+    if (grade) { c.grades = c.grades || {}; if (!c.grades[base] || FES.gradeIndex(grade) < FES.gradeIndex(c.grades[base])) { c.grades[base] = grade; LS.set(STAMP_KEY, c); } }
     const total = FES.stampTotal();
     if (c.done || c.stamps[base]) return { card: c, added: false, count: Object.keys(c.stamps).length, total, complete: !!c.done };
     c.stamps[base] = Date.now();
