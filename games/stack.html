@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ネオンスタック</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07071a; overflow: hidden; font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
+  #game { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script src="../common.js"></script>
+<script>
+'use strict';
+/* =====================================================================
+   ネオンスタック — 動くブロックをタイミングよく積む。ズレた分は落ちて細くなる。
+   操作: Space / Enter / ↓ / クリック / タップ。 Esc / P でポーズ。
+   ===================================================================== */
+FES.init({ id: 'stack', title: 'ネオンスタック' });
+
+const W = 960, H = 540;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const view = FES.fitCanvas(canvas, W, H);
+const fx = FES.fx();
+const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
+const TAU = Math.PI * 2;
+
+const BASE_W = 240, BH = 26, DEPTH = 18;      // ブロックの幅・高さ・奥行き（見た目）
+const PERFECT_TOL = 7;                        // これ以内なら PERFECT（ぴったり）
+const GROW_EVERY = 4;                         // PERFECT を続けると幅が戻る
+const CX = W * 0.5 - 40;                      // 塔の中心（右にHUDを置くので少し左）
+const RANK = { S: 4000, A: 2500, B: 1500, C: 600 };
+
+let G = null;
+const stars = Array.from({ length: 90 }, (_, i) => ({ x: (i * 7919) % W, y: (i * 104729) % (H * 3), r: 0.6 + (i % 3) * 0.6, p: (i % 7) / 7 }));
+
+function newGame() {
+  return {
+    state: 'title', t: 0,
+    blocks: [{ x: CX - BASE_W / 2, w: BASE_W, hue: 200 }],   // 下から順。y は index で決まる
+    mover: null,                 // { x, w, dir, hue, speed }
+    falling: [],                 // 切り落とされた破片
+    camY: 0, camTarget: 0,
+    score: 0, dispScore: 0, perfects: 0, combo: 0, maxCombo: 0, grow: 0,
+    over: false, overT: 0, lastPerfectT: 0, pop: 0, shakeFloor: -1,
+    titleT: 0, countT: 0, countStep: -1,
+  };
+}
+G = newGame();
+
+function floorY(i) { return H - 90 - i * BH; }   // 床 i の上端（カメラ前）
+function speedFor(n) { return 1.5 + Math.min(3.2, n * 0.055); }
+function newMover() {
+  const top = G.blocks[G.blocks.length - 1];
+  const n = G.blocks.length;
+  const dir = n % 2 ? 1 : -1;
+  const amp = Math.min(W * 0.42, 220 + top.w * 0.5);
+  return { x: CX - top.w / 2 + -dir * amp, w: top.w, dir, hue: (top.hue + 18) % 360, speed: speedFor(n), amp, ph: -dir * Math.PI / 2 };
+}
+function startGame() {
+  FES.howto(['Space / クリック / タップ でブロックを落とす', '🎯 ぴったり重ねると PERFECT', '✂ はみ出た分は落ちて細くなる']);
+  FES.hideResult(); FES.pause(false); FES.fever(false); fx.clear();
+  G = newGame();
+  G.state = 'count'; G.countT = 0; G.countStep = -1;
+}
+function beginPlay() {
+  G.state = 'play'; G.t = 0;
+  G.mover = newMover();
+  FES.sfx('go');
+}
+function colorOf(hue, l) { return `hsl(${hue} 95% ${l}%)`; }
+
+/* ------------------------------------------------------------ 落とす */
+function drop() {
+  if (G.state !== 'play' || !G.mover) return;
+  const m = G.mover, top = G.blocks[G.blocks.length - 1];
+  const mx0 = m.x, mx1 = m.x + m.w, tx0 = top.x, tx1 = top.x + top.w;
+  const ox0 = Math.max(mx0, tx0), ox1 = Math.min(mx1, tx1);
+  const ovl = ox1 - ox0;
+  const n = G.blocks.length, y = floorY(n) - G.camY;
+  if (ovl <= 2) {
+    // 完全にはずれた → ゲームオーバー
+    G.falling.push({ x: m.x, w: m.w, y, vy: -60, vx: m.dir * 120, rot: 0, vr: m.dir * 2.4, hue: m.hue, life: 2 });
+    G.mover = null; G.over = true; G.overT = 0; G.state = 'over';
+    fx.shake(1.2, 0.5); fx.flash('#ff4d8d', 0.35, 0.2); FES.sfx('gameover'); FES.fever(false); FES.vibrate([60, 40, 80]);
+    setTimeout(showResult, 1500);
+    return;
+  }
+  const dx = Math.abs(mx0 - tx0);
+  let placed;
+  if (dx <= PERFECT_TOL) {
+    // PERFECT: ぴったりそろえる
+    placed = { x: tx0, w: top.w, hue: m.hue };
+    G.perfects++; G.combo++; G.maxCombo = Math.max(G.maxCombo, G.combo); G.grow++;
+    const bonus = 50 + Math.min(10, G.combo) * 25;
+    G.score += 100 + bonus;
+    fx.ring(CX, y + BH / 2, { color: '#fff', r: top.w * 0.3, r1: top.w * 1.1, life: 0.45 });
+    fx.ring(CX, y + BH / 2, { color: colorOf(m.hue, 70), r: 10, r1: top.w * 0.8, life: 0.6 });
+    fx.text(CX, y - 30, G.combo >= 2 ? `PERFECT ×${G.combo}` : 'PERFECT!', { color: '#ffd36e', size: G.combo >= 5 ? 34 : 28, life: 0.9 });
+    fx.burst(CX, y + BH / 2, { color: ['#fff', '#ffd36e', colorOf(m.hue, 75)], n: 22, speed: 260, life: 0.6, size: 4, gravity: 200, shape: 'spark' });
+    FES.sfx('perfect'); FES.tone({ freq: 880 + Math.min(12, G.combo) * 60, dur: 0.12, type: 'triangle', vol: 0.18 });
+    G.lastPerfectT = G.t; G.pop = 1;
+    if (G.grow >= GROW_EVERY && placed.w < BASE_W) { placed.w = Math.min(BASE_W, placed.w + 24); placed.x = tx0 - (placed.w - top.w) / 2; G.grow = 0; fx.text(CX, y - 62, 'WIDER!', { color: '#5ee7ff', size: 22, life: 0.9 }); FES.sfx('powerup'); }
+    if (G.combo === 5) FES.fever(true, 'PERFECT FEVER!');
+  } else {
+    placed = { x: ox0, w: ovl, hue: m.hue };
+    // はみ出た破片が落ちる
+    if (mx0 < tx0) G.falling.push({ x: mx0, w: tx0 - mx0, y, vy: 0, vx: -80, rot: 0, vr: -1.8, hue: m.hue, life: 1.6 });
+    if (mx1 > tx1) G.falling.push({ x: tx1, w: mx1 - tx1, y, vy: 0, vx: 80, rot: 0, vr: 1.8, hue: m.hue, life: 1.6 });
+    G.combo = 0; G.grow = 0; G.score += 100;
+    fx.text(CX, y - 30, '+100', { color: '#fff', size: 22, life: 0.7 });
+    FES.sfx('hit'); FES.noise({ dur: 0.08, freq: 900, slide: 200, vol: 0.18 });
+    if (FES.isFever()) FES.fever(false);
+    if (ovl < 40) { fx.text(CX, y - 60, 'あぶない！', { color: '#ff4d8d', size: 24, life: 0.9 }); }
+  }
+  G.blocks.push(placed);
+  G.shakeFloor = n; fx.shake(0.35, 0.18);
+  G.camTarget = Math.min(0, floorY(G.blocks.length) - H * 0.42);   // 塔のてっぺんが画面の 42% の高さに来るように下へずらす
+  G.mover = newMover();
+  FES.vibrate(15);
+}
+function showResult() {
+  const floors = G.blocks.length - 1;
+  FES.showResult({
+    score: G.score, scoreLabel: 'pt', title: floors >= 30 ? 'すごい高さ！' : 'GAME OVER',
+    subtitle: `${floors} 階まで積んだ！`,
+    rank: RANK, titles: { S: 'タワーの神', A: '積みの達人', B: 'なかなかの高さ！', C: 'いい感じ', D: 'つぎはもっと高く！' },
+    stats: [{ label: '高さ', value: floors + ' 階' }, { label: 'PERFECT', value: G.perfects }, { label: 'MAX COMBO', value: G.maxCombo }],
+  }, startGame);
+}
+
+/* ------------------------------------------------------------ 更新 */
+function update(dt) {
+  G.t += dt;
+  const d = fx.update(dt);
+  if (G.state === 'count') {
+    G.countT += dt;
+    const step = Math.min(3, Math.floor(G.countT / 0.7));
+    if (step !== G.countStep) { G.countStep = step; if (step < 3) FES.sfx('countdown'); else beginPlay(); }
+  }
+  if (G.state === 'play' && G.mover) {
+    const m = G.mover;
+    m.ph += m.speed * d;
+    m.x = CX - m.w / 2 + Math.sin(m.ph) * m.amp;
+  }
+  G.camY += (G.camTarget - G.camY) * Math.min(1, d * 6);
+  for (let i = G.falling.length - 1; i >= 0; i--) {
+    const f = G.falling[i];
+    f.vy += 1400 * d; f.y += f.vy * d; f.x += f.vx * d; f.rot += f.vr * d; f.life -= d;
+    if (f.life <= 0 || f.y > H + 200) G.falling.splice(i, 1);
+  }
+  G.pop = Math.max(0, G.pop - d * 3);
+  G.dispScore += (G.score - G.dispScore) * Math.min(1, d * 8);
+  if (G.state === 'over') G.overT += d;
+}
+
+/* ------------------------------------------------------------ 描画 */
+function drawBlock(x, y, w, hue, alpha, glow) {
+  ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha;
+  // 右側面
+  ctx.fillStyle = colorOf(hue, 28); ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w + DEPTH, y + BH - DEPTH * 0.6); ctx.lineTo(x + w, y + BH); ctx.closePath(); ctx.fill();
+  // 上面
+  ctx.fillStyle = colorOf(hue, 72); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w, y); ctx.closePath(); ctx.fill();
+  // 正面
+  const g = ctx.createLinearGradient(x, y, x, y + BH); g.addColorStop(0, colorOf(hue, 58)); g.addColorStop(1, colorOf(hue, 42));
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, BH);
+  if (glow) { ctx.shadowColor = colorOf(hue, 70); ctx.shadowBlur = glow; ctx.strokeStyle = colorOf(hue, 85); ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, w - 2, BH - 2); }
+  ctx.restore();
+}
+function render() {
+  const floors = G.blocks.length - 1;
+  // 背景: 高くなるほど宇宙へ
+  const k = Math.min(1, floors / 45);
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, k < 0.5 ? `rgb(${12 + 30 * (1 - k * 2)},${8 + 10 * (1 - k * 2)},${40 + 30 * (1 - k * 2)})` : '#04040f');
+  bg.addColorStop(1, `rgb(${40 - 30 * k},${20 - 14 * k},${70 - 50 * k})`);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // 星（カメラでゆっくり動く）
+  ctx.fillStyle = '#fff';
+  for (const s of stars) { const y = (((s.y - G.camY * 0.3) % (H + 20)) + H + 20) % (H + 20) - 10; ctx.globalAlpha = 0.25 + 0.5 * k + 0.25 * Math.sin(G.t * 2 + s.p * TAU); ctx.beginPath(); ctx.arc(s.x, y, s.r, 0, TAU); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  // 遠くの街（下のほうにだけ）
+  const cityY = H - 70 - G.camY * 0.8;
+  if (cityY < H + 100) {
+    for (let i = 0; i < 26; i++) { const bw = 26 + (i * 13) % 30, bh = 40 + (i * 37) % 120, bx = i * 38 - 10; ctx.fillStyle = `rgba(${40 + (i % 3) * 10},${20 + (i % 4) * 8},${70 + (i % 5) * 12},.9)`; ctx.fillRect(bx, cityY - bh, bw, bh + 200); ctx.fillStyle = 'rgba(255,220,140,.35)'; for (let j = 0; j < 4; j++) { if ((i * 7 + j * 3) % 5 === 0) continue; ctx.fillRect(bx + 5 + (j % 2) * 10, cityY - bh + 8 + j * 14, 4, 6); } }
+  }
+  fx.begin(ctx);
+  // 塔
+  const n = G.blocks.length;
+  for (let i = 0; i < n; i++) {
+    const b = G.blocks[i], y = floorY(i) - G.camY;
+    if (y > H + 40 || y < -60) continue;
+    const isTop = i === n - 1;
+    const pop = isTop ? 1 + G.pop * 0.06 : 1;
+    const w = b.w * pop, x = b.x - (w - b.w) / 2;
+    drawBlock(x, y, w, b.hue, 1, isTop ? 14 : 0);
+  }
+  // 破片
+  for (const f of G.falling) {
+    ctx.save(); ctx.translate(f.x + f.w / 2, f.y + BH / 2); ctx.rotate(f.rot); ctx.globalAlpha = Math.min(1, f.life);
+    drawBlock(-f.w / 2, -BH / 2, f.w, f.hue, 1, 0); ctx.restore();
+  }
+  // 動いているブロック
+  if (G.mover && G.state === 'play') {
+    const m = G.mover, y = floorY(n) - G.camY;
+    // 下のブロックとの重なりガイド（うっすら）
+    const top = G.blocks[n - 1];
+    const ox0 = Math.max(m.x, top.x), ox1 = Math.min(m.x + m.w, top.x + top.w);
+    if (ox1 > ox0) { ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(ox0, y + BH, ox1 - ox0, floorY(n - 1) - G.camY - y - BH + 1); }
+    drawBlock(m.x, y, m.w, m.hue, 1, 22);
+  }
+  fx.draw(ctx);
+  fx.end(ctx);
+  fx.drawFlash(ctx, W, H);
+  drawHUD(floors);
+  if (G.state === 'title') drawTitle();
+  if (G.state === 'count') drawCount();
+}
+function text(s, x, y, size, color, o) {
+  o = o || {};
+  ctx.save(); ctx.font = `${o.w || 900} ${size}px ${FONT}`; ctx.textAlign = o.align || 'center'; ctx.textBaseline = 'middle';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = size * 0.5; }
+  if (o.stroke) { ctx.lineWidth = Math.max(3, size * 0.14); ctx.lineJoin = 'round'; ctx.strokeStyle = o.stroke; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.restore();
+}
+function drawHUD(floors) {
+  if (G.state === 'title') return;
+  // 右の HUD
+  const px = W - 150, py = 24;
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.roundRect(px - 20, py, 160, 150, 16); ctx.fill();
+  text('SCORE', px + 60, py + 22, 12, 'rgba(255,255,255,.6)');
+  text(Math.round(G.dispScore).toLocaleString(), px + 60, py + 50, 30, '#ffd36e', { glow: 'rgba(255,211,110,.6)' });
+  text('高さ', px + 20, py + 90, 12, 'rgba(255,255,255,.6)'); text(`${floors} 階`, px + 20, py + 118, 24, '#fff');
+  text('COMBO', px + 105, py + 90, 12, 'rgba(255,255,255,.6)'); text(G.combo >= 2 ? `×${G.combo}` : '—', px + 105, py + 118, 24, G.combo >= 5 ? '#ff4d8d' : '#5ee7ff');
+  // 左: 操作
+  if (G.state === 'play' && G.t < 6) text(FES.isTouch() ? '👆 タップで落とす' : 'Space / クリック で落とす', 150, H - 26, 16, 'rgba(255,255,255,.7)');
+  if (G.state === 'over') text('GAME OVER', CX, H * 0.4, 56 + Math.min(1, G.overT * 4) * 6, '#ff4d8d', { glow: '#ff4d8d', stroke: 'rgba(0,0,0,.6)' });
+}
+function drawTitle() {
+  G.titleT += 1 / 60;
+  const t = G.titleT;
+  ctx.fillStyle = 'rgba(4,4,20,.55)'; ctx.fillRect(0, 0, W, H);
+  // 飾りの塔
+  for (let i = 0; i < 9; i++) { const w = 200 - i * 14, x = 150 - w / 2 + Math.sin(t * 2 + i) * (i === 8 ? 30 : 0); drawBlock(x, 430 - i * BH, w, (200 + i * 18) % 360, 1, i === 8 ? 18 : 0); }
+  text('ネオンスタック', 560, 150, 74, '#fff', { glow: '#5ee7ff', stroke: 'rgba(0,0,0,.5)' });
+  text('— NEON STACK —', 560, 205, 18, 'rgba(255,255,255,.7)', { w: 700 });
+  text(`HI-SCORE ${FES.getHiScore().toLocaleString()}`, 560, 245, 20, '#ffd36e');
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.roundRect(330, 275, 460, 118, 16); ctx.fill();
+  text('動くブロックをタイミングよく落として積み上げよう', 560, 300, 17, '#fff', { w: 700 });
+  text('🎯 ぴったり重ねると PERFECT ＋ コンボ', 560, 328, 16, '#ffd36e', { w: 700 });
+  text('✂ ずれた分は落ちて、ブロックが細くなる', 560, 354, 16, 'rgba(255,255,255,.85)', { w: 700 });
+  text('Space / クリック / タップ ・ Esc でポーズ', 560, 380, 14, 'rgba(255,255,255,.6)', { w: 700 });
+  const pulse = 1 + Math.sin(t * 4) * 0.04;
+  ctx.save(); ctx.translate(560, 450); ctx.scale(pulse, pulse);
+  ctx.shadowColor = '#ff4d8d'; ctx.shadowBlur = 24; ctx.fillStyle = '#ff4d8d'; ctx.beginPath(); ctx.roundRect(-130, -30, 260, 60, 30); ctx.fill(); ctx.shadowBlur = 0;
+  text('▶ スタート！', 0, 2, 26, '#fff'); ctx.restore();
+  text('タップ / クリック / Enter / Space でスタート', 560, 505, 13, 'rgba(255,255,255,.55)', { w: 700 });
+}
+function drawCount() {
+  const step = G.countStep, k = (G.countT - step * 0.7) / 0.7;
+  const label = ['3', '2', '1'][step] || 'GO!';
+  const sc = 1.6 - Math.min(1, k) * 0.6;
+  ctx.save(); ctx.translate(CX, H * 0.4); ctx.scale(sc, sc);
+  text(label, 0, 0, 120, label === 'GO!' ? '#5cff8d' : '#fff', { glow: label === 'GO!' ? '#5cff8d' : '#5ee7ff', stroke: 'rgba(0,0,0,.6)' });
+  ctx.restore();
+  text('READY...', CX, H * 0.4 + 90, 24, 'rgba(255,255,255,.8)');
+}
+
+/* ------------------------------------------------------------ 入力 */
+function press() {
+  if (G.state === 'title') { startGame(); FES.sfx('start'); return; }
+  if (G.state === 'play') drop();
+}
+let paused = false;
+function togglePause() {
+  if (G.state !== 'play') return;
+  paused = !paused;
+  if (paused) FES.pause(true, { onResume: () => { if (paused) togglePause(); }, onRetry: () => { FES.pause(false); paused = false; startGame(); } });
+  else FES.pause(false);
+}
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+  if (e.repeat) return;
+  if (e.code === 'Escape' || e.code === 'KeyP') { togglePause(); return; }
+  if (paused) return;
+  if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowDown') press();
+});
+canvas.addEventListener('pointerdown', e => { e.preventDefault(); if (paused) return; press(); });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ------------------------------------------------------------ ループ */
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
+  if (!paused) update(dt);
+  render();
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

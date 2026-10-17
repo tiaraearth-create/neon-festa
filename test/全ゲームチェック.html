@@ -64,6 +64,8 @@ const GAMES = [
   { id: 'quiz', name: '早押しクイズ王', keys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Space', 'Enter'] },
   { id: 'breakout', name: 'ネオンブレイカー', keys: ['ArrowLeft', 'ArrowRight', 'Space', 'Enter'] },
   { id: 'duel', name: 'ネオンデュエル', keys: ['KeyA', 'KeyL', 'Space', 'Enter'] },
+  { id: 'stack', name: 'ネオンスタック', keys: ['Space', 'Enter', 'ArrowDown'] },
+  { id: 'memory', name: 'メモリーフラッシュ', keys: ['KeyQ', 'KeyW', 'KeyE', 'KeyA', 'KeyS', 'KeyD', 'KeyZ', 'KeyX', 'KeyC', 'Digit5', 'Space', 'Enter'] },
 ];
 const KEYMAP = { Space: ' ', Enter: 'Enter', Escape: 'Escape', Backspace: 'Backspace', ShiftLeft: 'Shift', ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown' };
 const keyOf = code => KEYMAP[code] || (code.startsWith('Key') ? code.slice(3).toLowerCase() : code.startsWith('Digit') ? code.slice(5) : code.startsWith('Numpad') ? code.slice(6) : code);

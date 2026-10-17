@@ -126,9 +126,23 @@
       c.save(); c.translate(w * .75, h / 2); c.scale(b(1), b(1)); c.fillText('L', 0, 0); c.restore();
       c.strokeStyle = '#ffd36e'; c.lineWidth = 3; c.lineJoin = 'round'; c.beginPath(); c.moveTo(w / 2 + 6, 4); c.lineTo(w / 2 - 6, h * .45); c.lineTo(w / 2 + 5, h * .5); c.lineTo(w / 2 - 7, h - 4); c.stroke();
     },
+    stack(c, w, h, t, col) {
+      // 積み上がる塔と、上で左右に動くブロック
+      const n = 7, bh = Math.min(10, h / 9), cx = w / 2;
+      for (let i = 0; i < n; i++) { const bw = 70 - i * 6, y = h - 6 - (i + 1) * bh; c.fillStyle = `hsl(${(200 + i * 18) % 360} 95% ${i === n - 1 ? 60 : 48}%)`; c.fillRect(cx - bw / 2, y, bw, bh - 1); }
+      const mw = 70 - n * 6, mx = cx - mw / 2 + Math.sin(t * 2.2) * w * .3, my = h - 6 - (n + 1) * bh;
+      c.save(); c.shadowColor = col; c.shadowBlur = 10; c.fillStyle = col; c.fillRect(mx, my, mw, bh - 1); c.restore();
+      c.fillStyle = 'rgba(255,255,255,.35)'; for (let i = 0; i < 8; i++) c.fillRect((i * 41) % w, (i * 29 + t * 8) % (h * .6), 1.5, 1.5);
+    },
+    memory(c, w, h, t, col) {
+      // 3×3 のパッドが順番に光る
+      const cols = ['#ff4d8d', '#ff9f43', '#ffd36e', '#5cff8d', '#5ee7ff', '#8ea7ff', '#b06bff', '#ff6bd6', '#fff'];
+      const s = Math.min(w / 3.6, h / 3.6), gx = w / 2 - s * 1.5 - 4, gy = h / 2 - s * 1.5 - 4, lit = Math.floor(t * 1.8) % 9;
+      for (let i = 0; i < 9; i++) { const x = gx + (i % 3) * (s + 4), y = gy + Math.floor(i / 3) * (s + 4); c.save(); c.shadowColor = cols[i]; c.shadowBlur = i === lit ? 14 : 0; c.fillStyle = i === lit ? cols[i] : 'rgba(255,255,255,.1)'; c.beginPath(); c.roundRect(x, y, s, s, s * .22); c.fill(); c.restore(); }
+    },
   };
 
-  const TITLES = { rhythm: 'リズムスターズ', shooter: 'ギャラクシーブラスター', puzzle: 'ジュエルラッシュ', typing: 'タイピングバトル', racing: 'ネオンドライブ', runner: 'ダッシュ！ネコ忍者', mole: 'もぐらパニック', hockey: 'ネオンエアホッケー', quiz: '早押しクイズ王', breakout: 'ネオンブレイカー', duel: 'ネオンデュエル' };
+  const TITLES = { rhythm: 'リズムスターズ', shooter: 'ギャラクシーブラスター', puzzle: 'ジュエルラッシュ', typing: 'タイピングバトル', racing: 'ネオンドライブ', runner: 'ダッシュ！ネコ忍者', mole: 'もぐらパニック', hockey: 'ネオンエアホッケー', quiz: '早押しクイズ王', breakout: 'ネオンブレイカー', duel: 'ネオンデュエル', stack: 'ネオンスタック', memory: 'メモリーフラッシュ' };
   /** 模擬プレイ画面: 角丸の枠 ＋ 上部の小さな HUD ＋ 中にモチーフ。座標は呼び出し側の ctx の単位 */
   function drawScreen(c, id, x, y, w, h, t, col, opts) {
     opts = opts || {};
