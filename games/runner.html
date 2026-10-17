@@ -412,7 +412,7 @@ function newRun() {
 }
 
 function startGame() {
-  FES.hideResult();
+  FES.hideResult(); FES.pause(false);
   G = newRun();
   setStage(0);
   input.jumpHeld = false; input.ptrs.clear();
@@ -448,9 +448,13 @@ function onSlide() {
   }
 }
 function togglePause() {
-  if (mode === 'play') { mode = 'pause'; BGM.stop(); input.jumpHeld = false; FES.sfx('select'); }
-  else if (mode === 'pause') { mode = 'play'; BGM.start(); FES.sfx('select'); }
+  if (mode === 'play') {
+    mode = 'pause'; BGM.stop(); input.jumpHeld = false; FES.sfx('select');
+    FES.pause(true, { onResume: () => { if (mode === 'pause') togglePause(); }, onRetry: () => { FES.pause(false); mode = 'title'; startGame(); } });
+  }
+  else if (mode === 'pause') { mode = 'play'; BGM.start(); FES.sfx('select'); FES.pause(false); }
 }
+let touchUsed = FES.isTouch();   // タッチ操作のヒントは、タッチ端末のときだけ出す
 const PAUSE_BTN = { x: W - 214, y: 12, w: 54, h: 42 };
 function inPauseBtn(p) { return p.x >= PAUSE_BTN.x - 6 && p.x <= PAUSE_BTN.x + PAUSE_BTN.w + 6 && p.y >= PAUSE_BTN.y - 6 && p.y <= PAUSE_BTN.y + PAUSE_BTN.h + 6; }
 
@@ -473,8 +477,9 @@ canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   const p = view.toGame(e.clientX, e.clientY);
+  if (e.pointerType !== 'mouse') touchUsed = true;
   if (mode === 'title') { startGame(); return; }
-  if (mode === 'pause') { togglePause(); return; }
+  if (mode === 'pause') return;
   if (mode === 'countdown' || mode === 'play') {
     if (inPauseBtn(p)) { if (mode === 'play') togglePause(); return; }
     if (p.x < W / 2) { onJumpDown(); input.ptrs.set(e.pointerId, { type: 'jump', x: p.x, y: p.y }); }
@@ -1000,10 +1005,10 @@ function drawHUD() {
   const sf = clamp((G.speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 0, 1);
   roundRect(W / 2 - 60, H - 40, 120, 8, 4); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
   roundRect(W / 2 - 60, H - 40, 120 * Math.max(0.03, sf), 8, 4); ctx.fillStyle = sf > 0.75 ? '#ff5f7e' : sf > 0.4 ? '#ffd23f' : '#7ee8a0'; ctx.fill();
-  // タッチ操作ヒント
+  // 操作ヒント（タッチ端末はタップ、それ以外はキー）
   ctx.font = `700 13px ${FONT}`;
-  ctx.textAlign = 'left'; roundRect(14, H - 34, 150, 24, 12); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText('◀ 左タップ：ジャンプ', 22, H - 22);
-  ctx.textAlign = 'right'; roundRect(W - 164, H - 34, 150, 24, 12); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText('右タップ：スライド ▶', W - 22, H - 22);
+  ctx.textAlign = 'left'; roundRect(14, H - 34, 150, 24, 12); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText(touchUsed ? '◀ 左タップ：ジャンプ' : 'Space / ↑：ジャンプ', 22, H - 22);
+  ctx.textAlign = 'right'; roundRect(W - 164, H - 34, 150, 24, 12); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText(touchUsed ? '右タップ：スライド ▶' : '↓ / S：スライド', W - 22, H - 22);
   // ポーズボタン
   roundRect(PAUSE_BTN.x, PAUSE_BTN.y, PAUSE_BTN.w, PAUSE_BTN.h, 12); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.fillRect(PAUSE_BTN.x + 18, PAUSE_BTN.y + 12, 6, 18); ctx.fillRect(PAUSE_BTN.x + 30, PAUSE_BTN.y + 12, 6, 18);
@@ -1022,12 +1027,6 @@ function drawGo() {
   const k = 1 - goT / 0.7, s = 1 + (1 - k) * 0.6;
   ctx.save(); ctx.globalAlpha = k < 0.8 ? 1 : 1 - (k - 0.8) / 0.2; ctx.translate(W / 2, 250); ctx.scale(s, s); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   outlinedText('GO!', 0, 0, 120, '#7ee8a0', 900); ctx.restore();
-}
-function drawPause() {
-  ctx.fillStyle = 'rgba(5,5,20,.62)'; ctx.fillRect(0, 0, W, H);
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  outlinedText('PAUSE', W / 2, 230, 72, '#fff', 900);
-  ctx.font = `700 20px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText('Esc / P または画面タップで再開', W / 2, 300);
 }
 function drawTitle() {
   // 上部の暗幕
@@ -1089,7 +1088,7 @@ function render() {
   if (G && G.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${G.flash.toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
   if (mode === 'title') drawTitle();
   else if (mode === 'countdown') { drawHUD(); drawCountdown(); }
-  else if (mode === 'play' || mode === 'dying' || mode === 'pause') { drawHUD(); if (goT > 0) drawGo(); if (mode === 'pause') drawPause(); }
+  else if (mode === 'play' || mode === 'dying' || mode === 'pause') { drawHUD(); if (goT > 0) drawGo(); }
   else if (mode === 'result') drawHUD();
 }
 
