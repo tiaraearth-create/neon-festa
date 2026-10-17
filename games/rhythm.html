@@ -681,8 +681,12 @@ const SONG_DATA = SONGS.map(buildSong);
    tap: { t, lane }  hold: { t, lane, end, ticks[] }（ticks は拍の1/2ごと + テール）
    ===================================================================== */
 function buildExtChart(song, di) {
-  const BEAT = song.beat, src = song.def.ext.charts[di] || song.def.ext.charts[1] || [];
-  const notes = src.map(([t, lane, end]) => ({ t, lane: FES.clamp(lane | 0, 0, 3), lanes: 4, type: end ? 'hold' : 'tap', end: end || 0, src: 'ext', state: 0, judge: null, chord: false,
+  const BEAT = song.beat;
+  let src = song.def.ext.charts[di] || song.def.ext.charts[1] || [];
+  // 譜面のバリエーション（複数あれば遊ぶたびにランダム）＋ 左右反転もランダム
+  if (src.length && Array.isArray(src[0]) && Array.isArray(src[0][0])) src = src[Math.floor(Math.random() * src.length)];
+  const mirror = Math.random() < 0.5;
+  const notes = src.map(([t, lane, end]) => ({ t, lane: FES.clamp(mirror ? 3 - (lane | 0) : lane | 0, 0, 3), lanes: 4, type: end ? 'hold' : 'tap', end: end || 0, src: 'ext', state: 0, judge: null, chord: false,
     ticks: null, tickIdx: 0, holding: false, broken: false, done: false }));
   notes.sort((a, b) => a.t - b.t || a.lane - b.lane);
   for (let i = 0; i < notes.length; i++) {

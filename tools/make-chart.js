@@ -122,20 +122,28 @@ const usable = slots.filter(s => firstStrong && s.t >= firstStrong.t - 1e-6);
 console.log(`  グリッド上の音 ${usable.length} 個`);
 
 function rmsAt(t) { const f = Math.round((t * SR - N / 2) / HOP); return rms[Math.max(0, Math.min(frames - 1, f))]; }
-function pickLane(o, prev, prevT, rnd) {
-  // 音の高さ（低音→左、高音→右）でレーンを決めると、譜面が曲に沿って見える
-  const tot = o.lo + o.mi + o.hi + 1e-9, lo = o.lo / tot, hi = o.hi / tot, mi = o.mi / tot;
-  const c = (mi * 1.5 + hi * 3) / (lo + mi + hi);          // 0（低い）〜 3（高い）の重心
-  let lane = FES_clamp(Math.round(c), 0, 3);
-  if (prev != null && o.t - prevT < STEP * 2.5) {           // 速い連打は同じレーンにしない（となりへ）
-    if (lane === prev) lane = prev + (prev === 3 ? -1 : prev === 0 ? 1 : (rnd() < 0.5 ? -1 : 1));
-  } else if (lane === prev && rnd() < 0.35) { lane = FES_clamp(prev + (rnd() < 0.5 ? -1 : 1), 0, 3); }
-  return lane;
-}
 const FES_clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+// 音の高さ（重心）を曲の中での順位にして 0〜3 に。絶対値だと高音の多い曲は右に偏るので、曲ごとに均等に割る
+const centroidOf = o => { const tot = o.lo + o.mi + o.hi + 1e-9; return (o.mi * 1.5 + o.hi * 3) / tot; };
+const cents = usable.map(centroidOf).sort((a, b) => a - b);
+const rankLane = o => { const c = centroidOf(o); let i = 0; while (i < cents.length && cents[i] < c) i++; return FES_clamp(Math.floor(i / Math.max(1, cents.length) * 4), 0, 3); };
+const hand = lane => (lane <= 1 ? 0 : 1);
+function pickLane(o, prev, prevT, rnd, laneCount) {
+  let lane = rankLane(o);
+  if (rnd() < 0.25) lane = FES_clamp(lane + (rnd() < 0.5 ? -1 : 1), 0, 3);          // 少し散らす（バリエーション用）
+  // 速いところは左右の手を交互に（片手ばかりにならない）
+  if (prev != null && o.t - prevT < STEP * 2.5 && hand(lane) === hand(prev)) lane = hand(prev) === 0 ? (lane === 0 || rnd() < 0.5 ? 2 : 3) : (lane === 3 || rnd() < 0.5 ? 1 : 0);
+  // 同じレーンの連打はとなりへ
+  if (lane === prev && ((o.t - prevT) < STEP * 4 || rnd() < 0.7)) lane = prev === 0 ? 1 : prev === 3 ? 2 : prev + (rnd() < 0.5 ? -1 : 1);
+  // 直近の偏りを補正（左右どちらかが 65% を超えていたら逆の手へ）
+  const L = laneCount[0] + laneCount[1], Rn = laneCount[2] + laneCount[3], tot = L + Rn;
+  if (tot >= 12) { if (L / tot > 0.65 && hand(lane) === 0) lane = lane + 2; else if (Rn / tot > 0.65 && hand(lane) === 1) lane = lane - 2; }
+  return FES_clamp(lane, 0, 3);
+}
 function lcg(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
-function makeChart(di) {
-  const rnd = lcg(1234 + di * 77);
+function makeChart(di, variant) {
+  const rnd = lcg(1234 + di * 77 + (variant || 0) * 9173);
+  const laneCount = [0, 0, 0, 0];
   const thr = [pct(0.45), pct(0.4), pct(0.25)][di];
   const maxPerSec = [1.8, 3.4, 6.0][di], minGap = [0.3, 0.16, 0.1][di];
   const notes = []; let prevLane = null, prevT = -9;
@@ -151,7 +159,8 @@ function makeChart(di) {
     // 直近1秒の密度
     let dens = 0; for (let k = notes.length - 1; k >= 0 && o.t - notes[k].t < 1; k--) dens++;
     if (dens >= maxPerSec) continue;
-    const lane = pickLane(o, prevLane, prevT, rnd);
+    const lane = pickLane(o, prevLane, prevT, rnd, laneCount);
+    laneCount[lane]++; if (notes.length > 16) laneCount[notes[notes.length - 16].lane]--;
     notes.push({ t: o.t, lane, end: 0, v: o.v, g: o.g });
     // 同時押し（むずかしい・強いアクセント）
     if (di === 2 && o.v >= pct(0.93) && o.t - prevT > BEAT * 0.9 && rnd() < 0.7) { const l2 = lane <= 1 ? lane + 2 : lane - 2; notes.push({ t: o.t, lane: l2, end: 0, v: o.v, g: o.g }); }
@@ -171,16 +180,17 @@ function makeChart(di) {
   }
   return notes.map(n => [Math.round(n.t * 1000) / 1000, n.lane, n.end]);
 }
-let charts = [makeChart(0), makeChart(1), makeChart(2)];
+const VARIANTS = 3;   // 遊ぶたびにどれかが選ばれる（さらにゲーム側で左右反転もランダム）
+let charts = [0, 1, 2].map(di => Array.from({ length: VARIANTS }, (_, v) => makeChart(di, v)));
 // 最初の音まで長い（6秒以上）なら、2拍前から再生を始める（イントロの無音で待たせない）
-const firstT = Math.min(...charts.map(c => c.length ? c[0][0] : Infinity));
+const firstT = Math.min(...charts.map(vs => vs[0].length ? vs[0][0][0] : Infinity));
 let start = 0;
 if (firstT > 6) { start = Math.max(0, Math.floor((firstT - BEAT * 2 - offset) / BEAT) * BEAT + offset); start = Math.round(start * 1000) / 1000; }
-if (start > 0) { charts = charts.map(c => c.map(([t, l, e]) => [Math.round((t - start) * 1000) / 1000, l, e ? Math.round((e - start) * 1000) / 1000 : 0])); console.log(`  イントロ ${start} 秒を切り落として音声を作ります`); }
+if (start > 0) { charts = charts.map(vs => vs.map(c => c.map(([t, l, e]) => [Math.round((t - start) * 1000) / 1000, l, e ? Math.round((e - start) * 1000) / 1000 : 0]))); console.log(`  イントロ ${start} 秒を切り落として音声を作ります`); }
 console.log('音声を変換中…');
 const ffArgs = ['-v', 'error', '-y'].concat(start > 0 ? ['-ss', String(start)] : []).concat(['-i', input, '-ac', '2', '-c:a', 'aac', '-b:a', '128k', m4a]);
 execFileSync('ffmpeg', ffArgs);
-charts.forEach((c, i) => console.log(`  ${['やさしい', 'ふつう', 'むずかしい'][i]}: ${c.length} ノーツ（ロング ${c.filter(n => n[2]).length}）`));
+charts.forEach((vs, i) => { const c = vs[0], cnt = [0, 0, 0, 0]; c.forEach(n => cnt[n[1]]++); console.log(`  ${['やさしい', 'ふつう', 'むずかしい'][i]}: ${c.length} ノーツ（ロング ${c.filter(n => n[2]).length}）× ${vs.length} 種類　レーン比 ${cnt.map(x => Math.round(x / c.length * 100)).join('/')}%`); });
 const hx = hex.replace('#', ''); const color = [parseInt(hx.slice(0, 2), 16), parseInt(hx.slice(2, 4), 16), parseInt(hx.slice(4, 6), 16)];
 const entry = { id, name, genre, bpm: BPM, offset: Math.round(offset * 1000) / 1000, start: 0, trimmed: start, length: Math.round((duration - start) * 10) / 10, audio: `music/${id}.m4a`, hex, color, theme, charts };
 
