@@ -77,7 +77,7 @@
   .card .pv { display: block; width: 100%; height: 92px; border-radius: 14px; margin-bottom: 10px; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.08); }
   .card.leaving { transform: scale(1.06); filter: brightness(1.4); transition: transform .18s ease-in, filter .18s; }
   .card .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-  .card .icon { width: 58px; height: 58px; border-radius: 16px; display: grid; place-items: center; font-size: 30px;
+  .card .icon { width: 58px; height: 58px; border-radius: 16px; display: grid; place-items: center; font-size: 30px; line-height: 1; font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif; overflow: hidden;
     background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #000)); box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 45%, transparent); }
   .card .genre { font-size: 11px; font-weight: 800; letter-spacing: .15em; padding: 5px 10px; border-radius: 999px; background: rgba(0,0,0,.35); border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); color: var(--accent); }
   .card h2 { margin: 0 0 6px; font-size: 21px; font-weight: 900; letter-spacing: .02em; }
@@ -143,7 +143,7 @@
   .stamp-name input { width: 120px; font-size: 15px; font-weight: 700; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,.4); color: #fff; outline: none; }
   .stamp-name input:focus { border-color: var(--gold); box-shadow: 0 0 12px rgba(255,211,110,.4); }
   .stamp-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; padding: 4px 0 2px; }
-  .st { width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; position: relative; font-size: 26px;
+  .st { width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; position: relative; font-size: 26px; line-height: 1; font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
     border: 2px dashed rgba(255,255,255,.25); background: rgba(0,0,0,.3); filter: grayscale(1); opacity: .55; transition: .2s; }
   .st.on { border: 2px solid var(--accent); background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, #000) 0%, rgba(0,0,0,.5) 75%); filter: none; opacity: 1; box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 55%, transparent); }
   .st.on::after { content: "✔"; position: absolute; right: -4px; bottom: -4px; width: 22px; height: 22px; border-radius: 50%; background: var(--gold); color: #2a2200; font-size: 13px; font-weight: 900; display: grid; place-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
@@ -174,7 +174,7 @@
   .mission.done { color: #b8ffd0; } .mission.done .chk { background: #5cff8d; border-color: #5cff8d; color: #053; }
   .mission .prog { margin-left: auto; font-size: 11px; color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; }
   .badges { display: flex; flex-wrap: wrap; gap: 6px; }
-  .badge { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); filter: grayscale(1); opacity: .35; cursor: help; transition: .2s; }
+  .badge { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; line-height: 1; font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); filter: grayscale(1); opacity: .35; cursor: help; transition: .2s; }
   .badge.on { filter: none; opacity: 1; background: linear-gradient(135deg, rgba(255,211,110,.25), rgba(255,77,141,.2)); border-color: rgba(255,211,110,.6); box-shadow: 0 0 14px rgba(255,211,110,.3); }
   .badge.pop { animation: pulseTag .8s ease-out 3; }
   .prize-cta { margin-top: 8px; width: 100%; padding: 10px; border-radius: 12px; border: 0; font-weight: 900; font-size: 14px; cursor: pointer; color: #2a2200; background: linear-gradient(90deg, var(--gold), #ffb347); box-shadow: 0 0 18px rgba(255,211,110,.45); animation: pulseTag 1.6s ease-in-out infinite; font-family: inherit; }
@@ -825,60 +825,77 @@ document.addEventListener('keydown', e => {
 });
 
 /* ============================== 背景アニメ ============================== */
+// 落ち着いた夜空: ゆっくり漂う淡い星雲の光 ＋ まばたく星 ＋ たまに流れ星。紙吹雪はお祝いの瞬間だけ。
 (function () {
   const cv = document.getElementById('bg'); const ctx = cv.getContext('2d');
-  let W, H, t = 0;
-  const stars = [], confetti = [], lanterns = [];
+  let W = 0, H = 0, t = 0, dpr = 1, nebCache = null, nebT = -9;
+  const stars = [], confetti = [], shooting = [];
   const COLORS = ['#ff4d8d', '#ffd36e', '#5ee7ff', '#8b6bff', '#5cff8d', '#ff9f43'];
+  const NEB = [[.12, .18, '#6a3cff', .34], [.88, .14, '#ff4d8d', .26], [.5, 1.0, '#1f6cff', .40], [.92, .72, '#ffb347', .20], [.1, .85, '#5ee7ff', .22]];
   function resize() {
-    W = cv.width = innerWidth * Math.min(devicePixelRatio, 2); H = cv.height = innerHeight * Math.min(devicePixelRatio, 2);
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = cv.width = innerWidth * dpr; H = cv.height = innerHeight * dpr;
     cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
-    stars.length = 0; for (let i = 0; i < 160; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.6 + .3, p: Math.random() * 6.28, s: Math.random() * .6 + .2 });
-    lanterns.length = 0; for (let i = 0; i < 9; i++) lanterns.push({ x: Math.random() * W, y: Math.random() * H, vy: -(Math.random() * .25 + .12) * devicePixelRatio, c: COLORS[i % COLORS.length], ph: Math.random() * 6.28, sz: (Math.random() * 14 + 16) * devicePixelRatio });
+    stars.length = 0;
+    const n = Math.round(innerWidth * innerHeight / 9000);
+    for (let i = 0; i < n; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: (Math.random() * 1.1 + .35) * dpr, p: Math.random() * 6.28, s: Math.random() * .5 + .15, c: Math.random() < .12 ? COLORS[Math.floor(Math.random() * COLORS.length)] : '#fff' });
+    nebCache = null;
   }
-  function spawnConfetti() {
-    if (confetti.length > 80) return;
-    confetti.push({ x: Math.random() * W, y: -20, vx: (Math.random() - .5) * .6, vy: (Math.random() * .8 + .5) * devicePixelRatio, r: Math.random() * 6.28, vr: (Math.random() - .5) * .1, c: COLORS[Math.floor(Math.random() * COLORS.length)], w: (Math.random() * 6 + 5) * devicePixelRatio, h: (Math.random() * 3 + 3) * devicePixelRatio, sw: Math.random() * 6.28 });
+  // 星雲はゆっくりしか動かないので 0.5 秒ごとに描きためて使う（軽い）
+  function nebula() {
+    if (nebCache && t - nebT < 0.5) return nebCache;
+    if (!nebCache) { nebCache = document.createElement('canvas'); }
+    const sw = Math.max(2, Math.round(W / 4)), sh = Math.max(2, Math.round(H / 4));
+    nebCache.width = sw; nebCache.height = sh; const c = nebCache.getContext('2d');
+    c.clearRect(0, 0, sw, sh);
+    const top = c.createRadialGradient(sw * .5, -sh * .1, 0, sw * .5, -sh * .1, sh * 1.1); top.addColorStop(0, 'rgba(70,45,140,.55)'); top.addColorStop(.6, 'rgba(20,10,60,.15)'); top.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = top; c.fillRect(0, 0, sw, sh);
+    NEB.forEach(([nx, ny, col, nr], i) => {
+      const x = (nx + Math.sin(t * .045 + i * 1.7) * .035) * sw, y = (ny + Math.cos(t * .035 + i * 2.3) * .035) * sh, r = nr * Math.max(sw, sh);
+      const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col + '2e'); g.addColorStop(.45, col + '12'); g.addColorStop(1, col + '00');
+      c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+    });
+    nebT = t; return nebCache;
   }
-  // お祝い用: 画面中央から紙吹雪を一気に噴き出す（スタンプコンプリート時）
+  // お祝い用: 画面中央から紙吹雪を一気に噴き出す（スタンプコンプリート・景品のとき）
   window.__fesBurst = function (n) {
     for (let i = 0; i < (n || 100); i++) {
-      const a = Math.random() * 6.28, sp = (Math.random() * 9 + 4) * devicePixelRatio;
-      confetti.push({ x: W / 2, y: H * .45, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4 * devicePixelRatio, r: Math.random() * 6.28, vr: (Math.random() - .5) * .3, c: COLORS[Math.floor(Math.random() * COLORS.length)], w: (Math.random() * 7 + 5) * devicePixelRatio, h: (Math.random() * 3 + 3) * devicePixelRatio, sw: Math.random() * 6.28, burst: true });
+      const a = Math.random() * 6.28, sp = (Math.random() * 9 + 4) * dpr;
+      confetti.push({ x: W / 2, y: H * .45, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4 * dpr, r: Math.random() * 6.28, vr: (Math.random() - .5) * .3, c: COLORS[Math.floor(Math.random() * COLORS.length)], w: (Math.random() * 6 + 5) * dpr, h: (Math.random() * 10 + 8) * dpr, sw: Math.random() * 6.28 });
     }
   };
-  function frame() {
-    t += 1 / 60;
-    ctx.clearRect(0, 0, W, H);
-    // 背景グラデ
-    const g = ctx.createRadialGradient(W * .5, H * .1, 0, W * .5, H * .1, H * 1.1);
-    g.addColorStop(0, 'rgba(60,40,120,.45)'); g.addColorStop(.5, 'rgba(20,10,60,.2)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    // 星
-    for (const s of stars) { const a = .35 + .65 * (Math.sin(t * 2 * s.s + s.p) * .5 + .5); ctx.globalAlpha = a; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * devicePixelRatio, 0, 6.28); ctx.fill(); }
-    ctx.globalAlpha = 1;
-    // 提灯
-    for (const l of lanterns) {
-      l.y += l.vy; l.x += Math.sin(t * .7 + l.ph) * .3 * devicePixelRatio; if (l.y < -60) { l.y = H + 40; l.x = Math.random() * W; }
-      const glow = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.sz * 3);
-      glow.addColorStop(0, l.c + '55'); glow.addColorStop(1, l.c + '00');
-      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(l.x, l.y, l.sz * 3, 0, 6.28); ctx.fill();
-      ctx.fillStyle = l.c; ctx.globalAlpha = .55;
-      ctx.beginPath(); ctx.ellipse(l.x, l.y, l.sz * .7, l.sz, 0, 0, 6.28); ctx.fill();
-      ctx.globalAlpha = .8; ctx.fillStyle = '#1a1a2e'; ctx.fillRect(l.x - l.sz * .35, l.y - l.sz - 4 * devicePixelRatio, l.sz * .7, 4 * devicePixelRatio); ctx.fillRect(l.x - l.sz * .35, l.y + l.sz, l.sz * .7, 4 * devicePixelRatio);
-      ctx.globalAlpha = 1;
-    }
-    // 紙吹雪
-    if (Math.random() < .25) spawnConfetti();
-    for (let i = confetti.length - 1; i >= 0; i--) {
-      const c = confetti[i]; c.y += c.vy; c.x += c.vx + Math.sin(t * 3 + c.sw) * .5; c.r += c.vr;
-      if (c.burst) { c.vy += .25 * devicePixelRatio; c.vx *= .985; }   // 噴き出した紙吹雪は重力で落ちる
-      if (c.y > H + 20) { confetti.splice(i, 1); continue; }
-      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.scale(Math.cos(t * 4 + c.sw), 1); ctx.fillStyle = c.c; ctx.globalAlpha = .8; ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h); ctx.restore();
-    }
+  let last = performance.now();
+  function frame(now) {
     requestAnimationFrame(frame);
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+    if (document.hidden) return;
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(nebula(), 0, 0, W, H);
+    // 星（ゆっくりまたたく）
+    for (const s of stars) {
+      const a = .25 + .75 * (Math.sin(t * 1.4 * s.s + s.p) * .5 + .5);
+      ctx.globalAlpha = a * (s.c === '#fff' ? .9 : .7); ctx.fillStyle = s.c;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.28); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // 流れ星（平均 10 秒に 1 回）
+    if (!FES.lite() && shooting.length === 0 && Math.random() < dt / 10) { const fromLeft = Math.random() < .5; shooting.push({ x: fromLeft ? -40 : W * (0.3 + Math.random() * .7), y: Math.random() * H * .35, vx: (fromLeft ? 1 : -1) * (900 + Math.random() * 500) * dpr, vy: (380 + Math.random() * 220) * dpr, life: 1 }); }
+    for (let i = shooting.length - 1; i >= 0; i--) {
+      const m = shooting[i]; m.x += m.vx * dt; m.y += m.vy * dt; m.life -= dt * 0.9;
+      if (m.life <= 0 || m.y > H) { shooting.splice(i, 1); continue; }
+      const len = 0.16, x0 = m.x - m.vx * len, y0 = m.y - m.vy * len;
+      const g = ctx.createLinearGradient(x0, y0, m.x, m.y); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, `rgba(255,255,255,${Math.min(1, m.life) * .9})`);
+      ctx.strokeStyle = g; ctx.lineWidth = 2 * dpr; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(m.x, m.y); ctx.stroke();
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, m.life)})`; ctx.beginPath(); ctx.arc(m.x, m.y, 2.2 * dpr, 0, 6.28); ctx.fill();
+    }
+    // 紙吹雪（お祝いのときだけ）
+    for (let i = confetti.length - 1; i >= 0; i--) {
+      const c = confetti[i]; c.y += c.vy; c.x += c.vx + Math.sin(t * 3 + c.sw) * .5; c.r += c.vr; c.vy += .25 * dpr; c.vx *= .985;
+      if (c.y > H + 20) { confetti.splice(i, 1); continue; }
+      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.scale(Math.cos(t * 4 + c.sw), 1); ctx.fillStyle = c.c; ctx.globalAlpha = .85; ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h); ctx.restore();
+    }
   }
-  addEventListener('resize', resize); resize(); frame();
+  addEventListener('resize', resize); resize(); requestAnimationFrame(frame);
 })();
 
 /* ============================== 起動 ============================== */
