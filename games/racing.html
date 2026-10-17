@@ -515,7 +515,7 @@ window.addEventListener('pointerdown', e => {
   const isTouch = e.pointerType !== 'mouse';
   if (isTouch) touchUsed = true;
   if (G.state === 'title') { titleClick(p); return; }
-  if (G.state === 'pause') { resumeGame(); return; }
+  if (G.state === 'pause') return;   // 再開はポーズ画面のボタンか Esc で
   if (G.state === 'play' || G.state === 'countdown') {
     if (isTouch) {
       const z = zoneAt(p);
@@ -575,7 +575,7 @@ function resetGame() {
   resetCars(18);
 }
 function startGame() {
-  FES.hideResult();
+  FES.hideResult(); FES.pause(false);
   resetGame();
   G.state = 'countdown';
   FES.sfx('start');
@@ -592,6 +592,7 @@ function pauseGame() {
   G.state = 'pause';
   engineStop();
   FES.sfx('select');
+  FES.pause(true, { onResume: resumeGame, onRetry: () => { FES.pause(false); G.state = 'title'; startGame(); } });
 }
 function resumeGame() {
   if (G.state !== 'pause') return;
@@ -599,6 +600,7 @@ function resumeGame() {
   touches.clear(); mouse.down = false; nitroRequest = false;
   engineStart();
   FES.sfx('select');
+  FES.pause(false);
 }
 function gameOver() {
   G.state = 'over';
@@ -1560,14 +1562,14 @@ function drawCountdown() {
   ctx.font = font(22);
   outlineText('READY...', W / 2, H / 2 + 70, '#fff', 'rgba(0,0,0,0.7)', 6);
 }
-function drawPause() {
-  ctx.fillStyle = 'rgba(5,5,25,0.6)';
-  ctx.fillRect(0, 0, W, H);
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = font(64);
-  outlineText('PAUSE', W / 2, H / 2 - 20, '#fff', 'rgba(255,77,210,0.8)', 10);
-  ctx.font = font(16, 700); ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillText('Esc / P / クリック / タップ で再開', W / 2, H / 2 + 40);
+function drawUrgency() {
+  // 残り10秒: 画面のふちが赤く脈打つ
+  const tl = G.timeLeft;
+  if (G.state !== 'play' || tl > 10 || tl <= 0) return;
+  const beat = Math.max(0, Math.sin(G.clock * 10));
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, H * 0.95);
+  vg.addColorStop(0, 'rgba(255,59,92,0)'); vg.addColorStop(1, `rgba(255,59,92,${(0.18 + beat * 0.22).toFixed(3)})`);
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
 }
 function drawOver() {
   const p = clamp(G.overT / 0.5, 0, 1);
@@ -1601,12 +1603,13 @@ function render() {
   ctx.restore();
   drawSpeedLines();
   drawPostFx();
+  drawUrgency();
   drawPopups();
   switch (G.state) {
     case 'title': drawTitle(); break;
     case 'countdown': drawHUD(); drawCountdown(); break;
     case 'play': drawHUD(); break;
-    case 'pause': drawHUD(); drawPause(); break;
+    case 'pause': drawHUD(); break;
     case 'over': drawHUD(); drawOver(); break;
     case 'result': drawHUD(); break;
     default: break;
