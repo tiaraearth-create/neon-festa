@@ -56,17 +56,23 @@ def lead_from_track(M, name, floor=55):
     for s in sorted(by_tick):
         n, d = max(by_tick[s]); out.append((s, n, d))
     return out
-def lead_topline(M, name, floor=60):
-    """per-bar ceiling threshold (accompaniment stabs removed), highest per tick; name may be a list of tracks"""
-    tpb = M['tpb']; by_bar = defaultdict(list)
+def lead_topline(M, name, floor=60, primary=None):
+    """per-bar ceiling threshold (accompaniment stabs removed), highest per tick; name may be a list of tracks.
+    primary: a track (e.g. the vocal line) that is used as-is in every bar where it has >= 2 notes"""
+    tpb = M['tpb']; by_bar = defaultdict(list); prim = defaultdict(list)
     names = name if isinstance(name, (list, tuple)) else [name]
     for nm in names:
         for s, n, d in M['tracks'].get(nm, []): by_bar[bar_of(s, tpb)].append((s, n, d))
+    if primary:
+        for s, n, d in M['tracks'].get(primary, []): prim[bar_of(s, tpb)].append((s, n, d))
     out = []
-    for b, notes in by_bar.items():
+    for b in sorted(set(by_bar) | set(prim)):
+        notes = by_bar.get(b, []); fl = floor
+        if primary and len(prim.get(b, [])) >= 2: notes = prim[b]; fl = 0
+        if not notes: continue
         mx = max(n for _, n, _ in notes); by_tick = defaultdict(list)
         for s, n, d in notes:
-            if n >= mx - 13 and n >= floor: by_tick[s].append((n, d))
+            if n >= mx - 13 and n >= fl: by_tick[s].append((n, d))
         for s in sorted(by_tick):
             n, d = max(by_tick[s]); out.append((s, n, d))
     return sorted(out)

@@ -66,11 +66,11 @@ SONGS = [
          lead=['Violin (Classic)', 'Grand Piano (Classic)'], drums=[], kick=(35, 36), snare=(38, 40),
          sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('F', 16), ('BRK', 8), ('G', 16), ('H', 16), ('END', 10)]),
     dict(id='mesmerizer', name='メズマライザー', genre='ボカロ', bpm=185, theme='neon', hex='#ff5fd2', color=[255, 95, 210],
-         audio='music/mesmerizer.m4a', trimmed=0, length=157.5, midi='mesmerizer_src.mid', topline=True, floor=60,
+         audio='music/mesmerizer.m4a', trimmed=0, length=157.5, midi='mesmerizer_src.mid', topline=True, floor=60, primary='8-Bit Sine',
          lead=['8-Bit Sine', 'Ragtime Piano', 'Grand Piano (Classic)', 'Electric Guitar'], drums=['Electric Drum Kit', '909 Drum Kit'], kick=(35, 36), snare=(38, 40),
          sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('F', 16), ('END', 14)]),
     dict(id='king', name='KING', genre='ボカロ', bpm=166, theme='rock', hex='#ffcc33', color=[255, 204, 51],
-         audio='music/king.m4a', trimmed=0, length=137.4, midi='king_src.mid', topline=True, floor=58,
+         audio='music/king.m4a', trimmed=0, length=137.4, midi='king_src.mid', topline=True, floor=58, primary='8-Bit Sawtooth',
          lead=['8-Bit Sawtooth', 'Smooth Synth (Classic)', 'Vibraphone', 'Grand Piano (Classic)'], drums=['Electric Drum Kit'], kick=(35, 36), snare=(38, 40),
          sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('END', 5)]),
 ]
@@ -78,7 +78,7 @@ SONGS = [
 entries = []
 for cfg in SONGS:
     M = load(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'midi', cfg['midi']))
-    lead = lead_topline(M, cfg['lead'], cfg.get('floor', 60)) if cfg.get('topline') else lead_from_track(M, cfg['lead'])
+    lead = lead_topline(M, cfg['lead'], cfg.get('floor', 60), cfg.get('primary')) if cfg.get('topline') else lead_from_track(M, cfg['lead'])
     drums = drums_from(M, cfg['drums'], cfg.get('kick', (35, 36)), cfg.get('snare', (38, 40)))
     nbars = sum(b for _, b in cfg['sections']); bounds = []; b0 = 0
     for name, bars in cfg['sections']: bounds.append((b0, name)); b0 += bars
