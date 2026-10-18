@@ -60,6 +60,19 @@ SONGS = [
          lead=['Flute', 'Violin (Classic)', 'Trombone (Classic)', 'Strings', 'Brass', 'Electric Guitar', 'Distortion Guitar', 'Violin (Classic) 2', '8-Bit Square', 'Grand Piano 3', 'Violin (Classic) 3', 'Lucent Choir', 'Muted E-Guitar', 'Ragtime Piano'],
          drums=['2013 Drum Kit', '2023 Drum Kit', '909 Drum Kit'], kick=(35, 36), snare=(38, 40),
          sections=[('INTRO', 4), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('BRK', 4), ('E', 16), ('END', 3)]),
+    # --- ボカロ（Online Sequencer の打ち込み + リミックス層） ---
+    dict(id='senbonzakura', name='千本桜', genre='ボカロ', bpm=151, theme='sakura', hex='#ff8ab8', color=[255, 138, 184],
+         audio='music/senbonzakura.m4a', trimmed=0, length=245.1, midi='senbonzakura_src.mid', topline=True, floor=60,
+         lead=['Violin (Classic)', 'Grand Piano (Classic)'], drums=[], kick=(35, 36), snare=(38, 40),
+         sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('F', 16), ('BRK', 8), ('G', 16), ('H', 16), ('END', 10)]),
+    dict(id='mesmerizer', name='メズマライザー', genre='ボカロ', bpm=185, theme='neon', hex='#ff5fd2', color=[255, 95, 210],
+         audio='music/mesmerizer.m4a', trimmed=0, length=157.5, midi='mesmerizer_src.mid', topline=True, floor=60,
+         lead=['8-Bit Sine', 'Ragtime Piano', 'Grand Piano (Classic)', 'Electric Guitar'], drums=['Electric Drum Kit', '909 Drum Kit'], kick=(35, 36), snare=(38, 40),
+         sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('F', 16), ('END', 14)]),
+    dict(id='king', name='KING', genre='ボカロ', bpm=166, theme='rock', hex='#ffcc33', color=[255, 204, 51],
+         audio='music/king.m4a', trimmed=0, length=137.4, midi='king_src.mid', topline=True, floor=58,
+         lead=['8-Bit Sawtooth', 'Smooth Synth (Classic)', 'Vibraphone', 'Grand Piano (Classic)'], drums=['Electric Drum Kit'], kick=(35, 36), snare=(38, 40),
+         sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('END', 5)]),
 ]
 
 entries = []

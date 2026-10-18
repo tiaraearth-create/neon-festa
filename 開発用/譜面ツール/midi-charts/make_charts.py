@@ -95,6 +95,13 @@ def intensity_by_bar(drums, tpb, nbars):
 
 def make_chart(M, lead, drums, diff, nbars, sec_bounds):
     R = RULES[diff]; tpb = M['tpb']; t2s = M['t2s']
+    if not drums:   # no drum tracks: intensity from melody density, virtual kick (0,6,8,14) / snare (4,12) in busy bars
+        cnt = Counter(bar_of(s, tpb) for s, _, _ in lead)
+        med = sorted(cnt.values())[len(cnt) // 2] if cnt else 0
+        hotbars = [b for b in range(nbars) if cnt.get(b, 0) >= max(8, med * 0.7)]
+        drums = [(b * tpb * 4 + st * (tpb // 4), 'kick') for b in hotbars for st in (0, 6, 8, 14)] + [(b * tpb * 4 + st * (tpb // 4), 'snare') for b in hotbars for st in (4, 12)]
+        drums += [(b * tpb * 4, 'other') for b in hotbars for _ in range(8)]
+        drums.sort()
     inten = intensity_by_bar(drums, tpb, nbars)
     notes = []   # dicts: t, lane, end, src
     # --- lane map per 4-bar window: pitch rank -> lane, with jack avoidance ---
@@ -107,13 +114,20 @@ def make_chart(M, lead, drums, diff, nbars, sec_bounds):
             lo = srt.index(p); hi = L - srt[::-1].index(p)          # instance rank range of this pitch
             m[p] = min(3, int(((lo + hi) / 2) / L * 4))
         lane_of[w] = m
+    # --- grid phase per 4-bar window: if most notes sit on odd 16ths the transcription is shifted by a 16th ---
+    par = defaultdict(lambda: [0, 0])
+    for s, n, d in lead:
+        st_ = step_of(s, tpb)
+        if abs(st_ - round(st_)) <= 0.25: par[bar_of(s, tpb) // 4][int(round(st_)) % 2] += 1
+    phase = {w: (1 if c[1] > c[0] else 0) for w, c in par.items()}
     # --- melody ---
     last_t = -9; last_lane = -1; hold_until = -1; hold_lane = -1
     for s, n, d in lead:
         st = step_of(s, tpb)
-        if abs(st - round(st)) > 1e-6: continue
-        st = int(round(st))
-        if st % R['step_mod'] != 0: continue
+        if abs(st - round(st)) <= 0.25: st = int(round(st)) % 16          # 少しズレた打ち込みは最寄りの16分に吸着
+        elif diff in ('hard', 'expert', 'master'): st = -1                  # 3連符などは むずかしい以上だけ
+        else: continue
+        if st >= 0 and (st - phase.get(bar_of(s, tpb) // 4, 0)) % R['step_mod'] != 0: continue
         t = t2s(s)
         if t - last_t < R['gap'] - 1e-9: continue
         if t < hold_until and diff == 'easy': continue           # easy: nothing during a hold
@@ -138,8 +152,8 @@ def make_chart(M, lead, drums, diff, nbars, sec_bounds):
             b = bar_of(s, tpb)
             if b >= nbars or inten[b] < 6: continue
             st = step_of(s, tpb)
-            if abs(st - round(st)) > 1e-6: continue
-            st = int(round(st))
+            if abs(st - round(st)) > 0.25: continue
+            st = int(round(st)) % 16
             outer = 0 if b % 2 == 0 else 3
             if kind == 'other': continue
             if kind == 'kick':
