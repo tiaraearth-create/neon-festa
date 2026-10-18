@@ -8,7 +8,7 @@ from collections import defaultdict, Counter
 base = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'make_charts.py'), encoding='utf-8').read().split('W = "./"')[0]
 exec(base)   # load(), lead_from_track(), lead_topline(), drums_from(), make_chart(), RULES, DIFF_IDS, step_of, bar_of
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "games", "music", "charts.js")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "games", "music", "charts.js")
 
 def make_variants(M, lead, drums, diff, nbars, bounds, trimmed, nvar=3):
     """3 variants: different 4-bar window alignment for the pitch->lane map + different jack-avoid direction"""
@@ -44,6 +44,22 @@ SONGS = [
     dict(id='badend', name='BAD END PROTOCOL', genre='NOAU', bpm=190, theme='neon', hex='#825aff', color=[130, 90, 255],
          audio='music/badend.m4a', trimmed=0, length=82.6, midi='noau_sans_theme.mid', lead=['Lead (Supersaw)', 'Piano RH'], drums='Drums', kick=(36,), snare=(38,),
          sections=[('INTRO', 8), ('BUILD', 4), ('A', 8), ('B', 8), ('BRK', 4), ('A2', 8), ('B2', 8), ('OUTRO', 5)]),
+    # --- 人気曲（Online Sequencer の打ち込み + リミックス層。メロディは全パートの最高音から抽出） ---
+    dict(id='badapple', name='Bad Apple!!', genre='東方', bpm=138, theme='cat1', hex='#9fd3ff', color=[159, 211, 255],
+         audio='music/badapple.m4a', trimmed=0, length=218.9, midi='badapple_src.mid', topline=True, floor=50,
+         lead=['Piccolo', 'Flute 1', 'Flute 2', 'Bb Clarinet 1', 'Soprano Saxophone', 'Violins', '8-Bit Square Treble', 'Grand Piano Treble', 'Bb Trumpet 1', 'Alto Saxophone 1'],
+         drums=['909 Drum Kit', 'Electric Drum Kit', '2023 Drum Kit'], kick=(35, 36, 27), snare=(38, 40, 37),
+         sections=[('INTRO', 8), ('A', 8), ('B', 16), ('C', 16), ('BRK', 8), ('D', 4), ('E', 32), ('F', 28), ('END', 5)]),
+    dict(id='worldrevolving', name='THE WORLD REVOLVING', genre='DELTARUNE', bpm=191, theme='rock', hex='#ffb347', color=[255, 179, 71],
+         audio='music/worldrevolving.m4a', trimmed=0, length=103.6, midi='worldrevolving_src.mid', topline=True,
+         lead=['8-Bit Square', 'Brass', 'Electric Guitar', 'Trombone (Classic)', 'Violin (Classic) 3', 'Violin', '8-Bit Sine', 'Pop Synth', 'Steel Drums', 'Violin (Classic)', 'Violin (Classic) 2'],
+         drums=['2013 Drum Kit', '2023 Drum Kit', '909 Drum Kit'], kick=(35, 36), snare=(38, 40),
+         sections=[('INTRO', 16), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('END', 2)]),
+    dict(id='bigshot', name='BIG SHOT', genre='DELTARUNE', bpm=140, theme='tas', hex='#ff4fd8', color=[255, 79, 216],
+         audio='music/bigshot.m4a', trimmed=0, length=156.1, midi='bigshot_src.mid', topline=True,
+         lead=['Flute', 'Violin (Classic)', 'Trombone (Classic)', 'Strings', 'Brass', 'Electric Guitar', 'Distortion Guitar', 'Violin (Classic) 2', '8-Bit Square', 'Grand Piano 3', 'Violin (Classic) 3', 'Lucent Choir', 'Muted E-Guitar', 'Ragtime Piano'],
+         drums=['2013 Drum Kit', '2023 Drum Kit', '909 Drum Kit'], kick=(35, 36), snare=(38, 40),
+         sections=[('INTRO', 4), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('BRK', 4), ('E', 16), ('END', 3)]),
 ]
 
 entries = []
@@ -57,7 +73,7 @@ for cfg in SONGS:
     for di, vs in enumerate(charts):
         c = vs[0]; cnt = [0, 0, 0, 0]
         for n in c: cnt[n[1]] += 1
-        print(f"  {cfg['id']:14s} {['easy','normal','hard'][di]:6s}: {len(c):4d} notes (holds {sum(1 for n in c if n[2])}) x{len(vs)} variants  lanes {'/'.join(str(round(x / max(1, len(c)) * 100)) for x in cnt)}%  first {c[0][0] if c else '-'}s last {c[-1][0] if c else '-'}s")
+        print(f"  {cfg['id']:14s} {DIFF_IDS[di]:6s}: {len(c):4d} notes (holds {sum(1 for n in c if n[2])}) x{len(vs)} variants  lanes {'/'.join(str(round(x / max(1, len(c)) * 100)) for x in cnt)}%  first {c[0][0] if c else '-'}s last {c[-1][0] if c else '-'}s")
     entries.append(dict(id=cfg['id'], name=cfg['name'], genre=cfg['genre'], bpm=cfg['bpm'], offset=0, start=0, trimmed=cfg['trimmed'], length=cfg['length'],
                         audio=cfg['audio'], hex=cfg['hex'], color=cfg['color'], theme=cfg['theme'], charts=charts))
 

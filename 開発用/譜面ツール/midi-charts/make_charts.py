@@ -1,13 +1,13 @@
 """
 Generate rhythm-game charts for NEON FESTA "Rhythm Stars" from the songs' MIDI data.
-Output: E:/1_ゲーム本体/games/rhythm_songs.js  (window.AUDIO_SONGS)
+Output: E:/NEON-FESTA_ゲーム本体/games/rhythm_songs.js  (window.AUDIO_SONGS)
 Chart note: [t_sec, lane(0-3), end_sec_or_0, src('mel'|'drum'|'chord')]
 """
 import mido, json, math, os
 from collections import Counter, defaultdict
 
-OUT = "E:/1_ゲーム本体/games/rhythm_songs.js"
-DIFF_IDS = ['easy', 'normal', 'hard']
+OUT = "E:/NEON-FESTA_ゲーム本体/games/rhythm_songs.js"
+DIFF_IDS = ['easy', 'normal', 'hard', 'expert', 'master']
 
 # ---------------- MIDI loading with tempo map ----------------
 def load(path):
@@ -57,9 +57,11 @@ def lead_from_track(M, name, floor=55):
         n, d = max(by_tick[s]); out.append((s, n, d))
     return out
 def lead_topline(M, name, floor=60):
-    """per-bar ceiling threshold (accompaniment stabs removed), highest per tick"""
+    """per-bar ceiling threshold (accompaniment stabs removed), highest per tick; name may be a list of tracks"""
     tpb = M['tpb']; by_bar = defaultdict(list)
-    for s, n, d in M['tracks'][name]: by_bar[bar_of(s, tpb)].append((s, n, d))
+    names = name if isinstance(name, (list, tuple)) else [name]
+    for nm in names:
+        for s, n, d in M['tracks'].get(nm, []): by_bar[bar_of(s, tpb)].append((s, n, d))
     out = []
     for b, notes in by_bar.items():
         mx = max(n for _, n, _ in notes); by_tick = defaultdict(list)
@@ -70,7 +72,8 @@ def lead_topline(M, name, floor=60):
     return sorted(out)
 def drums_from(M, name, kick=(35, 36), snare=(38, 40)):
     out = []
-    for s, n, d in M['tracks'].get(name, []):
+    names = name if isinstance(name, (list, tuple)) else [name]
+    for s, n, d in (x for nm in names for x in M['tracks'].get(nm, [])):
         if n in kick: out.append((s, 'kick'))
         elif n in snare: out.append((s, 'snare'))
         else: out.append((s, 'other'))      # hats etc.: only used for the intensity map
@@ -82,6 +85,8 @@ RULES = {
     'easy':   dict(gap=0.26, hold_steps=8, step_mod=2, drums=0, lane_gap=0.30),
     'normal': dict(gap=0.145, hold_steps=6, step_mod=1, drums=1, lane_gap=0.16),
     'hard':   dict(gap=0.11, hold_steps=4, step_mod=1, drums=2, lane_gap=0.10),
+    'expert': dict(gap=0.085, hold_steps=4, step_mod=1, drums=3, lane_gap=0.085),
+    'master': dict(gap=0.065, hold_steps=3, step_mod=1, drums=4, lane_gap=0.07),
 }
 
 def intensity_by_bar(drums, tpb, nbars):
@@ -118,10 +123,13 @@ def make_chart(M, lead, drums, diff, nbars, sec_bounds):
         steps_len = d / (tpb / 4)
         end = 0.0
         if steps_len >= R['hold_steps']:
-            end = t2s(s + d) - (tpb / 8) * 0  # end at note end
-            end = t2s(s + int(d - tpb / 8))
+            cap = tpb * (2 if diff == 'easy' else 4)                 # ホールドは最長 2拍（やさしい）/ 4拍
+            end = t2s(s + int(min(d, cap) - tpb / 8))
             if end - t < 0.3: end = 0.0
         notes.append(dict(t=t, lane=lane, end=end, src='mel'))
+        b_ = bar_of(s, tpb)
+        if not end and b_ < nbars and inten[b_] >= 6 and ((diff == 'expert' and st == 0 and b_ % 2 == 0) or (diff == 'master' and st in (0, 8))):
+            notes.append(dict(t=t, lane=3 - lane, end=0.0, src='chord'))
         if end: hold_until = end + 0.15; hold_lane = lane
         last_t = t; last_lane = lane
     # --- drums (only in intense bars) ---
@@ -135,15 +143,19 @@ def make_chart(M, lead, drums, diff, nbars, sec_bounds):
             outer = 0 if b % 2 == 0 else 3
             if kind == 'other': continue
             if kind == 'kick':
-                if not (st == 0 or (R['drums'] >= 2 and st == 8)): continue
+                ok = st == 0 or (R['drums'] >= 2 and st == 8) or (R['drums'] >= 3 and st in (4, 12)) or R['drums'] >= 4
+                if not ok: continue
                 lane = outer
             else:
-                if R['drums'] < 2 or st not in (4, 12): continue
+                ok = (R['drums'] >= 2 and st in (4, 12)) or R['drums'] >= 4
+                if not ok: continue
                 lane = 3 - outer
             notes.append(dict(t=t2s(s), lane=lane, end=0.0, src='drum'))
     # --- section-start chords (hard: 2 notes) ---
-    if diff == 'hard':
-        for (b0, name) in sec_bounds:
+    if diff in ('hard', 'expert', 'master'):
+        starts = [b0 for b0, _ in sec_bounds]
+        if diff == 'master': starts = sorted(set(starts) | set(range(0, nbars, 4)))
+        for b0 in starts:
             if b0 <= 0 or b0 >= nbars or inten[min(b0, nbars - 1)] < 6: continue
             t = t2s(b0 * tpb * 4)
             notes.append(dict(t=t, lane=0, end=0.0, src='chord')); notes.append(dict(t=t, lane=3, end=0.0, src='chord'))

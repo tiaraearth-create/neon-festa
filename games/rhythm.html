@@ -48,6 +48,10 @@
   .diff button.d0.sel { border-color: #3dffb0; background: rgba(61,255,176,.18); box-shadow: 0 0 22px rgba(61,255,176,.45); }
   .diff button.d1.sel { border-color: #ffd23f; background: rgba(255,210,63,.18); box-shadow: 0 0 22px rgba(255,210,63,.45); }
   .diff button.d2.sel { border-color: #ff4f8b; background: rgba(255,79,139,.18); box-shadow: 0 0 22px rgba(255,79,139,.45); }
+  .diff button.d3.sel { border-color: #ff8a3d; background: rgba(255,138,61,.18); box-shadow: 0 0 22px rgba(255,138,61,.45); }
+  .diff button.d4.sel { border-color: #c04dff; background: rgba(192,77,255,.2); box-shadow: 0 0 26px rgba(192,77,255,.55); }
+  .diff button.x5 { display: none; }                      /* 5段階の曲（追加曲）を選んだときだけ表示 */
+  .diff.five button.x5 { display: block; }
   .btn { padding: 14px 50px; border-radius: 18px; border: 0; font-size: clamp(18px, 2.8vw, 24px); font-weight: 900; color: #fff; cursor: pointer; font-family: inherit;
          letter-spacing: .1em; background: linear-gradient(135deg,#ff4f8b,#b04dff); box-shadow: 0 12px 34px rgba(255,79,139,.45);
          animation: pulse 1.6s ease-in-out infinite; transition: transform .12s, filter .12s; }
@@ -93,6 +97,8 @@
       <button class="d0" data-d="0">やさしい<small>EASY</small></button>
       <button class="d1" data-d="1">ふつう<small>NORMAL</small></button>
       <button class="d2" data-d="2">むずかしい<small>HARD</small></button>
+      <button class="d3 x5" data-d="3">エキスパート<small>EXPERT</small></button>
+      <button class="d4 x5" data-d="4">マスター<small>MASTER</small></button>
     </div>
     <div class="row">
       <button class="btn" id="startBtn">スタート</button>
@@ -188,7 +194,11 @@ const DIFFS = [
   { id: 'easy',   rankId: 'rhythm_easy', label: 'やさしい',   color: '#3dffb0', approach: 1.75, missGauge: -3 },
   { id: 'normal', rankId: 'rhythm',      label: 'ふつう',     color: '#ffd23f', approach: 1.45, missGauge: -4 },
   { id: 'hard',   rankId: 'rhythm_hard', label: 'むずかしい', color: '#ff4f8b', approach: 1.25, missGauge: -5 },
+  { id: 'expert', rankId: 'rhythm_expert', label: 'エキスパート', color: '#ff8a3d', approach: 1.1, missGauge: -6 },   // 追加曲（5段階譜面）のみ
+  { id: 'master', rankId: 'rhythm_master', label: 'マスター',   color: '#c04dff', approach: 1.0, missGauge: -7 },   // 追加曲（5段階譜面）のみ
 ];
+/** その曲で選べる難易度の数（内蔵曲は3、5段階の譜面を持つ追加曲は5） */
+const diffCount = def => (def && def.ext && Array.isArray(def.ext.charts) && def.ext.charts.length >= 5) ? 5 : 3;
 const MAX_SCORE = 1000000;
 const OFFSET_KEY = 'fes:rhythm:offset';
 const HOLD_MISS_GAUGE = 0.35;     // ホールド途中の MISS はゲージ減を軽く
@@ -1601,8 +1611,9 @@ function refreshCards() {
   cards.forEach((card, i) => {
     card.classList.toggle('sel', i === G.songIdx);
     const def = SONGS[i];
-    const st = chartStats(i, G.diff);
-    const hi = FES.getHiScore(def.rankId || DIFFS[G.diff].rankId);
+    const di = Math.min(G.diff, diffCount(def) - 1);          // 内蔵曲は3段階まで
+    const st = chartStats(i, di);
+    const hi = FES.getHiScore(def.rankId || DIFFS[di].rankId);
     const s = card.querySelector('[data-s]'), h = card.querySelector('[data-h]');
     if (s) s.textContent = `${def.tas ? 'TAS ／ ' : ''}♪ ${st.notes} ノーツ ／ ロング ${st.holds}`;
     if (h) h.textContent = `HI-SCORE ${hi.toLocaleString()}`;
@@ -1612,6 +1623,8 @@ function setSong(i) {
   G.songIdx = (i + SONGS.length) % SONGS.length;
   G.song = SONG_DATA[G.songIdx];
   if (G.song.def.ext && G.state === 'title') Music.preload(G.song);
+  $('diff').classList.toggle('five', diffCount(SONGS[G.songIdx]) >= 5);
+  if (G.diff >= diffCount(SONGS[G.songIdx])) G.diff = 2;
   setTheme(SONGS[G.songIdx].theme);
   const tas = isTas();
   Array.from($('diff').children).forEach(b => { b.disabled = tas; b.classList.toggle('off', tas); });
@@ -1619,7 +1632,7 @@ function setSong(i) {
 }
 function setDiff(i) {
   if (isTas() && G.state === 'title') return;          // TAS 曲は難易度固定
-  G.diff = FES.clamp(i, 0, DIFFS.length - 1);
+  G.diff = FES.clamp(i, 0, diffCount(SONGS[G.songIdx]) - 1);
   Array.from($('diff').children).forEach((b, k) => b.classList.toggle('sel', k === G.diff));
   refreshCards();
 }
