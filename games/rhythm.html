@@ -558,7 +558,7 @@ const CAT = {
 const SONGS = [NEON, SAKURA, ROCK, BALLAD, TAS, CAT];
 // 追加曲（games/music/charts.js があれば。自分の曲の音声 .m4a ＋ 開発用/譜面ツール/make-chart.js が作った譜面）
 const EXT_SONGS = (window.RHYTHM_EXT_SONGS || []).filter(e => e && e.audio && e.charts).map(e => ({
-  id: 'ext_' + e.id, name: e.name, genre: e.genre || 'ORIGINAL', bpm: e.bpm, bpmLabel: e.bpm, theme: e.theme || 'rock', color: e.color || [255, 94, 94], hex: e.hex || '#ff5e5e',
+  id: 'ext_' + e.id, name: e.name, genre: e.genre || 'REMIX', bpm: e.bpm, bpmLabel: e.bpm, theme: e.theme || 'rock', color: e.color || [255, 94, 94], hex: e.hex || '#ff5e5e',
   ext: e, inst: {}, holdMin: [4, 4, 4], melDiv: [4, 2, 1], sections: [],
 }));
 EXT_SONGS.forEach(d => SONGS.push(d));
@@ -1608,7 +1608,7 @@ function buildCards() {
     card.style.setProperty('--c', def.hex); card.style.setProperty('--cr', def.color.join(','));
     card.innerHTML = `<div class="sel-mark"></div><div class="cg">${def.genre}</div><div class="cn">${def.name}</div>` +
       `<div class="cm">${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(SONG_DATA[i].length)}</div><div class="cs" data-s></div><div class="ch" data-h></div>` +
-      (def.tas ? '<div class="skull">☠ 人力クリア不可</div>' : '') + (def.sudden ? '<div class="skull sudden">⚡ 急変注意</div>' : '') + (def.ext ? '<div class="skull ext">🎧 オリジナル曲</div>' : '');
+      (def.tas ? '<div class="skull">☠ 人力クリア不可</div>' : '') + (def.sudden ? '<div class="skull sudden">⚡ 急変注意</div>' : '') + (def.ext ? '<div class="skull ext">🎧 リミックス曲</div>' : '');
     card.addEventListener('click', () => { if (G.state !== 'title') return; if (G.songIdx === i) startGame(); else { setSong(i); FES.sfx('select'); } });
     box.appendChild(card);
   });
