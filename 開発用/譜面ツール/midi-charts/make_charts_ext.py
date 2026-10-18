@@ -70,7 +70,7 @@ SONGS = [
          lead=['8-Bit Sine', 'Ragtime Piano', 'Grand Piano (Classic)', 'Electric Guitar'], drums=['Electric Drum Kit', '909 Drum Kit'], kick=(35, 36), snare=(38, 40),
          sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('F', 16), ('END', 14)]),
     dict(id='king', name='KING', genre='ボカロ', bpm=166, theme='rock', hex='#ffcc33', color=[255, 204, 51],
-         audio='music/king.m4a', trimmed=0, length=137.4, midi='king_src.mid', topline=True, floor=58, primary='8-Bit Sawtooth',
+         audio='music/king.m4a', trimmed=0, length=136.1, midi='king_src.mid', topline=True, floor=58, primary='8-Bit Sawtooth',
          lead=['8-Bit Sawtooth', 'Smooth Synth (Classic)', 'Vibraphone', 'Grand Piano (Classic)'], drums=['Electric Drum Kit'], kick=(35, 36), snare=(38, 40),
          sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('END', 5)]),
 ]
