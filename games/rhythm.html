@@ -546,7 +546,7 @@ const CAT = {
   },
 };
 const SONGS = [NEON, SAKURA, ROCK, BALLAD, TAS, CAT];
-// 追加曲（games/music/charts.js があれば。自分の曲の音声 .m4a ＋ 譜面ツール/make-chart.js が作った譜面）
+// 追加曲（games/music/charts.js があれば。自分の曲の音声 .m4a ＋ 開発用/譜面ツール/make-chart.js が作った譜面）
 const EXT_SONGS = (window.RHYTHM_EXT_SONGS || []).filter(e => e && e.audio && e.charts).map(e => ({
   id: 'ext_' + e.id, name: e.name, genre: e.genre || 'ORIGINAL', bpm: e.bpm, bpmLabel: e.bpm, theme: e.theme || 'rock', color: e.color || [255, 94, 94], hex: e.hex || '#ff5e5e',
   ext: e, inst: {}, holdMin: [4, 4, 4], melDiv: [4, 2, 1], sections: [],

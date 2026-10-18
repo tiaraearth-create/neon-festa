@@ -1,26 +1,22 @@
 # ---- 公開しないもの（GitHub には index.html / common.js / games/ だけを入れる）----
 README.md
 SPEC.md
-serve.js
-qr.html
 qrcode.js
 起動.bat
+ローカルサーバー/
+USB用/
+開発用/SPEC.md
 .claude/
 node_modules/
 *.log
 .DS_Store
 Thumbs.db
 
-# 印刷用・QR（ローカル専用）
-ポスター.html
-QRコード.svg
-QRコード.png
-
 # 宣伝キット（パスワード付き・ローカル専用。公開しない）
 宣伝キット/
 
 # Shared ranking server (Cloudflare Worker; contains dev secrets)
-共有ランキングサーバー/
+開発用/共有ランキングサーバー/
 
 # 当日キット（部屋のPC・プロジェクター用の起動ファイル。USBで配る）
 当日キット/
@@ -31,6 +27,3 @@ QRコード.png
 # 飾りつけの完成イメージ図（ローカル専用）
 装飾イメージ/
 
-
-# USB の一番上に置くメニュー（ローカル専用）
-USBメニュー.html
