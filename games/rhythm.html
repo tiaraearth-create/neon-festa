@@ -147,7 +147,7 @@
 </div>
 
 <script src="../common.js"></script>
-<script src="music/charts.js?v=20261018b"></script>   <!-- 曲を足したり譜面を直したら v= の値を変える（ブラウザの古いキャッシュを使わせないため） -->
+<script src="music/charts.js?v=20261019a"></script>   <!-- 曲を足したり譜面を直したら v= の値を変える（ブラウザの古いキャッシュを使わせないため） -->
 <script>
 'use strict';
 FES.init({ id: 'rhythm', title: 'リズムスターズ' });
@@ -563,7 +563,7 @@ const EXT_SONGS = (window.RHYTHM_EXT_SONGS || []).filter(e => e && e.audio && e.
 }));
 EXT_SONGS.forEach(d => SONGS.push(d));
 // 曲の並び順（人気が出そうな順。ここにない曲はこの後ろに元の順で、TAS 曲は最後）
-const SONG_ORDER = ['ext_badapple', 'ext_megalovania', 'ext_bigshot', 'ext_worldrevolving', 'ext_lastbreath', 'ext_shanghaivania', 'ext_badend',
+const SONG_ORDER = ['ext_badapple', 'ext_senbonzakura', 'ext_mesmerizer', 'ext_king', 'ext_megalovania', 'ext_bigshot', 'ext_worldrevolving', 'ext_lastbreath', 'ext_shanghaivania', 'ext_badend',
                     'neon', 'sakura', 'rock', 'ballad', 'tas', 'cat'];
 SONGS.sort((x, y) => {
   const r = d => { const i = SONG_ORDER.indexOf(d.id); return i >= 0 ? i : (d.tas ? 900 : 500); };
