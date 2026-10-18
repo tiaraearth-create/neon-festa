@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /* =====================================================================
    リズムスターズに「自分の曲（音声ファイル）」を追加する道具
-     node tools/make-chart.js <音声ファイル> <id> <表示名> [ジャンル] [テーマ] [色#hex]
-     例: node tools/make-chart.js "C:\Users\me\Music\曲.wav" mysong "マイソング" バトル cat2 #ff4d8d
+     node 譜面ツール/make-chart.js <音声ファイル> <id> <表示名> [ジャンル] [テーマ] [色#hex]
+     例: node 譜面ツール/make-chart.js "C:\Users\me\Music\曲.wav" mysong "マイソング" バトル cat2 #ff4d8d
    やること:
      1. ffmpeg で games/music/<id>.m4a（AAC 128k）を作る（ゲームが再生する音）
      2. 音を解析して BPM・拍の位置・音の立ち上がり（オンセット）を見つける
@@ -13,7 +13,7 @@
 const fs = require('fs'), path = require('path'), os = require('os'), { execFileSync } = require('child_process');
 
 const [,, input, id, name, genre = 'ORIGINAL', theme = 'cat2', hex = '#ff5e5e'] = process.argv;
-if (!input || !id || !name) { console.log('使い方: node tools/make-chart.js <音声ファイル> <id> <表示名> [ジャンル] [テーマ] [色#hex]'); process.exit(1); }
+if (!input || !id || !name) { console.log('使い方: node 譜面ツール/make-chart.js <音声ファイル> <id> <表示名> [ジャンル] [テーマ] [色#hex]'); process.exit(1); }
 if (!/^[a-z0-9_]+$/.test(id)) { console.log('id は半角英数字と _ だけにしてください'); process.exit(1); }
 const root = path.resolve(__dirname, '..');
 const musicDir = path.join(root, 'games', 'music');
@@ -199,6 +199,6 @@ const out = path.join(musicDir, 'charts.js');
 let list = [];
 if (fs.existsSync(out)) { try { const src = fs.readFileSync(out, 'utf8'); const m = src.match(/=\s*(\[[\s\S]*\]);/); if (m) list = JSON.parse(m[1]); } catch (e) { list = []; } }
 list = list.filter(x => x.id !== id); list.push(entry);
-fs.writeFileSync(out, `// リズムスターズの追加曲（tools/make-chart.js が自動生成。音声は同じフォルダの .m4a）\nwindow.RHYTHM_EXT_SONGS = ${JSON.stringify(list)};\n`);
+fs.writeFileSync(out, `// リズムスターズの追加曲（譜面ツール/make-chart.js が自動生成。音声は同じフォルダの .m4a）\nwindow.RHYTHM_EXT_SONGS = ${JSON.stringify(list)};\n`);
 try { fs.unlinkSync(raw); } catch (e) {}
 console.log(`完了: ${m4a}\n      ${out}（曲 ${list.length} 本）`);

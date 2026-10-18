@@ -1,6 +1,6 @@
 """
 Write MIDI-based charts into C:/dev/bunkasai-game-center/games/music/charts.js (window.RHYTHM_EXT_SONGS),
-in the exact format tools/make-chart.js produces: charts = [easy, normal, hard], each a list of 3 variants of [t, lane, end].
+in the exact format 譜面ツール/make-chart.js produces: charts = [easy, normal, hard], each a list of 3 variants of [t, lane, end].
 Times are shifted by `trimmed` (seconds cut from the start of the audio).
 """
 import json, re, os, random

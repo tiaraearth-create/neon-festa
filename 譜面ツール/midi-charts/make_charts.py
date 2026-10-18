@@ -1,12 +1,12 @@
 """
 Generate rhythm-game charts for NEON FESTA "Rhythm Stars" from the songs' MIDI data.
-Output: E:/NEON-FESTA_ゲーム本体/games/rhythm_songs.js  (window.AUDIO_SONGS)
+Output: E:/1_ゲーム本体/games/rhythm_songs.js  (window.AUDIO_SONGS)
 Chart note: [t_sec, lane(0-3), end_sec_or_0, src('mel'|'drum'|'chord')]
 """
 import mido, json, math, os
 from collections import Counter, defaultdict
 
-OUT = "E:/NEON-FESTA_ゲーム本体/games/rhythm_songs.js"
+OUT = "E:/1_ゲーム本体/games/rhythm_songs.js"
 DIFF_IDS = ['easy', 'normal', 'hard']
 
 # ---------------- MIDI loading with tempo map ----------------
