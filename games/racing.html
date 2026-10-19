@@ -1009,7 +1009,7 @@ function drawSegment(seg, pal) {
   ctx.fillStyle = t ? pal.grassAS : pal.grassBS;
   ctx.fillRect(0, p2.y, W, p1.y - p2.y);
   // 路肩
-  const rumble = t ? '#ff2d6a' : '#f4f4ff';
+  const rumble = t ? '#ff2d6a' : '#8a8aa8';   // 路肩: 赤 / 灰（以前は白で、路面との境目が見づらかった）
   poly(p1.x - p1.w - r1, p1.y, p1.x - p1.w, p1.y, p2.x - p2.w, p2.y, p2.x - p2.w - r2, p2.y, rumble);
   poly(p1.x + p1.w + r1, p1.y, p1.x + p1.w, p1.y, p2.x + p2.w, p2.y, p2.x + p2.w + r2, p2.y, rumble);
   // 路面
@@ -1019,7 +1019,7 @@ function drawSegment(seg, pal) {
     const lw1 = p1.w * 2 / LANES, lw2 = p2.w * 2 / LANES;
     let lx1 = p1.x - p1.w + lw1, lx2 = p2.x - p2.w + lw2;
     for (let lane = 1; lane < LANES; lane++) {
-      poly(lx1 - l1 / 2, p1.y, lx1 + l1 / 2, p1.y, lx2 + l2 / 2, p2.y, lx2 - l2 / 2, p2.y, '#ececff');
+      poly(lx1 - l1 / 2, p1.y, lx1 + l1 / 2, p1.y, lx2 + l2 / 2, p2.y, lx2 - l2 / 2, p2.y, '#c9c9e6');   // 車線: 少し抑えた白
       lx1 += lw1; lx2 += lw2;
     }
   }

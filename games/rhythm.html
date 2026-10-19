@@ -52,6 +52,11 @@
   .diff button.d4.sel { border-color: #c04dff; background: rgba(192,77,255,.2); box-shadow: 0 0 26px rgba(192,77,255,.55); }
   .diff button.x5 { display: none; }                      /* 5段階の曲（追加曲）を選んだときだけ表示 */
   .diff.five button.x5 { display: block; }
+  .mode { display: flex; gap: 8px; justify-content: center; margin: -6px 0 14px; }
+  .mode button { padding: 6px 16px; border-radius: 12px; border: 2px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: #fff; font-weight: 900; font-size: 13px; cursor: pointer; }
+  .mode button small { display: block; font-size: 9px; opacity: .7; letter-spacing: .1em; }
+  .mode button.sel { border-color: #5ef1ff; background: rgba(94,241,255,.16); box-shadow: 0 0 16px rgba(94,241,255,.4); }
+  .mode.hidden { display: none; }
   .btn { padding: 14px 50px; border-radius: 18px; border: 0; font-size: clamp(18px, 2.8vw, 24px); font-weight: 900; color: #fff; cursor: pointer; font-family: inherit;
          letter-spacing: .1em; background: linear-gradient(135deg,#ff4f8b,#b04dff); box-shadow: 0 12px 34px rgba(255,79,139,.45);
          animation: pulse 1.6s ease-in-out infinite; transition: transform .12s, filter .12s; }
@@ -100,6 +105,10 @@
       <button class="d3 x5" data-d="3">エキスパート<small>EXPERT</small></button>
       <button class="d4 x5" data-d="4">マスター<small>MASTER</small></button>
     </div>
+    <div class="mode hidden" id="mode">
+      <button class="m0 sel" data-m="0">フル<small>FULL</small></button>
+      <button class="m1" data-m="1">ミニ<small>SHORT</small></button>
+    </div>
     <div class="row">
       <button class="btn" id="startBtn">スタート</button>
     </div>
@@ -111,7 +120,7 @@
     <div class="howto">
       ⌨ <b class="k0">D</b><b class="k1">F</b><b class="k2">J</b><b class="k3">K</b> または <b class="k0">←</b><b class="k1">↓</b><b class="k2">↑</b><b class="k3">→</b> でノーツをたたけ！ 帯のノーツは<b>押しっぱなし</b>！<br>
       📱 スマホ・タブレットは画面下の4つのボタンをタップ（長押しでホールド）<br>
-      ↑↓ 曲 ／ ←→ 難易度 ／ Enter・Space スタート ／ Esc・P ポーズ
+      ↑↓ 曲 ／ ←→ 難易度 ／ M フル・ミニ切替 ／ Enter・Space スタート ／ Esc・P ポーズ
     </div>
   </div>
 </div>
@@ -199,6 +208,10 @@ const DIFFS = [
 ];
 /** その曲で選べる難易度の数（内蔵曲は3、5段階の譜面を持つ追加曲は5） */
 const diffCount = def => (def && def.ext && Array.isArray(def.ext.charts) && def.ext.charts.length >= 5) ? 5 : 3;
+/** ミニ版（短縮）がある追加曲か。ミニ版は ext.mini 秒で終わり、音声はフェードアウトする */
+const hasMini = def => !!(def && def.ext && def.ext.mini > 0);
+let MINI = false;                                   // 現在の選択: false=フル / true=ミニ
+const extLength = def => (MINI && hasMini(def)) ? def.ext.mini : def.ext.length;
 const MAX_SCORE = 1000000;
 const OFFSET_KEY = 'fes:rhythm:offset';
 const HOLD_MISS_GAUGE = 0.35;     // ホールド途中の MISS はゲージ減を軽く
@@ -703,6 +716,8 @@ function buildExtChart(song, di) {
   // 譜面のバリエーション（複数あれば遊ぶたびにランダム）＋ 左右反転もランダム
   if (src.length && Array.isArray(src[0]) && Array.isArray(src[0][0])) src = src[Math.floor(Math.random() * src.length)];
   const mirror = Math.random() < 0.5;
+  const cut = extLength(song.def) - 0.25;           // ミニ版: 終了時刻より後のノーツは出さない
+  src = src.filter(n => n[0] < cut).map(n => (n[2] && n[2] > cut) ? [n[0], n[1], Math.max(n[0] + 0.3, cut)] : n);
   const notes = src.map(([t, lane, end]) => ({ t, lane: FES.clamp(mirror ? 3 - (lane | 0) : lane | 0, 0, 3), lanes: 4, type: end ? 'hold' : 'tap', end: end || 0, src: 'ext', state: 0, judge: null, chord: false,
     ticks: null, tickIdx: 0, holding: false, broken: false, done: false }));
   notes.sort((a, b) => a.t - b.t || a.lane - b.lane);
@@ -1035,7 +1050,7 @@ function buildTasChart(song) {
 }
 const CHART_STATS = {};
 function chartStats(si, di) {
-  const key = si + ':' + di;
+  const key = si + ':' + di + (MINI ? ':mini' : '');
   if (!CHART_STATS[key]) { const c = buildChart(SONG_DATA[si], di); CHART_STATS[key] = { notes: c.notes.length, holds: c.holds, points: c.points, maxRaw: c.maxRaw, laneChanges: c.laneChanges }; }
   return CHART_STATS[key];
 }
@@ -1420,6 +1435,7 @@ const Music = (() => {
     stop() { playing = false; clearInterval(timer); timer = null; stopAll(); extStop(); },
     /** 追加曲の再生位置（曲の 0 秒基準）。鳴っていなければ null */
     audioTime() { return ext && el && !el.paused && el.currentTime > 0.03 ? el.currentTime - (ext.start || 0) : null; },
+    extGain(v) { if (el) { try { el.volume = 0.72 * FES.clamp(v, 0, 1); } catch (e) { /* ignore */ } } },
     tick() {
       if (el) el.muted = FES.isMuted();
       if (!master) return;
@@ -1607,13 +1623,14 @@ function buildCards() {
     const card = document.createElement('div'); card.className = 'card' + (def.tas ? ' tas' : '');
     card.style.setProperty('--c', def.hex); card.style.setProperty('--cr', def.color.join(','));
     card.innerHTML = `<div class="sel-mark"></div><div class="cg">${def.genre}</div><div class="cn">${def.name}</div>` +
-      `<div class="cm">${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(SONG_DATA[i].length)}</div><div class="cs" data-s></div><div class="ch" data-h></div>` +
+      `<div class="cm" data-len>${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(SONG_DATA[i].length)}</div><div class="cs" data-s></div><div class="ch" data-h></div>` +
       (def.tas ? '<div class="skull">☠ 人力クリア不可</div>' : '') + (def.sudden ? '<div class="skull sudden">⚡ 急変注意</div>' : '') + (def.ext ? '<div class="skull ext">🎧 リミックス曲</div>' : '');
     card.addEventListener('click', () => { if (G.state !== 'title') return; if (G.songIdx === i) startGame(); else { setSong(i); FES.sfx('select'); } });
     box.appendChild(card);
   });
 }
 function refreshCards() {
+  Array.from($('mode').children).forEach((b, k) => b.classList.toggle('sel', (k === 1) === MINI));
   const cards = Array.from($('songs').children);
   cards.forEach((card, i) => {
     card.classList.toggle('sel', i === G.songIdx);
@@ -1621,7 +1638,8 @@ function refreshCards() {
     const di = Math.min(G.diff, diffCount(def) - 1);          // 内蔵曲は3段階まで
     const st = chartStats(i, di);
     const hi = FES.getHiScore(def.rankId || DIFFS[di].rankId);
-    const s = card.querySelector('[data-s]'), h = card.querySelector('[data-h]');
+    const s = card.querySelector('[data-s]'), h = card.querySelector('[data-h]'), lenEl = card.querySelector('[data-len]');
+    if (lenEl && def.ext) lenEl.textContent = `${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(extLength(def))}${(MINI && hasMini(def)) ? '（ミニ）' : ''}`;
     if (s) s.textContent = `${def.tas ? 'TAS ／ ' : ''}♪ ${st.notes} ノーツ ／ ロング ${st.holds}`;
     if (h) h.textContent = `HI-SCORE ${hi.toLocaleString()}`;
   });
@@ -1631,10 +1649,16 @@ function setSong(i) {
   G.song = SONG_DATA[G.songIdx];
   if (G.song.def.ext && G.state === 'title') Music.preload(G.song);
   $('diff').classList.toggle('five', diffCount(SONGS[G.songIdx]) >= 5);
+  $('mode').classList.toggle('hidden', !hasMini(SONGS[G.songIdx]));
   if (G.diff >= diffCount(SONGS[G.songIdx])) G.diff = 2;
   setTheme(SONGS[G.songIdx].theme);
   const tas = isTas();
   Array.from($('diff').children).forEach(b => { b.disabled = tas; b.classList.toggle('off', tas); });
+  refreshCards();
+}
+function setMode(mini) {
+  MINI = !!mini && hasMini(SONGS[G.songIdx]);
+  Array.from($('mode').children).forEach((b, k) => b.classList.toggle('sel', (k === 1) === MINI));
   refreshCards();
 }
 function setDiff(i) {
@@ -1665,6 +1689,7 @@ function startGame(auto) {
   $('pause').classList.add('hidden');
   $('calib').classList.add('hidden');
   FES.setId(rankIdOf());                      // 難易度別ランキング（TAS 曲は rhythm_tas）
+  if (G.song.def.ext) G.song.length = extLength(G.song.def);   // フル / ミニ で曲の長さを切り替え
   Music.setup();
   Music.stop();
   Music.load(G.song);
@@ -1933,6 +1958,8 @@ function update(dt, now) {
   if (G.song.def.ext) {
     // 音声ファイルの再生位置に、ゲームの時計をゆっくり合わせる（ズレがたまらないように）
     const at = Music.audioTime();
+    if (MINI && hasMini(G.song.def)) Music.extGain((G.song.length - st) / 2.5);   // ミニ版: 終わりの 2.5 秒でフェードアウト
+    else Music.extGain(1);
     if (at != null && (G.state === 'play' || G.state === 'countin')) { const target = clock() - at; G.songStart += (target - G.songStart) * Math.min(1, dt * 6); st = songTime(); }
     // ビジュアライザー: 拍でキック、ノーツが通るたびに光る
     if (st >= 0) { const b = st / G.song.beat, ph = b - Math.floor(b); if (ph < 0.08) VIS.kick = Math.max(VIS.kick, 0.9); if (ph >= 0.5 && ph < 0.58) VIS.hat = Math.max(VIS.hat, 0.8); }
@@ -2582,6 +2609,7 @@ document.addEventListener('keydown', e => {
   if (code === 'Space' || code.startsWith('Arrow')) e.preventDefault();
   if (G.state === 'title') {
     if (e.repeat) return;
+    if (code === 'KeyM' && hasMini(SONGS[G.songIdx])) { setMode(!MINI); FES.sfx('select'); }
     if (code === 'ArrowLeft') { setDiff(G.diff - 1); FES.sfx('select'); }
     else if (code === 'ArrowRight' || code === 'KeyD') { setDiff(G.diff + 1); FES.sfx('select'); }
     else if (code === 'ArrowUp' || code === 'KeyW') { setSong(G.songIdx - 1); FES.sfx('select'); }
@@ -2642,6 +2670,7 @@ $('calPlus').addEventListener('click', () => { saveOffset(G.offset + 5); FES.sfx
 $('calClose').addEventListener('click', () => closeCalib());
 $('calPanel').addEventListener('pointerdown', e => { if (e.target && e.target.tagName === 'BUTTON') return; calibTap(); });
 Array.from($('diff').children).forEach((b, i) => b.addEventListener('click', () => { setDiff(i); FES.sfx('select'); }));
+Array.from($('mode').children).forEach((b, i) => b.addEventListener('click', () => { if (G.state !== 'title') return; setMode(i === 1); FES.sfx('select'); }));
 document.addEventListener('visibilitychange', () => { if (document.hidden && (G.state === 'play' || G.state === 'countin')) pauseGame(); });
 window.addEventListener('resize', resize);
 
