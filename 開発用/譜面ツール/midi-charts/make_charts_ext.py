@@ -73,6 +73,10 @@ SONGS = [
          audio='music/king.m4a', trimmed=0, length=137.4, midi='king_src.mid', topline=True, floor=58, primary='8-Bit Sawtooth',
          lead=['8-Bit Sawtooth', 'Smooth Synth (Classic)', 'Vibraphone', 'Grand Piano (Classic)'], drums=['Electric Drum Kit'], kick=(35, 36), snare=(38, 40),
          sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('END', 5)]),
+    dict(id='venom', name='ベノム', genre='ボカロ', bpm=152, theme='cat2', hex='#b23cff', color=[178, 60, 255],
+         audio='music/venom.m4a', trimmed=0, length=123.1, midi='venom_src.mid', topline=True, floor=56, primary='Violin',
+         lead=['Violin', 'Distortion Guitar', 'Dist. Guitar (Classic)'], drums=['2013 Drum Kit'], kick=(35, 36), snare=(38, 40),
+         sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('END', 4)]),
 ]
 
 entries = []
