@@ -138,7 +138,7 @@ SONGS = [
     # --- J-ROCK（音源からの自動採譜: ボーカル=メロディ、コードは ChordWiki の進行を構造に合わせて手で配置） ---
     dict(id='kasou', name='花葬', genre='J-ROCK', bpm=110, theme='sakura', hex='#d94b7a', color=[217, 75, 122],
          mini_bars=64,
-         audio='music/kasou.m4a', trimmed=0, length=318.6, midi='kasou_src.mid', topline=True, floor=50, primary='Vocal (Synthesizer)',
+         audio='music/kasou.m4a', trimmed=0, length=317.8, midi='kasou_src.mid', topline=True, floor=50, primary='Vocal (Synthesizer)',
          lead=['Vocal (Synthesizer)', 'Riff (Electric Guitar)', 'Grand Piano'], drums=['Electric Drum Kit'], kick=(36,), snare=(38,),
          sections=[('INTRO', 8), ('A', 8), ('INST', 8), ('B', 8), ('SABI', 32), ('INST2', 8), ('B2', 8), ('SABI2', 16), ('SOLO', 8), ('C', 10), ('FINAL', 16), ('OUTRO', 14)]),
 ]
