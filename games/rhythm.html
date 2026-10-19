@@ -86,6 +86,7 @@
   .cal-result small { display: block; font-size: 12px; opacity: .7; font-weight: 700; }
   .cal-manual { margin: 14px 0 10px; font-size: 13px; font-weight: 700; opacity: .9; display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; }
   .cal-manual .cur { min-width: 110px; font-size: 16px; font-variant-numeric: tabular-nums; color: #ffd23f; }
+  .cal-hint { font-size: 12px; opacity: .75; margin: -4px 0 12px; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -140,6 +141,12 @@
       <span class="cur" id="calCur">現在 +0ms</span>
       <button class="btn mini" id="calPlus">+5ms</button>
     </div>
+    <div class="cal-manual">ノーツ表示:
+      <button class="btn mini" id="voffMinus">−10ms</button>
+      <span class="cur" id="voffCur">現在 ±0ms</span>
+      <button class="btn mini" id="voffPlus">+10ms</button>
+    </div>
+    <div class="cal-hint">ノーツが音より<b>遅れて</b>落ちてくるときは「+」、<b>早く</b>落ちてくるときは「−」（見た目のタイミングだけ変わります）</div>
     <button class="btn alt" id="calClose">閉じる</button>
   </div>
 </div>
@@ -214,6 +221,7 @@ let MINI = false;                                   // 現在の選択: false=�
 const extLength = def => (MINI && hasMini(def)) ? def.ext.mini : def.ext.length;
 const MAX_SCORE = 1000000;
 const OFFSET_KEY = 'fes:rhythm:offset';
+const VOFF_KEY = 'fes:rhythm:voff';      // ノーツ表示オフセット（ms、+ で早く表示）
 const HOLD_MISS_GAUGE = 0.35;     // ホールド途中の MISS はゲージ減を軽く
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
 const comboMult = c => 1 + Math.min(Math.floor(c / 10), 10) * 0.1;
@@ -1458,7 +1466,7 @@ const G = {
   raw: 0, score: 0, dispScore: 0, combo: 0, maxCombo: 0, gauge: 60,
   counts: { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 },
   songStart: 0, pausedSongTime: 0, prevState: 'play', readyUntil: 0, countStage: 0,
-  failed: false, fever: 0, feverAmt: 0, endAt: 0, offset: 0,
+  failed: false, fever: 0, feverAmt: 0, endAt: 0, offset: 0, voff: 0,
   auto: false, laneChanges: [], laneChgIdx: 0, warnIdx: 0, themeIdx: 0, frozen: false,
 };
 const FX = {
@@ -1514,6 +1522,12 @@ const countIn = () => 0.3 + G.song.beat * 4;
 /* ---------- オフセット（タイミング調整）保存 ---------- */
 function loadOffset() {
   try { const v = Number(localStorage.getItem(OFFSET_KEY)); if (isFinite(v)) G.offset = FES.clamp(Math.round(v), -200, 200); } catch (e) { /* ignore */ }
+  try { const v = Number(localStorage.getItem(VOFF_KEY)); if (isFinite(v)) G.voff = FES.clamp(Math.round(v), -200, 200); } catch (e) { /* ignore */ }
+}
+function saveVoff(v) {
+  G.voff = FES.clamp(Math.round(v), -200, 200);
+  try { localStorage.setItem(VOFF_KEY, String(G.voff)); } catch (e) { /* ignore */ }
+  refreshOffsetLabels();
 }
 function saveOffset(v) {
   G.offset = FES.clamp(Math.round(v), -200, 200);
@@ -1522,8 +1536,9 @@ function saveOffset(v) {
 }
 const fmtOffset = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v) + 'ms';
 function refreshOffsetLabels() {
-  $('offsetNow').textContent = 'オフセット ' + fmtOffset(G.offset);
+  $('offsetNow').textContent = 'オフセット ' + fmtOffset(G.offset) + (G.voff ? ' ／ 表示 ' + fmtOffset(G.voff) : '');
   $('calCur').textContent = '現在 ' + fmtOffset(G.offset);
+  $('voffCur').textContent = '現在 ' + fmtOffset(G.voff);
 }
 /** タップ時刻のズレ(ms)配列 → 最初の2回を捨てた平均（±200ms） */
 function calcOffset(diffs) {
@@ -2088,7 +2103,7 @@ function render(now) {
   if (FX.shake > 0.2 && !frozen) ctx.translate((Math.random() - 0.5) * FX.shake, (Math.random() - 0.5) * FX.shake);
   drawBackground(st, now);
   drawLanes(frozen ? 0 : now);
-  if (G.state !== 'title' && G.state !== 'calib') { drawHolds(st, now); drawNotes(st, now); }
+  if (G.state !== 'title' && G.state !== 'calib') { const vst = st + G.voff / 1000; drawHolds(vst, now); drawNotes(vst, now); }
   drawEffects(now);
   drawPads(frozen ? 0 : now);
   ctx.restore();
@@ -2667,6 +2682,8 @@ $('calUse').addEventListener('click', () => { if (CAL.result != null) { saveOffs
 $('calRetry').addEventListener('click', () => { calibRestart(); FES.sfx('select'); });
 $('calMinus').addEventListener('click', () => { saveOffset(G.offset - 5); FES.sfx('select'); });
 $('calPlus').addEventListener('click', () => { saveOffset(G.offset + 5); FES.sfx('select'); });
+$('voffMinus').addEventListener('click', () => { saveVoff(G.voff - 10); FES.sfx('select'); });
+$('voffPlus').addEventListener('click', () => { saveVoff(G.voff + 10); FES.sfx('select'); });
 $('calClose').addEventListener('click', () => closeCalib());
 $('calPanel').addEventListener('pointerdown', e => { if (e.target && e.target.tagName === 'BUTTON') return; calibTap(); });
 Array.from($('diff').children).forEach((b, i) => b.addEventListener('click', () => { setDiff(i); FES.sfx('select'); }));
