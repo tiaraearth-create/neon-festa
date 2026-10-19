@@ -584,7 +584,12 @@ const EXT_SONGS = (window.RHYTHM_EXT_SONGS || []).filter(e => e && e.audio && e.
 }));
 EXT_SONGS.forEach(d => SONGS.push(d));
 // 曲の並び順（人気が出そうな順。ここにない曲はこの後ろに元の順で、TAS 曲は最後）
-const SONG_ORDER = ['ext_badapple', 'ext_senbonzakura', 'ext_mesmerizer', 'ext_king', 'ext_venom', 'ext_megalovania', 'ext_bigshot', 'ext_worldrevolving', 'ext_lastbreath', 'ext_shanghaivania', 'ext_dusttrust3', 'ext_dusttrust2', 'ext_tokyovania', 'ext_lastbreath2', 'ext_badtimetrio', 'ext_underfell', 'ext_mashup_dustlb', 'ext_mashup_tokyoshang', 'ext_mashup_dust2fell', 'ext_kasou', 'ext_badend',
+const SONG_ORDER = ['ext_senbonzakura', 'ext_mesmerizer', 'ext_king', 'ext_venom',                    // ボカロ
+                    'ext_badapple',                                                                    // 東方
+                    'ext_kasou',                                                                       // J-ROCK
+                    'ext_bigshot', 'ext_worldrevolving',                                               // DELTARUNE
+                    'ext_megalovania', 'ext_lastbreath', 'ext_shanghaivania', 'ext_dusttrust3', 'ext_dusttrust2', 'ext_tokyovania', 'ext_lastbreath2', 'ext_badtimetrio', 'ext_underfell', 'ext_badend',   // Sans 系
+                    'ext_mashup_dustlb', 'ext_mashup_tokyoshang', 'ext_mashup_dust2fell',             // マッシュアップ
                     'neon', 'sakura', 'rock', 'ballad', 'tas', 'cat'];
 SONGS.sort((x, y) => {
   const r = d => { const i = SONG_ORDER.indexOf(d.id); return i >= 0 ? i : (d.tas ? 900 : 500); };
