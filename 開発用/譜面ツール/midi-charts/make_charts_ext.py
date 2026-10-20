@@ -146,6 +146,12 @@ SONGS = [
          audio='music/dec.m4a', trimmed=0, length=134.6, midi='dec_src.mid', topline=True, floor=50, primary='Vocal (Synthesizer)',
          lead=['Vocal (Synthesizer)', 'Pop Synth (Classic)'], drums=['Electric Drum Kit'], kick=(36,), snare=(38,),
          sections=[('INTRO', 8), ('SABI', 16), ('A', 16), ('BRK', 8), ('SABI2', 16), ('BRIDGE', 16), ('SABI3', 24), ('OUTRO', 8)]),
+    # --- オリジナル曲 ---
+    dict(id='luminous', name='LUMINOUS', genre='オリジナル', bpm=180, theme='neon', hex='#5ef1ff', color=[94, 241, 255],
+         mini_bars=64,
+         audio='music/luminous.m4a', trimmed=0, length=164.2, midi='luminous_src.mid', topline=True, floor=55, primary='Vocal (Synthesizer)',
+         lead=['Vocal (Synthesizer)', 'Pop Synth (Classic)', 'Electric Guitar'], drums=['Electric Drum Kit'], kick=(36,), snare=(38,),
+         sections=[('INTRO', 8), ('A1', 16), ('PRE', 8), ('CHORUS1', 16), ('RIFF', 8), ('A2', 8), ('PRE2', 8), ('CHORUS2', 16), ('BRIDGE', 8), ('BUILD', 4), ('FINAL', 16), ('OUTRO', 4), ('END', 1)]),
 ]
 
 entries = []
