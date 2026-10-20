@@ -158,6 +158,10 @@ SONGS = [
          audio='music/rinne.m4a', trimmed=0, length=123.3, midi='rinne_src.mid', topline=True, floor=60,
          lead=['Grand Piano (Classic)'], drums=['Electric Drum Kit'], kick=(36,), snare=(38, 39),
          sections=[('INTRO', 8), ('A', 16), ('B', 8), ('SABI', 12), ('BRK', 8), ('C', 4), ('SABI2', 17), ('END', 2)]),
+    dict(id='unwelcome', name='Unwelcome School', genre='ブルアカ', bpm=180, theme='cat1', hex='#4fc3ff', color=[79, 195, 255],
+         audio='music/unwelcome.m4a', trimmed=0, length=121.0, midi='unwelcome_src.mid', topline=True, floor=60,
+         lead=['8-Bit Square', '8-Bit Sawtooth', 'Electric Guitar', 'Electric Piano', 'Grand Piano'], drums=['Electric Drum Kit'], kick=(35, 36), snare=(38, 40),
+         sections=[('INTRO', 8), ('A', 16), ('B', 16), ('C', 16), ('D', 16), ('E', 16), ('END', 3)]),
 ]
 
 entries = []
