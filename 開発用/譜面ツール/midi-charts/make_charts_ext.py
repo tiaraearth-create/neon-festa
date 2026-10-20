@@ -152,6 +152,10 @@ SONGS = [
          audio='music/luminous.m4a', trimmed=0, length=164.2, midi='luminous_src.mid', topline=True, floor=55, primary='Vocal (Synthesizer)',
          lead=['Vocal (Synthesizer)', 'Pop Synth (Classic)', 'Electric Guitar'], drums=['Electric Drum Kit'], kick=(36,), snare=(38,),
          sections=[('INTRO', 8), ('A1', 16), ('PRE', 8), ('CHORUS1', 16), ('RIFF', 8), ('A2', 8), ('PRE2', 8), ('CHORUS2', 16), ('BRIDGE', 8), ('BUILD', 4), ('FINAL', 16), ('OUTRO', 4), ('END', 1)]),
+    dict(id='rinne', name='いますぐ輪廻', genre='ボカロ', bpm=145, theme='sakura', hex='#ff7ab6', color=[255, 122, 182],
+         audio='music/rinne.m4a', trimmed=0, length=124.4, midi='rinne_src.mid', topline=True, floor=60,
+         lead=['Grand Piano (Classic)'], drums=['Electric Drum Kit'], kick=(36,), snare=(38, 39),
+         sections=[('INTRO', 8), ('A', 16), ('B', 8), ('SABI', 12), ('BRK', 8), ('C', 4), ('SABI2', 17), ('END', 2)]),
 ]
 
 entries = []

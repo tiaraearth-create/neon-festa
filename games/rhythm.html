@@ -75,6 +75,8 @@
   .row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; align-items: center; }
   .row.tight { gap: 8px; margin-top: 14px; }
   .offset-now { font-size: 12px; opacity: .8; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .lite-hint { opacity: .6; }
+  .lite-hint.hidden { display: none; }
   #calib { background: rgba(5,5,20,.82); backdrop-filter: blur(8px); }
   .cal-title { font-size: clamp(26px, 5vw, 44px); font-weight: 900; letter-spacing: .1em; margin-bottom: 6px;
                background: linear-gradient(90deg,#4fc3ff,#fff,#3dffb0); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 3s linear infinite; }
@@ -117,6 +119,7 @@
       <button class="btn mini" id="autoBtn">▶ TAS再生（オートプレイ）</button>
       <button class="btn mini" id="calibBtn">⚙ タイミング調整</button>
       <span class="offset-now" id="offsetNow">オフセット +0ms</span>
+      <span class="offset-now lite-hint hidden" id="liteHint" title="軽量表示（パーティクルや光を減らしています）">🐢 軽量表示</span>
     </div>
     <div class="howto">
       ⌨ <b class="k0">D</b><b class="k1">F</b><b class="k2">J</b><b class="k3">K</b> または <b class="k0">←</b><b class="k1">↓</b><b class="k2">↑</b><b class="k3">→</b> でノーツをたたけ！ 帯のノーツは<b>押しっぱなし</b>！<br>
@@ -163,7 +166,7 @@
 </div>
 
 <script src="../common.js"></script>
-<script src="music/charts.js?v=20261020d"></script>   <!-- 曲を足したり譜面を直したら v= の値を変える（ブラウザの古いキャッシュを使わせないため） -->
+<script src="music/charts.js?v=20261020e"></script>   <!-- 曲を足したり譜面を直したら v= の値を変える（ブラウザの古いキャッシュを使わせないため） -->
 <script>
 'use strict';
 FES.init({ id: 'rhythm', title: 'リズムスターズ' });
@@ -584,7 +587,7 @@ const EXT_SONGS = (window.RHYTHM_EXT_SONGS || []).filter(e => e && e.audio && e.
 }));
 EXT_SONGS.forEach(d => SONGS.push(d));
 // 曲の並び順（人気が出そうな順。ここにない曲はこの後ろに元の順で、TAS 曲は最後）
-const SONG_ORDER = ['ext_senbonzakura', 'ext_mesmerizer', 'ext_king', 'ext_venom', 'ext_dec', 'ext_luminous',                  // ボカロ
+const SONG_ORDER = ['ext_senbonzakura', 'ext_mesmerizer', 'ext_king', 'ext_venom', 'ext_rinne', 'ext_dec', 'ext_luminous',                  // ボカロ
                     'ext_badapple',                                                                    // 東方
                     'ext_kasou',                                                                       // J-ROCK
                     'ext_bigshot', 'ext_worldrevolving',                                               // DELTARUNE
@@ -1473,7 +1476,14 @@ const G = {
   songStart: 0, pausedSongTime: 0, prevState: 'play', readyUntil: 0, countStage: 0,
   failed: false, fever: 0, feverAmt: 0, endAt: 0, offset: 0, voff: 0,
   auto: false, laneChanges: [], laneChgIdx: 0, warnIdx: 0, themeIdx: 0, frozen: false,
+  autoLite: false,                    // 重いときに自動で軽量表示へ（このページ表示中だけ）
 };
+/** 軽量モード（ホームの 🐢 設定、または自動フォールバック） */
+let liteSetting = false;              // FES.lite() は localStorage を読むので毎フレーム1回だけ更新する
+const refreshLite = () => { liteSetting = !!(window.FES && FES.lite && FES.lite()); return liteSetting; };
+const LITE = () => liteSetting || G.autoLite;
+const BGC = { key: '', g: null, rgBase: '', rg: {} };   // 背景グラデーションのキャッシュ（毎フレーム作らない）
+const PERF = { sum: 0, n: 0, toasted: false };          // フレーム時間の計測（自動軽量化用）
 const FX = {
   particles: [], rings: [], texts: [], bolts: [], streaks: [],
   flash: new Array(MAX_LANES).fill(0), press: new Array(MAX_LANES).fill(0),
@@ -1555,7 +1565,9 @@ function calcOffset(diffs) {
 
 /* ---------- レイアウト ---------- */
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  refreshLite();
+  const dpr = Math.min(window.devicePixelRatio || 1, LITE() ? 1 : 2);
+  BGC.key = ''; BGC.rgBase = ''; BGC.rg = {};
   L.W = window.innerWidth; L.H = window.innerHeight;
   canvas.width = Math.floor(L.W * dpr); canvas.height = Math.floor(L.H * dpr);
   canvas.style.width = L.W + 'px'; canvas.style.height = L.H + 'px';
@@ -1597,7 +1609,7 @@ function rr(x, y, w, h, r) {
 const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 function glowText(text, x, y, size, color, glow, weight, blur) {
   ctx.font = `${weight || 900} ${size}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.shadowColor = glow; ctx.shadowBlur = blur == null ? size * 0.5 : blur;
+  ctx.shadowColor = glow; ctx.shadowBlur = LITE() ? 0 : (blur == null ? size * 0.5 : blur);
   ctx.fillStyle = color; ctx.fillText(text, x, y); ctx.shadowBlur = 0;
 }
 function fillText(text, x, y, size, color, weight, align) {
@@ -1612,11 +1624,12 @@ const fmtLen = s => `${Math.floor(s / 60)}:${FES.pad(Math.round(s % 60), 2)}`;
 function setTheme(name) {
   theme = THEMES[name] || THEMES.neon;
   BGP.length = 0;
+  const bgN = n => Math.round(n * (LITE() ? 0.34 : 1));
   if (theme.fx === 'petals') {
-    for (let i = 0; i < 44; i++) BGP.push({ x: Math.random(), y: Math.random(), s: 5 + Math.random() * 7, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 3, vx: 0.02 + Math.random() * 0.04, vy: 0.05 + Math.random() * 0.06, ph: Math.random() * 6.28 });
+    for (let i = 0; i < bgN(44); i++) BGP.push({ x: Math.random(), y: Math.random(), s: 5 + Math.random() * 7, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 3, vx: 0.02 + Math.random() * 0.04, vy: 0.05 + Math.random() * 0.06, ph: Math.random() * 6.28 });
   } else if (theme.fx === 'embers') {
     const h0 = theme.emberHue != null ? theme.emberHue : 15;
-    for (let i = 0; i < 70; i++) BGP.push({ x: Math.random(), y: Math.random(), s: 1.5 + Math.random() * 3, vy: 0.05 + Math.random() * 0.12, ph: Math.random() * 6.28, hue: h0 + Math.random() * 30 });
+    for (let i = 0; i < bgN(70); i++) BGP.push({ x: Math.random(), y: Math.random(), s: 1.5 + Math.random() * 3, vy: 0.05 + Math.random() * 0.12, ph: Math.random() * 6.28, hue: h0 + Math.random() * 30 });
   }
   FX.bolts.length = 0; FX.streaks.length = 0;
 }
@@ -1635,6 +1648,7 @@ function showTitle() {
   setSong(G.songIdx);
   setDiff(G.diff);
   refreshOffsetLabels();
+  updateLiteHint();
 }
 const rankIdOf = () => SONGS[G.songIdx].rankId || DIFFS[G.diff].rankId;
 function buildCards() {
@@ -1910,7 +1924,8 @@ function processHolds(st, now) {
 function spawnHit(lane, j) {
   const x = laneCenter(lane, L.judgeY), y = L.judgeY;
   const col = laneRGB(lane), jc = JUDGES[j].rgb;
-  const count = j === 'PERFECT' ? 22 : j === 'GREAT' ? 14 : 8;
+  const lite = LITE();
+  const count = Math.ceil((j === 'PERFECT' ? 22 : j === 'GREAT' ? 14 : 8) * (lite ? 0.5 : 1));
   const w = laneX(lane, L.judgeY); const lw = w[1] - w[0];
   for (let i = 0; i < count; i++) {
     const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
@@ -1920,15 +1935,25 @@ function spawnHit(lane, j) {
   }
   FX.rings.push({ x, y, t: 0, c: col, max: lw * (j === 'PERFECT' ? 1.1 : 0.7) });
   FX.flash[lane] = 1;
+  capFX();
+}
+/** エフェクト配列の上限（軽量モードでは少なめ） */
+function capFX() {
+  const lite = LITE(), pc = lite ? 160 : 600, rc = lite ? 16 : 48, tc = lite ? 4 : 10;
+  if (FX.particles.length > pc) FX.particles.splice(0, FX.particles.length - pc);
+  if (FX.rings.length > rc) FX.rings.splice(0, FX.rings.length - rc);
+  if (FX.texts.length > tc) FX.texts.splice(0, FX.texts.length - tc);
 }
 function spawnSpark(lane, n) {
   const x = laneCenter(lane, L.judgeY), y = L.judgeY;
   const w = laneX(lane, L.judgeY); const lw = w[1] - w[0];
+  if (LITE()) n = Math.ceil(n / 2);
   for (let i = 0; i < n; i++) {
     const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.4, sp = 120 + Math.random() * 260;
     FX.particles.push({ x: x + (Math.random() - 0.5) * lw * 0.5, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.25 + Math.random() * 0.25, age: 0,
       s: 1.5 + Math.random() * 2.5, c: Math.random() < 0.5 ? laneRGB(lane) : [255, 255, 255], sq: false });
   }
+  capFX();
 }
 
 /* =====================================================================
@@ -2064,7 +2089,7 @@ function updateBackground(dt, now) {
     let w = 0; for (let i = 0; i < FX.bolts.length; i++) if (now - FX.bolts[i].t < 0.22) FX.bolts[w++] = FX.bolts[i]; FX.bolts.length = w;
   } else if (theme.fx === 'shooting') {
     FX.streakTimer -= dt;
-    if (FX.streakTimer <= 0) {
+    if (FX.streakTimer <= 0 && !LITE()) {
       FX.streakTimer = 1.2 + Math.random() * 2.5;
       const a = Math.PI * (0.18 + Math.random() * 0.2);
       FX.streaks.push({ x: Math.random() * 0.9, y: -0.05 + Math.random() * 0.25, vx: Math.cos(a) * 0.5, vy: Math.sin(a) * 0.5, age: 0, life: 0.7 + Math.random() * 0.5 });
@@ -2075,6 +2100,7 @@ function updateBackground(dt, now) {
   }
 }
 function spawnBolt(now) {
+  if (LITE() && (FX.bolts.length || Math.random() < 0.7)) return;   // 軽量モードでは稲妻を減らす
   const side = Math.random() < 0.5 ? -1 : 1;
   const x0 = L.cx + side * (L.botW / 2 + 40 + Math.random() * Math.max(40, (L.W - L.botW) / 2 - 60));
   const pts = [[x0, 0]]; let x = x0, y = 0; const yEnd = L.topY + Math.random() * (L.judgeY - L.topY) * 0.8;
@@ -2138,22 +2164,39 @@ function render(now) {
 function drawBackground(st, now) {
   const W = L.W, H = L.H, fv = G.feverAmt, T = theme;
   const hue = (now * 55) % 360;
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  if (fv > 0.02) {
+  const fever = fv > 0.02;
+  let g;
+  if (fever) {                                   // フィーバー中は色が毎フレーム変わるのでその都度作る
+    g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, `hsl(${hue},65%,${5 + fv * 4}%)`); g.addColorStop(1, `hsl(${(hue + 90) % 360},70%,${9 + fv * 6}%)`);
-  } else { g.addColorStop(0, T.bg[0]); g.addColorStop(1, T.bg[1]); }
+  } else {                                       // 通常時はテーマ＋画面サイズごとにキャッシュ
+    const key = `${T.bg[0]}|${T.bg[1]}|${H}`;
+    if (BGC.key !== key) { BGC.key = key; BGC.g = ctx.createLinearGradient(0, 0, 0, H); BGC.g.addColorStop(0, T.bg[0]); BGC.g.addColorStop(1, T.bg[1]); }
+    g = BGC.g;
+  }
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
   const horizon = L.topY - 6;
   const pulse = VIS.kick;
-  const rg = ctx.createRadialGradient(L.cx, horizon, 0, L.cx, horizon, W * 0.55);
-  rg.addColorStop(0, fv > 0.02 ? `hsla(${(hue + 40) % 360},90%,65%,${0.3 + pulse * 0.35})` : rgba(T.glow, 0.28 + pulse * 0.3));
-  rg.addColorStop(0.5, rgba(T.glow, 0.06));
-  rg.addColorStop(1, 'rgba(0,0,0,0)');
+  let rg;
+  if (fever) {
+    rg = ctx.createRadialGradient(L.cx, horizon, 0, L.cx, horizon, W * 0.55);
+    rg.addColorStop(0, `hsla(${(hue + 40) % 360},90%,65%,${0.3 + pulse * 0.35})`);
+    rg.addColorStop(0.5, rgba(T.glow, 0.06)); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  } else {                                       // キックの強さを 12 段階に丸めてキャッシュ
+    const base = `${T.glow.join(',')}|${W}|${L.cx}|${horizon}`;
+    if (BGC.rgBase !== base) { BGC.rgBase = base; BGC.rg = {}; }
+    const q = Math.round(FES.clamp(pulse, 0, 1) * 12);
+    rg = BGC.rg[q];
+    if (!rg) {
+      rg = BGC.rg[q] = ctx.createRadialGradient(L.cx, horizon, 0, L.cx, horizon, W * 0.55);
+      rg.addColorStop(0, rgba(T.glow, 0.28 + (q / 12) * 0.3)); rg.addColorStop(0.5, rgba(T.glow, 0.06)); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    }
+  }
   ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
 
   // 星
-  const starN = Math.min(STARS.length, T.starN), slow = T.fx === 'shooting' || T.slowStars;
+  const starN = Math.min(STARS.length, LITE() ? Math.round(T.starN / 3) : T.starN), slow = T.fx === 'shooting' || T.slowStars;
   for (let i = 0; i < starN; i++) {
     const s = STARS[i];
     const tw = 0.45 + 0.55 * Math.sin(now * (slow ? 1.2 : 3) + s.p);
@@ -2245,9 +2288,12 @@ function drawBackground(st, now) {
         const h = 6 + e * maxH;
         const x = side === 0 ? 30 + i * bw : W - 30 - (i + 1) * bw;
         const c = LANE_RGB[(i + side * 2) % 4];
-        const gg = ctx.createLinearGradient(0, L.judgeY - h, 0, L.judgeY);
-        gg.addColorStop(0, rgba(c, 0.85)); gg.addColorStop(1, rgba(c, 0.08));
-        ctx.fillStyle = gg;
+        if (LITE()) ctx.fillStyle = rgba(c, 0.45);
+        else {
+          const gg = ctx.createLinearGradient(0, L.judgeY - h, 0, L.judgeY);
+          gg.addColorStop(0, rgba(c, 0.85)); gg.addColorStop(1, rgba(c, 0.08));
+          ctx.fillStyle = gg;
+        }
         rr(x + 2, L.judgeY - h, bw - 4, h, 3); ctx.fill();
       }
     }
@@ -2702,9 +2748,11 @@ window.addEventListener('resize', resize);
 let lastFrame = performance.now();
 function frame(nowMs) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, Math.max(0, (nowMs - lastFrame) / 1000));
+  const rawMs = Math.max(0, nowMs - lastFrame);
+  const dt = Math.min(0.05, rawMs / 1000);
   lastFrame = nowMs;
   const now = nowMs / 1000;
+  refreshLite(); watchPerf(rawMs);
   try {
     update(dt, now); render(now);
     if (G.state === 'calib') {
@@ -2714,6 +2762,33 @@ function frame(nowMs) {
     }
   } catch (err) { /* 1フレームの例外で止まらない */ }
 }
+/** プレイ中のフレーム時間を約2秒ごとに平均し、重ければ自動で軽量表示へ（戻さない） */
+function watchPerf(ms) {
+  if (G.state !== 'play' || LITE()) { PERF.sum = 0; PERF.n = 0; return; }
+  PERF.sum += Math.min(ms, 100); PERF.n++;
+  if (PERF.sum < 2000) return;
+  const avg = PERF.sum / PERF.n; PERF.sum = 0; PERF.n = 0;
+  if (avg > 40) enableAutoLite();   // 25fps を下回ったら（30Hz のモニターでは発動しない）
+}
+function enableAutoLite() {
+  if (G.autoLite) return;
+  G.autoLite = true;
+  applyLite();
+  if (!PERF.toasted && window.FES && FES.toast) { PERF.toasted = true; FES.toast('重いので軽量表示に切りかえました', 2200); }
+}
+/** 軽量モードの設定を今の画面に反映（dpr / 背景パーティクル / エフェクト） */
+function applyLite() {
+  resize();
+  if (LITE()) {
+    document.documentElement.classList.add('fes-lite');
+    const want = Math.round((theme.fx === 'petals' ? 44 : theme.fx === 'embers' ? 70 : 0) * 0.34);
+    if (BGP.length > want) BGP.length = want;
+    FX.streaks.length = 0; FX.bolts.length = 0;
+    capFX();
+  }
+  updateLiteHint();
+}
+function updateLiteHint() { const h = $('liteHint'); if (h) h.classList.toggle('hidden', !LITE()); }
 loadOffset();
 buildCards();
 resize();
