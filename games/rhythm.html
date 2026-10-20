@@ -1421,6 +1421,7 @@ const Music = (() => {
 
   // ---- 追加曲（音声ファイル）: <audio> をそのまま鳴らす（file:// で開いても音が出るように WebAudio は通さない）
   let ext = null, el = null, extTimer = null;
+  let extLatency = 0.07;   // play() してから実際に音が出るまでの遅れ（秒）。鳴り始めのずれから学習して、次からその分早く再生する
   function extPrepare() {
     if (!el || el.dataset.src !== ext.audio) { if (el) { try { el.pause(); } catch (e) {} } el = new Audio(ext.audio); el.preload = 'auto'; el.dataset.src = ext.audio; el.volume = 0.72; }
     else { try { el.pause(); } catch (e) {} }
@@ -1433,7 +1434,7 @@ const Music = (() => {
       // メタデータが読めてから位置を合わせる（先に currentTime を入れても無視されるため）
       try { el.currentTime = pos; } catch (e) {}
       const delay = Math.max(0, startAbs + from - ac.currentTime);
-      extTimer = setTimeout(() => { try { if (Math.abs(el.currentTime - pos) > 0.05) el.currentTime = pos; } catch (e) {} el.play().catch(() => {}); }, delay * 1000);
+      extTimer = setTimeout(() => { try { if (Math.abs(el.currentTime - pos) > 0.05) el.currentTime = pos; } catch (e) {} el.play().catch(() => {}); }, Math.max(0, delay - extLatency) * 1000);
     };
     if (el.readyState >= 1) go(); else el.addEventListener('loadedmetadata', go, { once: true });
   }
@@ -1445,6 +1446,8 @@ const Music = (() => {
     load(song) { stopAll(); extStop(); events = song.events; idx = 0; ext = song.def.ext || null; if (ext) extPrepare(); },
     /** タイトルで曲を選んだ時点で音声を読み込んでおく（開始時に待たせない） */
     preload(song) { if (!song.def.ext || playing) return; ext = song.def.ext; extPrepare(); },
+    extReady() { return !ext || (el && el.readyState >= 3); },
+    learnLatency(err) { extLatency = FES.clamp(extLatency + err, 0, 0.3); },
     start(startAbs) { if (!ac) return; seek(-99, startAbs); playing = true; run(); if (ext) extPlayAt(startAbs, 0); },
     resume(songTime, newStart) { if (!ac) return; seek(songTime, newStart); playing = true; run(); if (ext) extPlayAt(newStart, songTime); },
     pause() { playing = false; clearInterval(timer); timer = null; stopAll(); extStop(); },
@@ -1499,7 +1502,19 @@ const L = { W: 0, H: 0, cx: 0, topY: 0, judgeY: 0, botW: 0, topW: 0, padTop: 0, 
 const pointers = new Map();           // pointerId → { lane, lanes }（押した時点のレーン番号とレーン数）
 const keysDown = new Set();           // 押下中のキーコード
 
-function clock() { const ac = Music.ctx(); return ac ? ac.currentTime : performance.now() / 1000; }
+const CLK = { base: null, perf: 0 };
+/** なめらかな時計: AudioContext の時刻は約10msごとにしか進まないので、performance.now() で補間する（ずれが大きいときだけ合わせ直す） */
+function clock() {
+  const ac = Music.ctx(); const p = performance.now() / 1000;
+  if (!ac) return p;
+  const a = ac.currentTime;
+  if (CLK.base === null || ac.state !== 'running') { CLK.base = a; CLK.perf = p; return a; }
+  const pred = CLK.base + (p - CLK.perf);
+  const err = a - pred;
+  if (Math.abs(err) > 0.05) { CLK.base = a; CLK.perf = p; return a; }   // 大きくずれた（タブ切替など）: 合わせ直す
+  CLK.base += err * 0.02;                                               // 少しずつ実時刻に寄せる（揺れは出さない）
+  return Math.max(pred, CLK.last || -Infinity, (CLK.last = pred));
+}
 function songTime() { return clock() - G.songStart; }
 const judgeTime = () => songTime() - G.offset / 1000;   // 判定用（オフセット補正済み）
 const approach = () => G.song.def.approach || DIFFS[G.diff].approach;
@@ -1730,10 +1745,18 @@ function startGame(auto) {
   setTheme(SONGS[G.songIdx].theme);
   resetGame();
   G.auto = !!auto;
-  G.state = 'countin';
-  G.songStart = clock() + countIn();
-  Music.start(G.songStart);
-  FES.sfx('start');
+  // 音声ファイルが再生できる状態になってからカウントを始める（読み込み待ちで出だしが止まって見えないように）
+  G.state = 'loading'; G.songStart = clock() + 999;
+  const t0 = performance.now(), token = (G.loadToken = (G.loadToken || 0) + 1);
+  const begin = () => {
+    if (token !== G.loadToken || G.state !== 'loading') return;
+    if (!Music.extReady() && performance.now() - t0 < 6000) { setTimeout(begin, 50); return; }
+    G.state = 'countin'; G.audioSynced = false;
+    G.songStart = clock() + countIn();
+    Music.start(G.songStart);
+    FES.sfx('start');
+  };
+  begin();
 }
 function pauseGame() {
   if (G.state !== 'play' && G.state !== 'countin') return;
@@ -1753,7 +1776,7 @@ function resumeGame() {
   if (ac && ac.state !== 'running') { try { ac.resume(); } catch (e) { /* ignore */ } }
   FES.pause(false);
   const delay = 1.0;
-  G.songStart = clock() + delay - G.pausedSongTime;
+  G.songStart = clock() + delay - G.pausedSongTime; G.audioSynced = false;
   G.readyUntil = performance.now() / 1000 + delay;
   G.state = G.prevState;
   Music.resume(G.pausedSongTime, G.songStart);
@@ -2005,7 +2028,13 @@ function update(dt, now) {
     const at = Music.audioTime();
     if (MINI && hasMini(G.song.def)) Music.extGain((G.song.length - st) / 2.5);   // ミニ版: 終わりの 2.5 秒でフェードアウト
     else Music.extGain(1);
-    if (at != null && (G.state === 'play' || G.state === 'countin')) { const target = clock() - at; G.songStart += (target - G.songStart) * Math.min(1, dt * 6); st = songTime(); }
+    if (at != null && (G.state === 'play' || G.state === 'countin')) {
+      const target = clock() - at, diff = target - G.songStart;
+      if (!G.audioSynced) { G.audioSynced = true; Music.learnLatency(diff); if (Math.abs(diff) > 0.01) G.songStart = target; }   // 音声が鳴り始めた瞬間に一度だけぴったり合わせる
+      else if (Math.abs(diff) > 0.25) G.songStart = target;                               // 大きくずれた（シーク直後など）: 一度だけ合わせる
+      else if (Math.abs(diff) > 0.004) G.songStart += FES.clamp(diff, -0.02 * dt, 0.02 * dt);   // 速さを最大2%だけ変えて、見た目ではわからないように合わせる
+      st = songTime();
+    }
     // ビジュアライザー: 拍でキック、ノーツが通るたびに光る
     if (st >= 0) { const b = st / G.song.beat, ph = b - Math.floor(b); if (ph < 0.08) VIS.kick = Math.max(VIS.kick, 0.9); if (ph >= 0.5 && ph < 0.58) VIS.hat = Math.max(VIS.hat, 0.8); }
     while (G.visIdx < G.notes.length && G.notes[G.visIdx].t <= st) { const n = G.notes[G.visIdx++]; VIS.lead = 1; if (n.lane === 0 || n.lane === 3) VIS.bass = 1; if (n.chord) { VIS.snare = 1; if (theme.fx === 'embers') spawnBolt(now); } }
