@@ -36,7 +36,7 @@
   <h1>🧪 全ゲーム 自動チェック</h1>
   <button id="runAll">▶ 全部チェック</button>
   <button id="stop" class="alt" disabled>■ 止める</button>
-  <label>1本あたり <select id="dur"><option value="8">8秒（当日・はやい）</option><option value="20" selected>20秒（ふつう）</option><option value="45">45秒（じっくり）</option></select></label>
+  <label>1本あたり <select id="dur"><option value="4">4秒（超高速）</option><option value="8" selected>8秒（当日・はやい）</option><option value="20">20秒（ふつう）</option><option value="45">45秒（じっくり）</option></select></label>
   <label><input type="checkbox" id="chkResize" checked> 画面サイズ変更もテスト</label>
   <label><input type="checkbox" id="chkPause" checked> ポーズ→再開もテスト</label>
   <label>1本だけ: <select id="one"><option value="">（選ぶ）</option></select></label>
@@ -82,7 +82,7 @@ GAMES.forEach((g, i) => {
 });
 function log(s) { logEl.textContent += s + '\n'; logEl.scrollTop = logEl.scrollHeight; }
 function setStatus(id, cls, text, msg) { const st = $('st_' + id); st.className = 'st ' + cls; st.textContent = text; if (msg != null) $('msg_' + id).textContent = msg; }
-function updateEta() { $('eta').textContent = Math.ceil(GAMES.length * (+$('dur').value + 5) / 60); }
+function updateEta() { $('eta').textContent = Math.ceil(GAMES.length * (+$('dur').value + 3) / 60); }
 $('dur').addEventListener('change', updateEta); updateEta();
 
 /** iframe の中で起きた問題を集める */
@@ -130,7 +130,7 @@ async function testGame(g, durSec) {
   if (!cw || !cw.document || !cw.document.body) { setStatus(g.id, 'ng', '❌ 失敗', '読み込めませんでした'); return false; }
   attachWatch(fr, errs);
   notes.push(`読み込み ${Math.round(performance.now() - t0)}ms`);
-  await sleep(900);
+  await sleep(400);
   if (!cw.FES) errs.push('FES（common.js）が読み込まれていません');
   if (!cw.document.title || cw.document.title === 'Document') errs.push('document.title が未設定');
   const canvas = cw.document.querySelector('canvas');
@@ -138,9 +138,9 @@ async function testGame(g, durSec) {
   const s0 = snapshot(cw);
   // 開始: タップ → Space → Enter
   const target = canvas || cw.document.body;
-  await tapAt(cw, target, 0.5, 0.6); await sleep(250);
-  fire(cw, null, 'keydown', 'Space'); fire(cw, null, 'keyup', 'Space'); await sleep(250);
-  fire(cw, null, 'keydown', 'Enter'); fire(cw, null, 'keyup', 'Enter'); await sleep(250);
+  await tapAt(cw, target, 0.5, 0.6); await sleep(120);
+  fire(cw, null, 'keydown', 'Space'); fire(cw, null, 'keyup', 'Space'); await sleep(120);
+  fire(cw, null, 'keydown', 'Enter'); fire(cw, null, 'keyup', 'Enter'); await sleep(120);
   // クイズの選択肢ボタンなど
   [...cw.document.querySelectorAll('button')].slice(0, 6).forEach(b => { try { if (b.offsetParent) tapAt(cw, b, 0.5, 0.5); } catch (e) {} });
   // ランダム操作
@@ -159,11 +159,11 @@ async function testGame(g, durSec) {
     // 画面が動いているか（4回連続で同じなら「止まっている」）
     if (n % 8 === 0 && canvas) { const s = snapshot(cw); if (s != null && s === lastSnap) { sameCount++; if (sameCount >= 6) frozen++; } else sameCount = 0; lastSnap = s; }
     if (hasErrorOverlay(cw)) { errs.push('エラー画面（おっと）が出ました'); break; }
-    await sleep(100 + Math.random() * 120);
+    await sleep(60 + Math.random() * 60);
   }
   if (held) fire(cw, null, 'keyup', held);
   if (frozen) notes.push(`画面が ${frozen} 回ほど止まって見えました（リザルトやタイトルで静止していただけかも）`);
-  await sleep(300);
+  await sleep(150);
   if (hasErrorOverlay(cw)) errs.push('エラー画面（おっと）が出ました');
   const uniq = [...new Set(errs)];
   const ok = uniq.length === 0;
