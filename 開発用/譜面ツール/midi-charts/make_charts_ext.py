@@ -141,6 +141,11 @@ SONGS = [
          audio='music/kasou.m4a', trimmed=0, length=317.8, midi='kasou_src.mid', topline=True, floor=50, primary='Vocal (Synthesizer)',
          lead=['Vocal (Synthesizer)', 'Riff (Electric Guitar)', 'Grand Piano'], drums=['Electric Drum Kit'], kick=(36,), snare=(38,),
          sections=[('INTRO', 8), ('A', 8), ('INST', 8), ('B', 8), ('SABI', 32), ('INST2', 8), ('B2', 8), ('SABI2', 16), ('SOLO', 8), ('C', 10), ('FINAL', 16), ('OUTRO', 14)]),
+    dict(id='dec', name='Dec.', genre='ボカロ', bpm=202, theme='cat1', hex='#7fd8ff', color=[127, 216, 255],
+         mini_bars=64,
+         audio='music/dec.m4a', trimmed=0, length=137.0, midi='dec_src.mid', topline=True, floor=50, primary='Vocal (Synthesizer)',
+         lead=['Vocal (Synthesizer)', 'Riff (Electric Guitar)', 'Grand Piano'], drums=['Electric Drum Kit'], kick=(36,), snare=(38,),
+         sections=[('INTRO', 8), ('SABI', 16), ('A', 16), ('BRK', 8), ('SABI2', 16), ('BRIDGE', 16), ('SABI3', 24), ('OUTRO', 8)]),
 ]
 
 entries = []

@@ -163,7 +163,7 @@
 </div>
 
 <script src="../common.js"></script>
-<script src="music/charts.js?v=20261019f"></script>   <!-- 曲を足したり譜面を直したら v= の値を変える（ブラウザの古いキャッシュを使わせないため） -->
+<script src="music/charts.js?v=20261020a"></script>   <!-- 曲を足したり譜面を直したら v= の値を変える（ブラウザの古いキャッシュを使わせないため） -->
 <script>
 'use strict';
 FES.init({ id: 'rhythm', title: 'リズムスターズ' });
@@ -584,7 +584,7 @@ const EXT_SONGS = (window.RHYTHM_EXT_SONGS || []).filter(e => e && e.audio && e.
 }));
 EXT_SONGS.forEach(d => SONGS.push(d));
 // 曲の並び順（人気が出そうな順。ここにない曲はこの後ろに元の順で、TAS 曲は最後）
-const SONG_ORDER = ['ext_senbonzakura', 'ext_mesmerizer', 'ext_king', 'ext_venom',                    // ボカロ
+const SONG_ORDER = ['ext_senbonzakura', 'ext_mesmerizer', 'ext_king', 'ext_venom', 'ext_dec',                  // ボカロ
                     'ext_badapple',                                                                    // 東方
                     'ext_kasou',                                                                       // J-ROCK
                     'ext_bigshot', 'ext_worldrevolving',                                               // DELTARUNE
