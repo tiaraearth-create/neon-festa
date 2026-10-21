@@ -76,7 +76,13 @@ const PRIZES = [
 ];
 const params = new URLSearchParams(location.search);
 const want = params.get('p');
-const show = want ? PRIZES.filter(p => p.id === want) : [];
+// スタッフが「景品の設定」で変えた景品は、QR に URL と名前が入ってくる（http/https だけ受け付ける）
+const custom = (() => {
+  const u = params.get('u'); if (!u) return null;
+  try { const x = new URL(u); if (x.protocol !== 'https:' && x.protocol !== 'http:') return null; } catch (e) { return null; }
+  return { id: want || 'custom', title: (params.get('t') || '景品').slice(0, 60), desc: (params.get('d') || '').slice(0, 200), icon: [...(params.get('i') || '🎁')].slice(0, 2).join(''), url: u };
+})();
+const show = custom ? [custom] : want ? PRIZES.filter(p => p.id === want) : [];
 const list = show.length ? show : PRIZES;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const box = document.getElementById('list');

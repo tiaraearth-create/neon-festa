@@ -15,7 +15,7 @@ const fs = require('fs'), path = require('path'), os = require('os'), { execFile
 const [,, input, id, name, genre = 'REMIX', theme = 'cat2', hex = '#ff5e5e'] = process.argv;
 if (!input || !id || !name) { console.log('使い方: node 開発用/譜面ツール/make-chart.js <音声ファイル> <id> <表示名> [ジャンル] [テーマ] [色#hex]'); process.exit(1); }
 if (!/^[a-z0-9_]+$/.test(id)) { console.log('id は半角英数字と _ だけにしてください'); process.exit(1); }
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '..', '..');   // 開発用/譜面ツール/ → プロジェクトの一番上
 const musicDir = path.join(root, 'games', 'music');
 fs.mkdirSync(musicDir, { recursive: true });
 

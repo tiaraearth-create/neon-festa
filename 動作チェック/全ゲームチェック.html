@@ -122,7 +122,7 @@ async function testGame(g, durSec) {
   $('stageLbl').textContent = `${g.name}（${g.id}.html）`;
   stage.querySelectorAll('iframe').forEach(f => f.remove());
   stage.style.height = '420px';
-  const fr = document.createElement('iframe'); fr.src = `../games/${g.id}.html?t=${Date.now()}`;
+  const fr = document.createElement('iframe'); fr.src = `../games/${g.id}.html?fescheck=1&t=${Date.now()}`;   // fescheck=1: 記録・スタンプを残さない（common.js）
   stage.appendChild(fr);
   const t0 = performance.now();
   await new Promise(res => { fr.addEventListener('load', res, { once: true }); setTimeout(res, 8000); });

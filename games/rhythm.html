@@ -590,7 +590,8 @@ EXT_SONGS.forEach(d => SONGS.push(d));
 const SONG_ORDER = ['ext_senbonzakura', 'ext_mesmerizer', 'ext_king', 'ext_venom', 'ext_rinne', 'ext_dec', 'ext_luminous',                  // ボカロ
                     'ext_badapple',                                                                    // 東方
                     'ext_kasou',                                                                       // J-ROCK
-                    'ext_bigshot', 'ext_worldrevolving', 'ext_unwelcome',                                               // DELTARUNE
+                    'ext_bigshot', 'ext_worldrevolving',                                               // DELTARUNE
+                    'ext_unwelcome',                                                                   // ブルーアーカイブ
                     'ext_megalovania', 'ext_lastbreath', 'ext_shanghaivania', 'ext_dusttrust3', 'ext_dusttrust2', 'ext_tokyovania', 'ext_lastbreath2', 'ext_badtimetrio', 'ext_underfell', 'ext_badend',   // Sans 系
                     'ext_mashup_dustlb', 'ext_mashup_tokyoshang', 'ext_mashup_dust2fell',             // マッシュアップ
                     'neon', 'sakura', 'rock', 'ballad', 'tas', 'cat'];
@@ -1421,9 +1422,11 @@ const Music = (() => {
 
   // ---- 追加曲（音声ファイル）: <audio> をそのまま鳴らす（file:// で開いても音が出るように WebAudio は通さない）
   let ext = null, el = null, extTimer = null;
+  // 音声にも charts.js と同じ ?v= を付ける（曲を差し替えたとき、古い音声をキャッシュから鳴らさないため）
+  const AUDIO_V = (() => { const sc = document.querySelector('script[src*="charts.js"]'); const m = sc && /[?&]v=([^&]+)/.exec(sc.getAttribute('src')); return m ? '?v=' + m[1] : ''; })();
   let extLatency = 0.07;   // play() してから実際に音が出るまでの遅れ（秒）。鳴り始めのずれから学習して、次からその分早く再生する
   function extPrepare() {
-    if (!el || el.dataset.src !== ext.audio) { if (el) { try { el.pause(); } catch (e) {} } el = new Audio(ext.audio); el.preload = 'auto'; el.dataset.src = ext.audio; el.volume = 0.72; }
+    if (!el || el.dataset.src !== ext.audio) { if (el) { try { el.pause(); } catch (e) {} } el = new Audio(ext.audio + AUDIO_V); el.preload = 'auto'; el.dataset.src = ext.audio; el.volume = 0.72; }
     else { try { el.pause(); } catch (e) {} }
     try { el.load(); } catch (e) {}
   }
@@ -1811,7 +1814,7 @@ function finishGame() {
   if (G.auto) {
     FES.showResult({
       score: G.score, scoreLabel: 'pt', title: 'AUTO PLAY', subtitle: `オートプレイ（記録されません） ／ ${SONGS[G.songIdx].name} ／ ${diffLabel}`,
-      stats, ranking: false, retryLabel: 'タイトルへ',
+      stats, ranking: false, stamp: false, retryLabel: 'タイトルへ',   // オートプレイではスタンプも押さない
     }, () => showTitle());
     return;
   }
@@ -2709,7 +2712,7 @@ document.addEventListener('keydown', e => {
     else if (code === 'ArrowRight' || code === 'KeyD') { setDiff(G.diff + 1); FES.sfx('select'); }
     else if (code === 'ArrowUp' || code === 'KeyW') { setSong(G.songIdx - 1); FES.sfx('select'); }
     else if (code === 'ArrowDown' || code === 'KeyS') { setSong(G.songIdx + 1); FES.sfx('select'); }
-    else if (code === 'Digit1' || code === 'Digit2' || code === 'Digit3') { setDiff(Number(code.slice(5)) - 1); FES.sfx('select'); }
+    else if (/^Digit[1-5]$/.test(code)) { setDiff(Number(code.slice(5)) - 1); FES.sfx('select'); }   // 4・5 はエキスパート・マスター（追加曲だけ。ない曲は setDiff が丸める）
     else if (code === 'Enter' || code === 'Space') startGame();
     else if (code === 'KeyA') startGame(true);
     else if (code === 'KeyC') openCalib();

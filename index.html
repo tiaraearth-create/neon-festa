@@ -538,8 +538,22 @@ const stampRow = document.getElementById('stampRow');
 const stampNameEl = document.getElementById('stampName');
 let stampSeen = new Set();   // 前回描画時に押されていたスタンプ（新しく増えた分だけ演出する）
 let stampDoneSeen = false;
+let stampPrev = false;       // このカードを前に描いたことがあるか（初めて描くときは演出しない）
+// ゲームから戻るとページが読み込み直されるので、前回見たスタンプはタブの sessionStorage に覚えておく
+const SEEN_KEY = 'fes:stamp:seen';
+function loadSeen(card) {
+  if (stampPrev) return;
+  try {
+    const v = JSON.parse(sessionStorage.getItem(SEEN_KEY));
+    if (v && v.started === card.started) { stampSeen = new Set(v.ids || []); stampDoneSeen = !!v.done; stampPrev = true; }
+  } catch (e) {}
+}
+function saveSeen(card) {
+  try { sessionStorage.setItem(SEEN_KEY, JSON.stringify({ started: card.started, ids: Object.keys(card.stamps), done: !!card.done })); } catch (e) {}
+}
 function renderStamps() {
   const card = FES.stampCard() || FES.newStampCard('');
+  loadSeen(card);
   const n = Object.keys(card.stamps).length;
   document.getElementById('stampCount').textContent = `${n} / ${GAMES.length}`;
   if (document.activeElement !== stampNameEl) stampNameEl.value = card.name || '';
@@ -547,7 +561,7 @@ function renderStamps() {
   GAMES.forEach(g => {
     const on = !!card.stamps[g.id];
     const d = document.createElement('div');
-    const isNew = on && !stampSeen.has(g.id) && stampSeen.size;
+    const isNew = on && !stampSeen.has(g.id) && stampPrev;
     if (isNew) setTimeout(() => FES.sfx('stamp'), 250);
     d.className = 'st' + (on ? ' on' : '') + (isNew ? ' pop' : '');
     d.style.setProperty('--accent', g.accent);
@@ -564,9 +578,10 @@ function renderStamps() {
   else if (n === 0) hint.innerHTML = `${who}好きなゲームをえらんでね。1回遊ぶごとにスタンプが1つ、全部集めると殿堂入り！`;
   else hint.innerHTML = `${who}あと <b style="color:var(--gold)">${GAMES.length - n}</b> 個で殿堂入り！ 「★ おすすめ」のゲームからどうぞ。`;
   // 新しくコンプリートした瞬間だけ、お祝い
-  if (card.done && !stampDoneSeen && stampSeen.size && stampSeen.size < GAMES.length) celebrate(card);
+  if (card.done && !stampDoneSeen && stampPrev) celebrate(card);
   stampDoneSeen = !!card.done;
   stampSeen = new Set(Object.keys(card.stamps));
+  stampPrev = true; saveSeen(card);
   renderExtras(card);
 }
 /* ============================== 今日のミッション・バッジ・景品 ============================== */
@@ -669,7 +684,7 @@ guideM.addEventListener('click', e => { if (e.target === guideM) guideM.classLis
 document.getElementById('nameCancel').onclick = () => nameM.classList.remove('open');
 nameM.addEventListener('click', e => { if (e.target === nameM) nameM.classList.remove('open'); });
 document.getElementById('stampNew').onclick = () => {
-  FES.newStampCard(''); stampSeen = new Set(); stampDoneSeen = false; render();
+  FES.newStampCard(''); stampSeen = new Set(); stampDoneSeen = false; stampPrev = false; try { sessionStorage.removeItem(SEEN_KEY); } catch (e) {} render();
   FES.toast('新しいスタンプカードにしました。なまえをえらんでスタート！');
   openNamePicker();
 };
@@ -903,7 +918,7 @@ document.addEventListener('keydown', e => {
 FES.init({ id: 'hub', title: '', buttons: false });
 render();
 // 他タブ/ゲームから戻ってきたら最新ランキングに更新
-addEventListener('pageshow', render);
+addEventListener('pageshow', e => { if (e.persisted) render(); });   // 初回は上で描いたので、戻る（bfcache）のときだけ
 // 部屋の PC: 共有ランキングが変わったときだけ描き直す（20秒ごとに同期。毎回描き直すとカードがチラつく）
 let lastSynced = '';
 addEventListener('fes:sync', () => {

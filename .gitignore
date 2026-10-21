@@ -1,7 +1,6 @@
-# ---- 公開しないもの（GitHub には index.html / common.js / games/ だけを入れる）----
+# ---- 公開しないもの（GitHub に上げるのは index.html・common.js・preview.js・qrcode.js・games/ と、運営ページ admin/board/setup/prize.html、動作チェック/、開発用/譜面ツール/）----
 README.md
 SPEC.md
-qrcode.js
 起動.bat
 ローカルサーバー/
 USB用/

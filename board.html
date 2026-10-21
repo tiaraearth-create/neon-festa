@@ -42,12 +42,12 @@
   /* 右: 全ゲームのチャンピオン */
   .champ { display: flex; flex-direction: column; }
   .champ h2 { margin: 0 0 1.2vh; font-size: 2.6vh; letter-spacing: .2em; color: var(--gold); }
-  .champ ul { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; display: grid; grid-auto-rows: 1fr; gap: .7vh; }
-  .champ li { display: grid; grid-template-columns: 4.6vh 1fr auto; align-items: center; gap: .9vw; padding: 0 1vw; min-height: 0; overflow: hidden; border-radius: 1.4vh; background: rgba(255,255,255,.05); font-size: 2.4vh; transition: background .4s; }
+  .champ ul { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; display: grid; grid-auto-rows: 1fr; gap: .5vh; }
+  .champ li { display: grid; grid-template-columns: 4.6vh 1fr auto; align-items: center; gap: .9vw; padding: 0 1vw; min-height: 0; overflow: hidden; border-radius: 1.4vh; background: rgba(255,255,255,.05); font-size: 2.1vh; line-height: 1.15; transition: background .4s; }   /* 13 ゲーム分が縦に収まる大きさ */
   .champ li.cur { background: color-mix(in srgb, var(--accent) 28%, transparent); }
-  .champ li .ic { font-size: 3vh; text-align: center; }
-  .champ li .gt { font-size: 1.6vh; color: var(--muted); display: block; }
-  .champ li .who { font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .champ li .ic { font-size: 2.6vh; text-align: center; }
+  .champ li .gt { font-size: 1.4vh; color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .champ li .who { display: block; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .champ li .pt { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--gold); }
   .champ li.none .who { color: var(--muted); font-weight: 600; }
   footer { display: flex; align-items: center; justify-content: space-between; font-size: 2vh; color: var(--muted); gap: 2vw; }
@@ -112,6 +112,9 @@ const GAMES = [
   { id: 'hockey',   title: 'ネオンエアホッケー',    genre: '対戦',          icon: '🏒', accent: '#3fd8ff' },
   { id: 'quiz',     title: '早押しクイズ王',        genre: 'クイズ',        icon: '❓', accent: '#ff6b6b' },
   { id: 'breakout', title: 'ネオンブレイカー',      genre: 'アーケード',     icon: '🧱', accent: '#a5f3fc' },
+  { id: 'fps',      title: 'ネオンストライク',      genre: 'FPSシューティング', icon: '🎯', accent: '#ff7ab8' },
+  { id: 'stack',    title: 'ネオンスタック',        genre: 'タイミング',     icon: '🏗️', accent: '#ffb347' },
+  { id: 'memory',   title: 'メモリーフラッシュ',    genre: '記憶',          icon: '🧠', accent: '#c86bff' },
 ];
 const N_GAMES = GAMES.length + 1;   // スタンプラリーの対象（ランキングのないネオンデュエルも入る）
 const SLIDE_SEC = 8, POLL_SEC = 15;
@@ -162,7 +165,7 @@ function renderSlides() {
   const fresh = Date.now() - 10 * 60 * 1000;
   const top = (data.hall || []).slice(0, 8);
   hall.innerHTML = `<div class="g-head"><div class="g-icon">🏅</div><div><div class="g-genre">STAMP RALLY</div><div class="g-title">殿堂</div><div class="g-sub">全 ${N_GAMES} ゲームをクリアした人 · 速い順</div></div></div>
-    <ol class="top hall">${top.length ? top.map((e, i) => `<li class="r${i + 1}"><span class="rk">${['🥇', '🥈', '🥉'][i] || i + 1}</span><span class="nm">${esc(e.name)}${e.created_at > fresh ? '<span class="tag">NEW</span>' : ''}</span><span class="tm">${fmtTime(e.time_ms)}</span></li>`).join('')
+    <ol class="top hall">${top.length ? top.map((e, i) => `<li class="r${i + 1}"><span class="rk">${['🥇', '🥈', '🥉'][i] || i + 1}</span><span class="nm">${esc(e.name)}${e.date > fresh ? '<span class="tag">NEW</span>' : ''}</span><span class="tm">${fmtTime(e.timeMs)}</span></li>`).join('')
       : `<li class="empty">まだいない — 全 ${N_GAMES} ゲーム遊ぶと殿堂入り！</li>`}</ol>`;
   wrap.appendChild(hall); slideEls.push(hall);
   // 案内（スタンプラリー・遊び方）
@@ -210,7 +213,7 @@ function detectNewChamps() {
 // 新しく殿堂入りした人も大きく表示（起動時にすでにある記録は出さない）
 let hallSeen = null;
 function detectNewHall() {
-  const key = e => `${e.name}|${e.time_ms}|${e.created_at}`;
+  const key = e => `${e.name}|${e.timeMs}|${e.date}`;
   const now = new Set((data.hall || []).map(key));
   if (hallSeen) (data.hall || []).forEach(e => { if (!hallSeen.has(key(e))) flashQueue.push({ hall: e }); });
   hallSeen = now;
@@ -223,7 +226,7 @@ function nextFlash() {
     $('flash').firstElementChild.textContent = 'HALL OF FAME!';
     $('fName').textContent = f.hall.name;
     $('fGame').textContent = `🏅 殿堂入り！ 全 ${N_GAMES} ゲームクリア`;
-    $('fScore').textContent = fmtTime(f.hall.time_ms);
+    $('fScore').textContent = fmtTime(f.hall.timeMs);
   } else {
     $('flash').firstElementChild.textContent = 'NEW CHAMPION!';
     $('fName').textContent = f.b.name;

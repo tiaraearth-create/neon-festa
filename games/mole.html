@@ -44,9 +44,9 @@ const KEYMAP = {
   KeyQ: [0, 0], KeyW: [1, 0], KeyE: [2, 0], KeyR: [3, 0],
   KeyA: [0, 1], KeyS: [1, 1], KeyD: [2, 1], KeyF: [3, 1],
   KeyZ: [0, 2], KeyX: [1, 2], KeyC: [2, 2], KeyV: [3, 2],
-  Numpad7: [0, 0], Numpad8: [1, 0], Numpad9: [2, 0],
-  Numpad4: [0, 1], Numpad5: [1, 1], Numpad6: [2, 1],
-  Numpad1: [0, 2], Numpad2: [1, 2], Numpad3: [2, 2],
+  Numpad7: [0, 0], Numpad8: [1, 0], Numpad9: [2, 0], NumpadSubtract: [3, 0],   // 4列目（30秒から）はテンキー右の － ＋ Enter
+  Numpad4: [0, 1], Numpad5: [1, 1], Numpad6: [2, 1], NumpadAdd: [3, 1],
+  Numpad1: [0, 2], Numpad2: [1, 2], Numpad3: [2, 2], NumpadEnter: [3, 2],
 };
 
 /* ================================================================ ユーティリティ */
@@ -575,6 +575,7 @@ function beginPlay() {
 function endGame() {
   G.state = 'timeup';
   G.timeupT = 0;
+  if (G.fever > 0) FES.fever(false);
   G.fever = 0;
   hideAllMoles(false);
   bgmStop();

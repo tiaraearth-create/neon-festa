@@ -1,6 +1,8 @@
 """
 Generate rhythm-game charts for NEON FESTA "Rhythm Stars" from the songs' MIDI data.
-Output: E:/NEON-FESTA_ゲーム本体/games/rhythm_songs.js  (window.AUDIO_SONGS)
+※ 今はこのファイルを直接実行しない。make_charts_ext.py が 'W = "./"' より前（譜面を作る関数）だけを読み込んで使う。
+   下の SONGS と書き出し先（古い rhythm_songs.js / window.AUDIO_SONGS）は昔の版の名残で、どこからも読まれていない。
+   曲を足す・譜面を作り直すときは make_charts_ext.py を実行する（games/music/charts.js に書く）。
 Chart note: [t_sec, lane(0-3), end_sec_or_0, src('mel'|'drum'|'chord')]
 """
 import mido, json, math, os
@@ -236,6 +238,8 @@ def song(cfg):
     return d
 
 W = "./"
+if __name__ == "__main__":
+    raise SystemExit("make_charts.py は部品です。python make_charts_ext.py を実行してください（games/music/charts.js を作ります）")
 SONGS = [
     dict(id='shanghai', name='シャンハイバニア -NOAU REMIX-', genre='INK SANS REMIX', bpm=189, theme='sakura', color=[255, 110, 160], hex='#ff6ea0',
          audio='rhythm/shanghaivania.mp3', length=204.1, midi=W + 'shanghaivania_take1.mid', lead='Violin (Classic)', drums='Electric Drum Kit', kick=(36,), snare=(40,),

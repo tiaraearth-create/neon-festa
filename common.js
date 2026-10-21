@@ -27,9 +27,14 @@
   FES.feedbackUrl = FEEDBACK_URL;
 
   /* ------------------------------------------------------------ 保存 */
+  // 動作チェック（動作チェック/全ゲームチェック.html が ?fescheck=1 を付けて開く）のときは、記録・スタンプ・殿堂を
+  // このページの中だけに置いて、PC のランキングや共有サーバーには残さない（部屋の PC で回してもテスト記録が出ない）
+  const TEST = /[?&]fescheck=1(&|$)/.test(global.location ? global.location.search : '');
+  FES.isTestRun = () => TEST;
+  const mem = new Map();
   const LS = {
-    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+    get(k, d) { if (TEST && mem.has(k)) return JSON.parse(mem.get(k)); try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { if (TEST) { mem.set(k, JSON.stringify(v)); return; } try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   };
   const rankKey = id => `fes:${id}:ranking`;
 
@@ -55,18 +60,24 @@
       .finally(() => timer && clearTimeout(timer));
   }
   FES.api = api;
-  /** 送れなかった記録を1件ずつ送り直す（サーバーの連打制限に引っかからないよう少しずつ） */
+  // 送り直す価値のある失敗: 通信エラー・連打制限・サーバーエラー・ルームキー違い（キーを登録し直せば送れる）。それ以外の 400 系は捨てる
+  const retryable = e => !e.status || e.status === 429 || e.status === 401 || e.status === 403 || e.status >= 500;
+  /** 送れなかった記録を送り直す。サーバーの連打制限（同じPCから10秒に3件）に引っかからないよう、1回の同期で2件まで */
   async function flushQueue() {
-    const q = LS.get(QUEUE_KEY, []);
-    if (!q.length) return;
-    const item = q[0];
-    try { await api(item.path, { method: 'POST', body: item.body }); }
-    catch (e) { if (!e.status || e.status === 429 || e.status >= 500) return; }   // 通信エラー等は次回また送る。400系は捨てる
-    LS.set(QUEUE_KEY, LS.get(QUEUE_KEY, []).slice(1));
+    if (TEST) return;
+    for (let i = 0; i < 2; i++) {
+      const q = LS.get(QUEUE_KEY, []);
+      if (!q.length) return;
+      const item = q[0];
+      try { await api(item.path, { method: 'POST', body: item.body }); }
+      catch (e) { if (retryable(e)) return; }   // 次の同期でまた送る
+      LS.set(QUEUE_KEY, LS.get(QUEUE_KEY, []).slice(1));
+    }
   }
   function postOrQueue(path, body) {
+    if (TEST) return;
     api(path, { method: 'POST', body }).catch(e => {
-      if (e.status && e.status !== 429 && e.status < 500) return;
+      if (!retryable(e)) return;
       const q = LS.get(QUEUE_KEY, []); q.push({ path, body }); LS.set(QUEUE_KEY, q.slice(-200));
     });
   }
@@ -980,7 +991,7 @@
         const name = picker.value();
         FES.setCurrentName(name);
         const top = FES.saveScore(name, score);
-        const mine = top.find(e => e.name === name && e.score === score);
+        const mine = top.filter(e => e.name === name && e.score === score).sort((x, y) => y.date - x.date)[0];   // 同じ名前・同じ点の古い記録があっても、今の記録を光らせる
         nameBox.remove(); submitName = null;
         renderRank(mine ? mine.date : null);
         FES.sfx('coin');
@@ -1154,7 +1165,14 @@
   FES.defaultPrizes = () => DEFAULT_PRIZES.map(p => Object.assign({}, p));
   FES.prizes = () => { const v = LS.get(PRIZES_KEY, null); return Array.isArray(v) && v.length ? v : FES.defaultPrizes(); };
   FES.setPrizes = list => { if (!list) { LS.set(PRIZES_KEY, null); return FES.prizes(); } LS.set(PRIZES_KEY, list.map(p => ({ id: p.id, title: String(p.title || '').trim(), desc: String(p.desc || '').trim(), icon: p.icon || '🎁', url: String(p.url || '').trim(), cond: p.cond || 'complete' }))); return FES.prizes(); };
-  FES.prizeQrUrl = p => `${PRIZE_PAGE}?p=${encodeURIComponent(p.id)}`;
+  // 既定のままなら ?p=ID だけ。スタッフが URL や名前を変えた景品は、URL・名前・アイコンも QR に入れる（prize.html は別の端末で開くので、このPCの設定を読めない。説明文は QR が細かくなるので入れない）
+  FES.prizeQrUrl = p => {
+    const d = DEFAULT_PRIZES.find(x => x.id === p.id);
+    if (d && d.url === p.url && d.title === p.title) return `${PRIZE_PAGE}?p=${encodeURIComponent(p.id)}`;
+    const q = new URLSearchParams({ p: p.id, u: p.url, t: p.title || '景品' });
+    if (p.icon) q.set('i', p.icon);
+    return `${PRIZE_PAGE}?${q}`;
+  };
   const condMet = (cond, c) => { const n = Object.keys(c.stamps || {}).length; return cond === 'any' ? n >= 1 : cond === 'mission' ? FES.missionsDone(c) : cond === 'complete' ? !!c.done : false; };
   /** いまのカードでもらえる景品の一覧 */
   FES.eligiblePrizes = function (c) { c = c || FES.stampCard(); if (!c) return []; return FES.prizes().filter(p => p.url && condMet(p.cond, c)); };
