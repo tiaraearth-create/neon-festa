@@ -318,6 +318,7 @@
     <div class="complete-big">コンプリート！</div>
     <div style="font-size:18px;font-weight:800" id="cName">ななし</div>
     <div style="color:var(--muted);font-size:14px;margin:6px 0 18px" id="cTime"></div>
+    <div id="cAward" style="display:none;margin:-8px 0 16px;padding:10px 14px;border-radius:14px;font-weight:900;color:#2a2200;background:linear-gradient(90deg,#ffd36e,#ffb347)">📜 スタッフを呼んでね！ 殿堂入りの表彰状に、名前とタイムを書いてわたします</div>
     <div id="cPrize"></div>
     <div class="mact">
       <button class="act" id="cHall">🏅 殿堂を見る</button>
@@ -658,6 +659,7 @@ function celebrate(card) {
   if (ep.length) { cp.innerHTML = `<div style="font-weight:900;color:var(--gold);margin-bottom:6px">🎁 景品ゲット！</div><div class="prize-list"></div><div style="color:var(--muted);font-size:12px;margin-top:6px">スマホのカメラで読んでね</div>`; const box = cp.querySelector('.prize-list'); ep.forEach(p => { const d = document.createElement('div'); d.className = 'prize-item'; d.innerHTML = `<div class="pt">${esc(p.icon || '🎁')} ${esc(p.title)}</div><div class="qrwrap"></div>`; box.appendChild(d); drawQR(d.querySelector('.qrwrap'), FES.prizeQrUrl(p)); }); }
   document.getElementById('cName').textContent = (card.name || 'ななし') + ' さん';
   document.getElementById('cTime').textContent = `${GAMES.length} 個のスタンプを ${FES.formatDuration(card.done - card.started)} で集めました`;
+  document.getElementById('cAward').style.display = FES.isRoomPC() ? '' : 'none';   // 表彰状は会場の PC だけ（手でわたす）
   document.getElementById('complete').classList.add('open');
   if (window.__fesBurst) window.__fesBurst(160);
 }

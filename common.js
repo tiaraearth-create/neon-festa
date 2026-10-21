@@ -923,6 +923,8 @@
         row.appendChild(el('div', { class: 'fes-stamp' + (on ? ' on' : '') + (isNew ? ' new' : ''), style: `--c:${g.accent || '#ff4d8d'}`, text: g.icon || '★', title: g.title || '' }));
       });
       card.appendChild(lbl); card.appendChild(row);
+      // 会場の PC だけ: 手でわたす景品（シール＝遊んだ人みんな、表彰状＝殿堂入り）の案内
+      if (FES.isRoomPC()) card.appendChild(el('div', { class: 'fes-stamp-lbl', html: cardNow.done ? '📜 <b>スタッフを呼んでね！</b> 殿堂入りの表彰状をもらえるよ' : '🌟 帰るときに <b>出口で NEON FESTA シール</b> をもらってね' }));
       if (st && st.added) setTimeout(() => { FES.sfx('stamp'); FES.vibrate(30); }, 650);
       if (st && st.complete) setTimeout(() => { FES.sfx('powerup'); FES.toast('🎉 スタンプ コンプリート！ ホームで殿堂入りを確認しよう', 4000); confetti(4000); }, 1300);
       // ミッション・バッジ（新しく達成したものだけ大きく出す）
