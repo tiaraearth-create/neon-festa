@@ -272,10 +272,10 @@
     </div>
     <div class="start-cta" id="startCta">
       <button class="act big" id="startBtn">▶ はじめる　— なまえをえらぶ</button>
-      <div class="start-sub">ゲームを1回遊ぶごとにスタンプが1つ。全部集めると 🏅 殿堂入り！</div>
+      <div class="start-sub">ゲームを1回遊ぶごとにスタンプが1つ。3個・5個で 🎁 景品、全部集めると 🏅 殿堂入り！</div>
     </div>
     <div class="stamp-row" id="stampRow"></div>
-    <p class="stamp-hint" id="stampHint">ゲームを1回遊ぶごとにスタンプが1つ。全部集めると殿堂入り！</p>
+    <p class="stamp-hint" id="stampHint">ゲームを1回遊ぶごとにスタンプが1つ。3個・5個で景品、全部集めると殿堂入り！</p>
     <div class="extras">
       <div class="mission-box" id="missionBox"></div>
       <div class="badge-box" id="badgeBox"></div>
@@ -348,7 +348,7 @@
     <div class="guide-steps">
       <div class="gstep"><div class="gi">🎮</div><div class="gn">①</div><div class="gt">すきなゲームをえらぶ</div></div>
       <div class="gstep"><div class="gi">▶</div><div class="gn">②</div><div class="gt">1回あそぶ（1〜3分）</div></div>
-      <div class="gstep"><div class="gi">🎟</div><div class="gn">③</div><div class="gt">スタンプがたまる。全部で 🏅 殿堂入り</div></div>
+      <div class="gstep"><div class="gi">🎟</div><div class="gn">③</div><div class="gt">スタンプがたまる。3個・5個で 🎁 景品、全部で 🏅 殿堂入り</div></div>
     </div>
     <div style="color:var(--muted);font-size:13px;margin:4px 0 14px">ランク <b style="color:var(--gold)">S</b> をねらうと バッジ がもらえるよ 💎</div>
     <div class="mact"><button class="act" id="guideOk">わかった！ はじめる</button></div>
@@ -576,8 +576,8 @@ function renderStamps() {
   const hint = document.getElementById('stampHint');
   const who = card.name ? `<span class="greet">こんにちは、<b>${esc(card.name)}</b> さん！</span> ` : '';
   if (card.done) hint.innerHTML = `🎉 ${esc(card.name || 'ななし')} さん コンプリート！（${FES.formatDuration(card.done - card.started)}）「次の人」で新しいカードにできます。`;
-  else if (n === 0) hint.innerHTML = `${who}好きなゲームをえらんでね。1回遊ぶごとにスタンプが1つ、全部集めると殿堂入り！`;
-  else hint.innerHTML = `${who}あと <b style="color:var(--gold)">${GAMES.length - n}</b> 個で殿堂入り！ 「★ おすすめ」のゲームからどうぞ。`;
+  else if (n === 0) hint.innerHTML = `${who}好きなゲームをえらんでね。1回遊ぶごとにスタンプが1つ、3個・5個で景品、全部集めると殿堂入り！`;
+  else { const nx = FES.nextPrize(card); hint.innerHTML = nx ? `${who}あと <b style="color:var(--gold)">${nx.rest}</b> 個で ${esc(nx.icon)} ${esc(nx.title)}！ 「★ おすすめ」のゲームからどうぞ。` : `${who}あと <b style="color:var(--gold)">${GAMES.length - n}</b> 個で殿堂入り！ 「★ おすすめ」のゲームからどうぞ。`; }
   // 新しくコンプリートした瞬間だけ、お祝い
   if (card.done && !stampDoneSeen && stampPrev) celebrate(card);
   stampDoneSeen = !!card.done;
@@ -603,8 +603,8 @@ function renderExtras(card) {
   if (FES.prizeEligible(card)) {
     const btn = document.createElement('button'); btn.className = 'prize-cta'; btn.textContent = '🎁 景品のQRコードを見る';
     btn.onclick = () => openPrize(card); bb.appendChild(btn);
-    const key = FES.eligiblePrizes(card).map(p => p.id).sort().join(',');
-    if (card.prizeShown !== key) { card.prizeShown = key; try { localStorage.setItem('fes:stamp:card', JSON.stringify(card)); } catch (e) {} setTimeout(() => openPrize(card), 900); }
+    // ふつうはゲームの結果画面で先に見せている。まだ見せていない景品があるときだけ、ここで開く
+    if (FES.claimPrizes(card).some(x => x.kind === 'qr')) setTimeout(() => openPrize(card), 900);
   }
 }
 const prizeM = document.getElementById('prizeM');
@@ -632,7 +632,7 @@ function openPrizeSettings() {
     d.innerHTML = `<div><label>景品 ${i + 1}：なまえ</label><input data-k="title" value="${esc(p.title)}"></div>` +
       `<div><label>ひとこと</label><input data-k="desc" value="${esc(p.desc || '')}"></div>` +
       `<div><label>ゲームの URL（空にすると出さない）</label><input data-k="url" value="${esc(p.url || '')}" placeholder="https://..."></div>` +
-      `<div><label>もらえる条件</label><select data-k="cond">${['mission', 'complete', 'any', 'off'].map(c => `<option value="${c}"${p.cond === c ? ' selected' : ''}>${esc(FES.prizeCondLabel(c))}</option>`).join('')}</select></div>`;
+      `<div><label>もらえる条件</label><select data-k="cond">${FES.prizeConds().map(c => `<option value="${c}"${p.cond === c ? ' selected' : ''}>${esc(FES.prizeCondLabel(c))}</option>`).join('')}</select></div>`;
     d.dataset.icon = p.icon || '🎁';
     rows.appendChild(d);
   });

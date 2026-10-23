@@ -559,6 +559,26 @@
   .fes-badge span { font-size: 12px; color: rgba(255,255,255,.8); }
   .fes-badge.mission { background: linear-gradient(135deg, rgba(92,255,141,.2), rgba(94,231,255,.16)); border-color: rgba(92,255,141,.5); box-shadow: 0 0 24px rgba(92,255,141,.2); }
   .fes-badge.mission b { color: #8dffb5; }
+  .fes-ladder { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 6px 0 4px; }
+  .fes-ladder .st { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: rgba(255,255,255,.06); border: 1px dashed rgba(255,255,255,.25); color: rgba(255,255,255,.7); }
+  .fes-ladder .st.done { background: linear-gradient(90deg, rgba(255,211,110,.3), rgba(255,179,71,.25)); border: 1px solid #ffd36e; color: #ffe9b0; }
+  .fes-ladder .st b { color: #ffd36e; }
+  .fes-next { font-size: 14px; font-weight: 900; color: #fff; margin: 2px 0 6px; }
+  .fes-next b { color: #ffd36e; font-size: 18px; }
+  .fes-get .fes-getcard { width: min(94vw, 640px); overflow-x: hidden; border-color: #ffd36e; box-shadow: 0 0 60px rgba(255,211,110,.35); }
+  .fes-get-big { font-size: clamp(30px, 6vw, 48px); font-weight: 900; color: #ffd36e; letter-spacing: .04em; text-shadow: 0 0 24px rgba(255,211,110,.6); animation: fesPop .6s cubic-bezier(.2,1.4,.4,1) both, fesBump 1.4s ease-in-out .8s infinite; margin: 4px 0 12px; }
+  .fes-get-list { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .fes-get-item { flex: 1 1 200px; max-width: 280px; padding: 14px 12px 12px; border-radius: 16px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,211,110,.5); animation: fesPop .55s cubic-bezier(.2,1.4,.4,1) .25s both; }
+  .fes-get-ic { font-size: 44px; line-height: 1.1; }
+  .fes-get-t { font-size: 18px; font-weight: 900; color: #ffd36e; margin: 4px 0 2px; }
+  .fes-get-d { font-size: 12px; color: rgba(255,255,255,.75); line-height: 1.4; margin-bottom: 6px; }
+  .fes-get-how { font-size: 14px; font-weight: 800; color: #fff; margin-top: 6px; }
+  .fes-get-qr { display: inline-block; padding: 10px; background: #fff; border-radius: 12px; color: #333; min-width: 60px; }
+  .fes-get-qr svg { display: block; width: 170px; height: 170px; }
+  .fes-get-open { display: inline-block; margin-top: 8px; }
+  .fes-get-next { margin: 14px 0 2px; font-size: 15px; font-weight: 800; }
+  .fes-get-next b { color: #ffd36e; font-size: 20px; }
+  .fes-get-note { font-size: 12px; color: rgba(255,255,255,.6); margin-top: 6px; }
   .fes-prize { margin: 10px 0 2px; padding: 10px 14px; border-radius: 14px; font-weight: 900; color: #2a2200; background: linear-gradient(90deg, #ffd36e, #ffb347); animation: fesBump 1.2s ease-in-out infinite; }
   .fes-howto { position: fixed; left: 50%; bottom: 9vh; transform: translateX(-50%); z-index: 8980; pointer-events: none; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; max-width: min(94vw, 900px); animation: fesFade .3s ease both; }
   .fes-howto.out { animation: fesFeverOut .4s ease both; }
@@ -852,7 +872,7 @@
   FES.confetti = confetti;
 
   let overlay = null;
-  FES.hideResult = function () { if (overlay) { overlay.remove(); overlay = null; } document.querySelectorAll('.fes-confetti').forEach(c => c.remove()); };
+  FES.hideResult = function () { FES.closePrizeGet(); if (overlay) { overlay.remove(); overlay = null; } document.querySelectorAll('.fes-confetti').forEach(c => c.remove()); };
 
   /**
    * リザルト画面を表示する。
@@ -915,7 +935,7 @@
       const have = cardNow.stamps || {};
       const n = Object.keys(have).filter(k => games.some(g => g.id === k)).length;
       const lbl = el('div', { class: 'fes-stamp-lbl' });
-      lbl.innerHTML = cardNow.done ? '🏅 スタンプ <b>コンプリート！</b> 殿堂入り' : `🎟 スタンプ <b>${n} / ${games.length}</b>${n < games.length ? `　あと ${games.length - n} 個で殿堂入り` : ''}`;
+      lbl.innerHTML = cardNow.done ? '🏅 スタンプ <b>コンプリート！</b> 殿堂入り' : `🎟 スタンプ <b>${n} / ${games.length}</b>`;
       const row = el('div', { class: 'fes-stamps' });
       games.forEach(g => {
         const on = !!have[g.id];
@@ -923,8 +943,20 @@
         row.appendChild(el('div', { class: 'fes-stamp' + (on ? ' on' : '') + (isNew ? ' new' : ''), style: `--c:${g.accent || '#ff4d8d'}`, text: g.icon || '★', title: g.title || '' }));
       });
       card.appendChild(lbl); card.appendChild(row);
-      // 会場の PC だけ: 手でわたす景品（シール＝遊んだ人みんな、表彰状＝殿堂入り）の案内
+      // 景品のはしご（スタンプ何個で何がもらえるか）と、つぎの景品まであと何個か
+      const ladder = FES.prizeLadder(cardNow);
+      if (ladder.length) {
+        const lrow = el('div', { class: 'fes-ladder' });
+        ladder.forEach(x => lrow.appendChild(el('span', { class: 'st' + (x.done ? ' done' : '') }, [document.createTextNode(x.done ? '✔ ' : ''), el('b', { text: x.need ? `${x.need}個` : '🎯' }), document.createTextNode(` ${x.icon} ${x.title}`)])));
+        card.appendChild(lrow);
+        const nx = FES.nextPrize(cardNow);
+        if (nx) card.appendChild(el('div', { class: 'fes-next' }, [document.createTextNode('🎁 あと '), el('b', { text: String(nx.rest) }), document.createTextNode(` 個で ${nx.icon} ${nx.title}！`)]));
+      }
+      // 会場の PC だけ: 手でわたす景品の案内（もらえることが決まったあと、ずっと出しておく）
       if (FES.isRoomPC()) card.appendChild(el('div', { class: 'fes-stamp-lbl', html: cardNow.done ? '📜 <b>スタッフを呼んでね！</b> 殿堂入りの表彰状をもらえるよ' : '🌟 帰るときに <b>出口で NEON FESTA シール</b> をもらってね' }));
+      // 新しくもらえるようになった景品は、結果画面の上に大きく出す（スタンプの音のあと）
+      const freshP = FES.claimPrizes(FES.stampCard());
+      if (freshP.length) setTimeout(() => { if (overlay) FES.showPrizeGet(freshP); }, st && st.complete ? 2200 : 1400);
       if (st && st.added) setTimeout(() => { FES.sfx('stamp'); FES.vibrate(30); }, 650);
       if (st && st.complete) setTimeout(() => { FES.sfx('powerup'); FES.toast('🎉 スタンプ コンプリート！ ホームで殿堂入りを確認しよう', 4000); confetti(4000); }, 1300);
       // ミッション・バッジ（新しく達成したものだけ大きく出す）
@@ -946,7 +978,7 @@
       }
       const ep = FES.eligiblePrizes(FES.stampCard());
       if (ep.length) {
-        card.appendChild(el('div', { class: 'fes-prize', text: `🎁 景品ゲット！ ${ep.map(p => p.icon + ' ' + p.title).join('　')} — ホーム画面で QRコード を読んでね` }));
+        card.appendChild(el('div', { class: 'fes-prize', style: 'cursor:pointer', text: `🎁 もらった景品：${ep.map(p => p.icon + ' ' + p.title).join('　')}（タップで QR をもう一度）`, onclick: () => FES.showPrizeGet(FES.prizeLadder().filter(x => x.kind === 'qr' && x.done), { quiet: true }) }));
       }
     }
 
@@ -1039,6 +1071,8 @@
     const key = e => {
       if (!overlay) { document.removeEventListener('keydown', key); return; }
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      // 景品ゲットの画面が出ているときは、Enter/Space で閉じるだけ（うっかりリトライしない）
+      if (prizeEl && (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape')) { e.preventDefault(); FES.closePrizeGet(); return; }
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (submitName) submitName(); else retryBtn.click(); }
     };
     setTimeout(() => document.addEventListener('keydown', key), 600);
@@ -1159,12 +1193,23 @@
   const PRIZES_KEY = 'fes:prizes';
   const PRIZE_PAGE = 'https://tiaraearth-create.github.io/neon-festa/prize.html';   // QR の行き先（ホーム画面に追加のしかた付き）
   const DEFAULT_PRIZES = [
-    { id: 'blitz', title: 'Block Blitz Arena', desc: 'ブロックパズル × オンライン対戦。1v1 ランクマッチ・2v2・レイドボス', icon: '🧩', url: 'https://block-blitz-arena.onrender.com/', cond: 'mission' },
-    { id: 'core', title: 'コア工場タイクーン', desc: '施設を建ててコインを稼ぎ、敵からコアを守るタイクーン × 防衛', icon: '🏭', url: 'https://core-factory-tycoon.onrender.com/', cond: 'complete' },
+    { id: 'blitz', title: 'Block Blitz Arena', desc: 'ブロックパズル × オンライン対戦。1v1 ランクマッチ・2v2・レイドボス', icon: '🧩', url: 'https://block-blitz-arena.onrender.com/', cond: 'n3' },
+    { id: 'core', title: 'コア工場タイクーン', desc: '施設を建ててコインを稼ぎ、敵からコアを守るタイクーン × 防衛', icon: '🏭', url: 'https://core-factory-tycoon.onrender.com/', cond: 'n5' },
   ];
-  const COND_LABEL = { complete: '全部のゲームを遊ぶ（殿堂入り）', mission: '今日のミッションを全部クリア', any: '1回でも遊んだ人みんな', off: '配らない' };
+  // 条件 'nN' = スタンプ N 個（2026/10/23 に「みんながもらえるように」ミッション・全部 から変更）
+  const COND_LABEL = { any: '1回でも遊んだ人みんな', n3: 'スタンプ 3 個（ゲームを 3 つ遊ぶ）', n5: 'スタンプ 5 個（ゲームを 5 つ遊ぶ）', mission: '今日のミッションを全部クリア', complete: '全部のゲームを遊ぶ（殿堂入り）', off: '配らない' };
+  FES.prizeConds = () => Object.keys(COND_LABEL);
   FES.prizeCondLabel = c => COND_LABEL[c] || c;
   FES.defaultPrizes = () => DEFAULT_PRIZES.map(p => Object.assign({}, p));
+  // 前の既定（ミッション → Block Blitz、殿堂入り → コア工場）のまま保存してある PC は、新しい既定に1回だけ置きかえる
+  if (!LS.get('fes:prizes:v2', false)) {
+    const old = LS.get(PRIZES_KEY, null);
+    if (Array.isArray(old)) {
+      old.forEach(p => { if (p.id === 'blitz' && p.cond === 'mission') p.cond = 'n3'; if (p.id === 'core' && p.cond === 'complete') p.cond = 'n5'; });
+      LS.set(PRIZES_KEY, old);
+    }
+    LS.set('fes:prizes:v2', true);
+  }
   FES.prizes = () => { const v = LS.get(PRIZES_KEY, null); return Array.isArray(v) && v.length ? v : FES.defaultPrizes(); };
   FES.setPrizes = list => { if (!list) { LS.set(PRIZES_KEY, null); return FES.prizes(); } LS.set(PRIZES_KEY, list.map(p => ({ id: p.id, title: String(p.title || '').trim(), desc: String(p.desc || '').trim(), icon: p.icon || '🎁', url: String(p.url || '').trim(), cond: p.cond || 'complete' }))); return FES.prizes(); };
   // 既定のままなら ?p=ID だけ。スタッフが URL や名前を変えた景品は、URL・名前・アイコンも QR に入れる（prize.html は別の端末で開くので、このPCの設定を読めない。説明文は QR が細かくなるので入れない）
@@ -1175,10 +1220,97 @@
     if (p.icon) q.set('i', p.icon);
     return `${PRIZE_PAGE}?${q}`;
   };
-  const condMet = (cond, c) => { const n = Object.keys(c.stamps || {}).length; return cond === 'any' ? n >= 1 : cond === 'mission' ? FES.missionsDone(c) : cond === 'complete' ? !!c.done : false; };
+  /** 条件に必要なスタンプの数（スタンプの数で決まらない条件は 0） */
+  const condNeed = cond => cond === 'any' ? 1 : /^n\d+$/.test(cond) ? +cond.slice(1) : 0;
+  const condMet = (cond, c) => { const n = Object.keys(c.stamps || {}).length, need = condNeed(cond); return need ? n >= need : cond === 'mission' ? FES.missionsDone(c) : cond === 'complete' ? !!c.done : false; };
   /** いまのカードでもらえる景品の一覧 */
   FES.eligiblePrizes = function (c) { c = c || FES.stampCard(); if (!c) return []; return FES.prizes().filter(p => p.url && condMet(p.cond, c)); };
   FES.prizeEligible = c => FES.eligiblePrizes(c).length > 0;
+
+  /**
+   * 景品のはしご（スタンプの数の順）。[{ id, kind:'hand'|'qr', icon, title, need, done, prize? }]
+   * シールと表彰状は手でわたすので会場の PC だけに出す。ミッション条件の QR は数で並べられないので最後。
+   */
+  FES.prizeLadder = function (c) {
+    c = c || FES.stampCard() || { stamps: {} };
+    const total = FES.stampTotal(), list = [];
+    if (FES.isRoomPC()) list.push({ id: 'sticker', kind: 'hand', icon: '🌟', title: 'NEON FESTA シール', need: 1, how: '帰るときに 出口でスタッフからもらってね' });
+    FES.prizes().filter(p => p.url && p.cond !== 'off').forEach(p => {
+      const need = p.cond === 'complete' ? total : condNeed(p.cond);
+      list.push({ id: p.id, kind: 'qr', icon: p.icon || '🎁', title: p.title, need: need || 0, cond: p.cond, prize: p });
+    });
+    if (FES.isRoomPC()) list.push({ id: 'award', kind: 'hand', icon: '📜', title: '殿堂入りの表彰状', need: total, cond: 'complete', how: 'スタッフを呼んでね！ 名前とタイムを書いてわたします' });
+    list.forEach(x => { x.done = x.kind === 'qr' ? condMet(x.cond, c) : x.id === 'award' ? !!c.done : Object.keys(c.stamps || {}).length >= 1; });
+    return list.sort((a, b) => (a.need || 999) - (b.need || 999));
+  };
+  /** つぎにもらえる景品（数で決まるもの）と、あと何個か。もう無ければ null */
+  FES.nextPrize = function (c) {
+    c = c || FES.stampCard() || { stamps: {} };
+    const n = Object.keys(c.stamps || {}).length;
+    const x = FES.prizeLadder(c).find(x => !x.done && x.need > 0);
+    return x ? Object.assign({ rest: Math.max(1, x.need - n) }, x) : null;
+  };
+  /** 新しくもらえるようになった景品を返し、カードに「もう見せた」と記録する */
+  FES.claimPrizes = function (c) {
+    c = c || FES.stampCard(); if (!c) return [];
+    c.prizes = c.prizes || {};
+    const fresh = FES.prizeLadder(c).filter(x => x.done && !c.prizes[x.id]);
+    fresh.forEach(x => { c.prizes[x.id] = Date.now(); });
+    if (fresh.length) LS.set(STAMP_KEY, c);
+    return fresh;
+  };
+
+  /* ------------------------------------------------------------ 景品ゲットの画面（結果画面の上に大きく出す） */
+  // QR を描く qrcode.js は common.js と同じフォルダにある。ゲームのページでは必要になったときだけ読みこむ
+  const SCRIPT_DIR = (document.currentScript && document.currentScript.src || '').replace(/[^/]*$/, '');
+  function loadQR(cb) {
+    if (global.qrcode) return cb();
+    const s = document.createElement('script');
+    s.src = SCRIPT_DIR + 'qrcode.js'; s.onload = cb; s.onerror = cb;
+    document.head.appendChild(s);
+  }
+  function qrSvg(url) {
+    try { const qr = global.qrcode(0, 'M'); qr.addData(url); qr.make(); return qr.createSvgTag({ cellSize: 6, margin: 0, scalable: true }); }
+    catch (e) { return ''; }
+  }
+  let prizeEl = null;
+  FES.closePrizeGet = function () { if (prizeEl) { prizeEl.remove(); prizeEl = null; } };
+  /** items: claimPrizes の戻り値 */
+  FES.showPrizeGet = function (items, opts) {
+    if (!items || !items.length) return;
+    ensureUI(); FES.closePrizeGet(); opts = opts || {};
+    const card = el('div', { class: 'fes-card fes-getcard' });
+    card.appendChild(el('div', { class: 'fes-get-big', text: '🎁 景品ゲット！' }));
+    const list = el('div', { class: 'fes-get-list' });
+    items.forEach(x => {
+      const box = el('div', { class: 'fes-get-item ' + x.kind });
+      box.appendChild(el('div', { class: 'fes-get-ic', text: x.icon }));
+      box.appendChild(el('div', { class: 'fes-get-t', text: x.title }));
+      if (x.kind === 'qr') {
+        if (x.prize.desc) box.appendChild(el('div', { class: 'fes-get-d', text: x.prize.desc }));
+        const url = FES.prizeQrUrl(x.prize);
+        const qbox = el('div', { class: 'fes-get-qr', text: '…' });
+        box.appendChild(qbox);
+        loadQR(() => { const svg = global.qrcode ? qrSvg(url) : ''; if (svg) qbox.innerHTML = svg; else { qbox.remove(); box.appendChild(el('div', { class: 'fes-get-d', text: 'QR が出ないときは 🏠 ホーム画面で見られます' })); } });
+        box.appendChild(el('div', { class: 'fes-get-how', text: '📱 スマホのカメラで読んでね' }));
+        if (FES.isTouch()) box.appendChild(el('a', { class: 'fes-act alt fes-get-open', href: url, target: '_blank', rel: 'noopener', text: 'このスマホで開く' }));
+      } else {
+        box.appendChild(el('div', { class: 'fes-get-how', text: x.how }));
+      }
+      list.appendChild(box);
+    });
+    card.appendChild(list);
+    const nx = FES.nextPrize();
+    if (nx) card.appendChild(el('div', { class: 'fes-get-next' }, [document.createTextNode('つぎは あと '), el('b', { text: String(nx.rest) }), document.createTextNode(` 個で ${nx.icon} ${nx.title}`)]));
+    if (items.some(x => x.kind === 'qr')) card.appendChild(el('div', { class: 'fes-get-note', text: 'あとで読むときは 🏠 ホーム画面の「🎁 景品のQRコードを見る」' }));
+    const ok = el('button', { class: 'fes-act', text: 'OK', onclick: () => { FES.sfx('select'); FES.closePrizeGet(); } });
+    card.appendChild(el('div', { class: 'fes-actions' }, [ok]));
+    prizeEl = el('div', { class: 'fes-overlay fes-get', style: 'z-index:9300' }, [card]);
+    prizeEl.addEventListener('click', e => { if (e.target === prizeEl) FES.closePrizeGet(); });
+    ui.appendChild(prizeEl);
+    if (!opts.quiet) { FES.sfx('fanfare'); FES.vibrate([30, 40, 80]); confetti(3500); }
+  };
+  FES.prizeGetOpen = () => !!prizeEl;
   // 互換（古い呼び出し）
   FES.prize = () => FES.prizes()[0] || null;
   FES.setPrize = o => { if (!o || !o.url) return FES.setPrizes(null); return FES.setPrizes([{ id: 'custom', title: o.label || '景品', desc: '', icon: '🎁', url: o.url, cond: o.cond || 'complete' }]); };
