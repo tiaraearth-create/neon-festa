@@ -94,6 +94,54 @@
   };
   FES.lastSync = () => cloud().at;
 
+  /* ------------------------------------------------------------ 空き PC（部屋の PC がいまの様子をサーバーに知らせる） */
+  // ホームで、まだ誰のカードでもない（名前もスタンプもない）＝「空き」。それ以外（ゲーム中・名前を選んだあと）＝「使用中」。
+  // 変わったときと、変わらなくても 60 秒ごとに送る。3 分届かない PC は、空き PC のページで「止まっている」扱いになる。
+  FES.pcState = function () {
+    if (cfg.id !== 'hub') return 'busy';
+    const c = FES.stampCard();
+    return c && (c.name || Object.keys(c.stamps || {}).length) ? 'busy' : 'free';
+  };
+  let sentState = '', sentAt = 0;
+  function sendPresence(force) {
+    if (TEST || !FES.isRoomPC() || document.hidden) return;
+    const st = FES.pcState();
+    if (!force && st === sentState && Date.now() - sentAt < 60000) return;
+    sentState = st; sentAt = Date.now();
+    api('/api/room/state', { method: 'POST', body: { pc: room.pc, state: st } }).catch(() => { sentAt = Date.now() - 30000; });   // 失敗したら 30 秒後にもう一度
+  }
+  FES.sendPresence = sendPresence;
+
+  /* ------------------------------------------------------------ ラストスパート（14:00〜15:00。board.html の EVENT と同じ） */
+  // 軽音部の時間も人を呼ぶためのイベント。本番の日だけホーム画面に帯を出す。ためすときは ?evnow=2026-11-03T14:10
+  const EVENT = { date: '2026-11-03', start: '14:00', end: '15:00' };
+  FES.EVENT = EVENT;
+  const evOffset = (() => { const q = global.location && new URLSearchParams(global.location.search).get('evnow'); const t = q && Date.parse(q); return t ? t - Date.now() : 0; })();
+  const evAt = hm => new Date(`${EVENT.date}T${hm}:00`);
+  /** 'before' | 'on' | 'after' | null（本番の日以外） */
+  FES.eventPhase = function () {
+    const t = Date.now() + evOffset, a = +evAt(EVENT.start), b = +evAt(EVENT.end);
+    if (t < a - 6 * 3600e3 || t > b + 6 * 3600e3) return null;
+    return t < a ? 'before' : t < b ? 'on' : 'after';
+  };
+  function armEventBanner() {
+    const bar = el('div', { class: 'fes-evbar' });
+    const tick = () => {
+      const ph = FES.eventPhase();
+      bar.style.display = ph === 'on' ? '' : 'none';
+      if (ph !== 'on') return;
+      const left = Math.max(0, Math.round((+evAt(EVENT.end) - Date.now() - evOffset) / 1000));
+      bar.textContent = `⏰ ラストスパート中！ ${EVENT.end} で本日のチャンピオン決定 — あと ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    };
+    tick(); setInterval(tick, 1000);
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  function armPresence() {
+    sendPresence(true);
+    setInterval(() => sendPresence(false), 5000);
+    document.addEventListener('visibilitychange', () => sendPresence(true));
+  }
+
   FES.getRanking = function (id) {
     id = id || cfg.id;
     if (FES.isRoomPC()) return (cloud().rankings[id] || []).slice();
@@ -559,6 +607,8 @@
   .fes-badge span { font-size: 12px; color: rgba(255,255,255,.8); }
   .fes-badge.mission { background: linear-gradient(135deg, rgba(92,255,141,.2), rgba(94,231,255,.16)); border-color: rgba(92,255,141,.5); box-shadow: 0 0 24px rgba(92,255,141,.2); }
   .fes-badge.mission b { color: #8dffb5; }
+  .fes-evbar { position: relative; z-index: 5; display: block; width: fit-content; max-width: calc(100% - 24px); margin: 8px auto 0; padding: 8px 18px; border-radius: 999px; font-weight: 900; font-size: 15px; color: #fff; text-align: center;
+    background: linear-gradient(90deg, #ff4d8d, #ff9f43); box-shadow: 0 6px 30px rgba(255,120,80,.5); font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; font-variant-numeric: tabular-nums; pointer-events: none; }
   .fes-ladder { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 6px 0 4px; }
   .fes-ladder .st { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: rgba(255,255,255,.06); border: 1px dashed rgba(255,255,255,.25); color: rgba(255,255,255,.7); }
   .fes-ladder .st.done { background: linear-gradient(90deg, rgba(255,211,110,.3), rgba(255,179,71,.25)); border: 1px solid #ffd36e; color: #ffe9b0; }
@@ -699,8 +749,17 @@
         e.preventDefault(); FES.leaveTo(a.getAttribute('href'));
       });
       // 部屋の PC: 起動時と 20 秒ごとに共有ランキングを取ってくる（ハイスコア表示・ランクイン判定用）
-      if (FES.isRoomPC()) { FES.sync(); setInterval(FES.sync, 20000); armIdleReset(); }
+      if (FES.isRoomPC()) { FES.sync(); setInterval(FES.sync, 20000); armIdleReset(); armPresence(); }
       armErrorGuard();
+      if (cfg.id === 'hub') armEventBanner();
+      // スマホを縦に持っていると、横長のゲームは小さくなる → 横向きの案内（縦向きで作ってあるゲームは出さない）
+      if (cfg.id !== 'hub' && cfg.portraitOk !== true && !['rhythm', 'typing'].includes(FES.stampBase(cfg.id)) && FES.isTouch() && global.matchMedia) {
+        const mq = global.matchMedia('(orientation: portrait) and (max-width: 600px)');
+        let shown = false;
+        const hint = () => { if (mq.matches && !shown) { shown = true; FES.toast('📱 スマホを 横向き にすると、大きく遊べます', 3500); } };
+        setTimeout(hint, 800);
+        if (mq.addEventListener) mq.addEventListener('change', () => { shown = false; hint(); });
+      }
     };
     if (document.body) build(); else document.addEventListener('DOMContentLoaded', build);
     return FES;
@@ -935,7 +994,7 @@
       const have = cardNow.stamps || {};
       const n = Object.keys(have).filter(k => games.some(g => g.id === k)).length;
       const lbl = el('div', { class: 'fes-stamp-lbl' });
-      lbl.innerHTML = cardNow.done ? '🏅 スタンプ <b>コンプリート！</b> 殿堂入り' : `🎟 スタンプ <b>${n} / ${games.length}</b>`;
+      lbl.innerHTML = `🎟 スタンプ <b>${n} / ${games.length}</b>` + (cardNow.done ? '　🏅 <b>殿堂入り！</b>' : '');
       const row = el('div', { class: 'fes-stamps' });
       games.forEach(g => {
         const on = !!have[g.id];
@@ -958,7 +1017,7 @@
       const freshP = FES.claimPrizes(FES.stampCard());
       if (freshP.length) setTimeout(() => { if (overlay) FES.showPrizeGet(freshP); }, st && st.complete ? 2200 : 1400);
       if (st && st.added) setTimeout(() => { FES.sfx('stamp'); FES.vibrate(30); }, 650);
-      if (st && st.complete) setTimeout(() => { FES.sfx('powerup'); FES.toast('🎉 スタンプ コンプリート！ ホームで殿堂入りを確認しよう', 4000); confetti(4000); }, 1300);
+      if (st && st.complete) setTimeout(() => { FES.sfx('powerup'); FES.toast(`🎉 スタンプ ${FES.hallNeed()} 個で 殿堂入り！`, 4000); confetti(4000); }, 1300);
       // ミッション・バッジ（新しく達成したものだけ大きく出す）
       const freshM = FES.claimMissions(FES.stampCard()), freshB = FES.claimBadges(FES.stampCard());
       const ms = FES.missionProgress(FES.stampCard());
@@ -1005,7 +1064,7 @@
     const retryBtn = el('button', { class: 'fes-act', text: o.retryLabel || 'もう一度', onclick: () => { FES.sfx('start'); FES.hideResult(); onRetry && onRetry(); } });
     actions.appendChild(retryBtn);
     // つぎのおすすめ: まだスタンプのないゲームからひとつ
-    if (games.length && cardNow && !cardNow.done) {
+    if (games.length && cardNow) {
       const rest = games.filter(g => !(cardNow.stamps || {})[g.id] && g.id !== FES.stampBase(cfg.id));
       if (rest.length) {
         const g = rest[(Math.random() * rest.length) | 0];
@@ -1087,6 +1146,9 @@
   FES.stampBase = id => String(id || cfg.id).split('_')[0];      // rhythm_hard → rhythm
   FES.stampTotal = () => LS.get(TOTAL_KEY, 0);                     // ハブが起動時に書き込む
   FES.setStampTotal = n => LS.set(TOTAL_KEY, n | 0);
+  // 殿堂入り（表彰状）に必要なスタンプの数。14 本全部はきついので 8 個（2026/10/23 決定）。ゲームが 8 本より少なければ全部
+  const HALL_NEED = 8;
+  FES.hallNeed = () => { const t = FES.stampTotal(); return t > 0 ? Math.min(HALL_NEED, t) : 0; };
   FES.stampCard = () => LS.get(STAMP_KEY, null);                   // { name, started, stamps:{id:ts}, done:ts|null }
   FES.newStampCard = function (name) {
     const c = { name: String(name == null ? '' : name).trim().slice(0, 8), started: Date.now(), stamps: {}, done: null };
@@ -1103,12 +1165,13 @@
     const base = FES.stampBase(id);
     const c = FES.stampCard() || FES.newStampCard('');
     if (grade) { c.grades = c.grades || {}; if (!c.grades[base] || FES.gradeIndex(grade) < FES.gradeIndex(c.grades[base])) { c.grades[base] = grade; LS.set(STAMP_KEY, c); } }
-    const total = FES.stampTotal();
-    if (c.done || c.stamps[base]) return { card: c, added: false, count: Object.keys(c.stamps).length, total, complete: !!c.done };
+    const total = FES.stampTotal(), need = FES.hallNeed();
+    if (c.stamps[base]) return { card: c, added: false, count: Object.keys(c.stamps).length, total, complete: false };
+    // 殿堂入りのあとも、のこりのゲームのスタンプは押せる（殿堂の記録は 1 回だけ）
     c.stamps[base] = Date.now();
     const count = Object.keys(c.stamps).length;
     let complete = false;
-    if (total > 0 && count >= total) {
+    if (!c.done && need > 0 && count >= need) {
       c.done = Date.now(); complete = true;
       const rec = { name: c.name || 'ななし', date: c.done, timeMs: c.done - c.started, count };
       if (FES.isRoomPC()) {
@@ -1127,12 +1190,13 @@
   const BADGES = [
     { id: 'first', icon: '🎮', name: 'はじめの一歩', desc: 'ゲームを1つ遊んだ', check: (c, n) => n >= 1 },
     { id: 'half', icon: '⭐', name: '半分クリア', desc: '半分のゲームにスタンプ', check: (c, n, total) => total > 0 && n >= Math.ceil(total / 2) },
-    { id: 'complete', icon: '🏅', name: '殿堂入り', desc: '全部のゲームを遊んだ', check: c => !!c.done },
+    { id: 'complete', icon: '🏅', name: '殿堂入り', desc: 'スタンプを 8 個あつめた', check: c => !!c.done },
+    { id: 'all', icon: '👑', name: 'パーフェクト', desc: '全部のゲームを遊んだ', check: (c, n, total) => total > 0 && n >= total },
     { id: 'rankS', icon: '💎', name: 'Sランク', desc: 'どれかのゲームで ランク S', check: c => Object.values(c.grades || {}).includes('S') },
     { id: 'rankA3', icon: '🔥', name: 'A以上 ×3', desc: '3つのゲームで ランク A 以上', check: c => Object.values(c.grades || {}).filter(g => g === 'S' || g === 'A').length >= 3 },
-    { id: 'allB', icon: '🌈', name: 'オールB以上', desc: '全部のゲームで ランク B 以上', check: c => !!c.done && FES.games().length > 0 && FES.games().every(g => 'SAB'.includes((c.grades || {})[g.id] || 'x')) },
+    { id: 'allB', icon: '🌈', name: 'オールB以上', desc: '全部のゲームで ランク B 以上', check: c => FES.games().length > 0 && FES.games().every(g => 'SAB'.includes((c.grades || {})[g.id] || 'x')) },
     { id: 'versus', icon: '⚔️', name: '対戦デビュー', desc: '対戦ゲーム（ホッケー / デュエル）を遊んだ', check: c => !!(c.stamps.duel || c.stamps.hockey) },
-    { id: 'speed', icon: '⚡', name: 'スピードラン', desc: '20分以内に殿堂入り', check: c => !!c.done && (c.done - c.started) <= 20 * 60000 },
+    { id: 'speed', icon: '⚡', name: 'スピードラン', desc: '10分以内に殿堂入り', check: c => !!c.done && (c.done - c.started) <= 10 * 60000 },
     { id: 'mission', icon: '🎯', name: 'ミッション制覇', desc: '今日のミッションを全部クリア', check: c => FES.missionsDone(c) },
   ];
   FES.badgeDefs = () => BADGES;
@@ -1197,7 +1261,7 @@
     { id: 'core', title: 'コア工場タイクーン', desc: '施設を建ててコインを稼ぎ、敵からコアを守るタイクーン × 防衛', icon: '🏭', url: 'https://core-factory-tycoon.onrender.com/', cond: 'n5' },
   ];
   // 条件 'nN' = スタンプ N 個（2026/10/23 に「みんながもらえるように」ミッション・全部 から変更）
-  const COND_LABEL = { any: '1回でも遊んだ人みんな', n3: 'スタンプ 3 個（ゲームを 3 つ遊ぶ）', n5: 'スタンプ 5 個（ゲームを 5 つ遊ぶ）', mission: '今日のミッションを全部クリア', complete: '全部のゲームを遊ぶ（殿堂入り）', off: '配らない' };
+  const COND_LABEL = { any: '1回でも遊んだ人みんな', n3: 'スタンプ 3 個（ゲームを 3 つ遊ぶ）', n5: 'スタンプ 5 個（ゲームを 5 つ遊ぶ）', mission: '今日のミッションを全部クリア', complete: '殿堂入り（スタンプ 8 個）', off: '配らない' };
   FES.prizeConds = () => Object.keys(COND_LABEL);
   FES.prizeCondLabel = c => COND_LABEL[c] || c;
   FES.defaultPrizes = () => DEFAULT_PRIZES.map(p => Object.assign({}, p));
@@ -1236,10 +1300,10 @@
     const total = FES.stampTotal(), list = [];
     if (FES.isRoomPC()) list.push({ id: 'sticker', kind: 'hand', icon: '🌟', title: 'NEON FESTA シール', need: 1, how: '帰るときに 出口でスタッフからもらってね' });
     FES.prizes().filter(p => p.url && p.cond !== 'off').forEach(p => {
-      const need = p.cond === 'complete' ? total : condNeed(p.cond);
+      const need = p.cond === 'complete' ? FES.hallNeed() : condNeed(p.cond);
       list.push({ id: p.id, kind: 'qr', icon: p.icon || '🎁', title: p.title, need: need || 0, cond: p.cond, prize: p });
     });
-    if (FES.isRoomPC()) list.push({ id: 'award', kind: 'hand', icon: '📜', title: '殿堂入りの表彰状', need: total, cond: 'complete', how: 'スタッフを呼んでね！ 名前とタイムを書いてわたします' });
+    if (FES.isRoomPC()) list.push({ id: 'award', kind: 'hand', icon: '📜', title: '殿堂入りの表彰状', need: FES.hallNeed(), cond: 'complete', how: 'スタッフを呼んでね！ 名前とタイムを書いてわたします' });
     list.forEach(x => { x.done = x.kind === 'qr' ? condMet(x.cond, c) : x.id === 'award' ? !!c.done : Object.keys(c.stamps || {}).length >= 1; });
     return list.sort((a, b) => (a.need || 999) - (b.need || 999));
   };

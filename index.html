@@ -272,10 +272,10 @@
     </div>
     <div class="start-cta" id="startCta">
       <button class="act big" id="startBtn">▶ はじめる　— なまえをえらぶ</button>
-      <div class="start-sub">ゲームを1回遊ぶごとにスタンプが1つ。3個・5個で 🎁 景品、全部集めると 🏅 殿堂入り！</div>
+      <div class="start-sub">ゲームを1回遊ぶごとにスタンプが1つ。3個・5個で 🎁 景品、8個で 🏅 殿堂入り！</div>
     </div>
     <div class="stamp-row" id="stampRow"></div>
-    <p class="stamp-hint" id="stampHint">ゲームを1回遊ぶごとにスタンプが1つ。3個・5個で景品、全部集めると殿堂入り！</p>
+    <p class="stamp-hint" id="stampHint">ゲームを1回遊ぶごとにスタンプが1つ。3個・5個で景品、8個で殿堂入り！</p>
     <div class="extras">
       <div class="mission-box" id="missionBox"></div>
       <div class="badge-box" id="badgeBox"></div>
@@ -315,7 +315,7 @@
 <div class="modal" id="complete">
   <div class="mbox" style="text-align:center">
     <h3>STAMP RALLY</h3>
-    <div class="complete-big">コンプリート！</div>
+    <div class="complete-big">殿堂入り！</div>
     <div style="font-size:18px;font-weight:800" id="cName">ななし</div>
     <div style="color:var(--muted);font-size:14px;margin:6px 0 18px" id="cTime"></div>
     <div id="cAward" style="display:none;margin:-8px 0 16px;padding:10px 14px;border-radius:14px;font-weight:900;color:#2a2200;background:linear-gradient(90deg,#ffd36e,#ffb347)">📜 スタッフを呼んでね！ 殿堂入りの表彰状に、名前とタイムを書いてわたします</div>
@@ -348,7 +348,7 @@
     <div class="guide-steps">
       <div class="gstep"><div class="gi">🎮</div><div class="gn">①</div><div class="gt">すきなゲームをえらぶ</div></div>
       <div class="gstep"><div class="gi">▶</div><div class="gn">②</div><div class="gt">1回あそぶ（1〜3分）</div></div>
-      <div class="gstep"><div class="gi">🎟</div><div class="gn">③</div><div class="gt">スタンプがたまる。3個・5個で 🎁 景品、全部で 🏅 殿堂入り</div></div>
+      <div class="gstep"><div class="gi">🎟</div><div class="gn">③</div><div class="gt">スタンプがたまる。3個・5個で 🎁 景品、8個で 🏅 殿堂入り</div></div>
     </div>
     <div style="color:var(--muted);font-size:13px;margin:4px 0 14px">ランク <b style="color:var(--gold)">S</b> をねらうと バッジ がもらえるよ 💎</div>
     <div class="mact"><button class="act" id="guideOk">わかった！ はじめる</button></div>
@@ -575,9 +575,9 @@ function renderStamps() {
   sec.classList.toggle('fresh', !card.name && n === 0);   // まだ誰のカードでもない → 大きな「はじめる」
   const hint = document.getElementById('stampHint');
   const who = card.name ? `<span class="greet">こんにちは、<b>${esc(card.name)}</b> さん！</span> ` : '';
-  if (card.done) hint.innerHTML = `🎉 ${esc(card.name || 'ななし')} さん コンプリート！（${FES.formatDuration(card.done - card.started)}）「次の人」で新しいカードにできます。`;
-  else if (n === 0) hint.innerHTML = `${who}好きなゲームをえらんでね。1回遊ぶごとにスタンプが1つ、3個・5個で景品、全部集めると殿堂入り！`;
-  else { const nx = FES.nextPrize(card); hint.innerHTML = nx ? `${who}あと <b style="color:var(--gold)">${nx.rest}</b> 個で ${esc(nx.icon)} ${esc(nx.title)}！ 「★ おすすめ」のゲームからどうぞ。` : `${who}あと <b style="color:var(--gold)">${GAMES.length - n}</b> 個で殿堂入り！ 「★ おすすめ」のゲームからどうぞ。`; }
+  if (card.done) hint.innerHTML = `🎉 ${esc(card.name || 'ななし')} さん 殿堂入り！（${FES.formatDuration(card.done - card.started)}）のこりのゲームも遊べるよ。終わったら「次の人」で新しいカードに。`;
+  else if (n === 0) hint.innerHTML = `${who}好きなゲームをえらんでね。1回遊ぶごとにスタンプが1つ、3個・5個で景品、8個で殿堂入り！`;
+  else { const nx = FES.nextPrize(card); hint.innerHTML = nx ? `${who}あと <b style="color:var(--gold)">${nx.rest}</b> 個で ${esc(nx.icon)} ${esc(nx.title)}！ 「★ おすすめ」のゲームからどうぞ。` : `${who}あと <b style="color:var(--gold)">${Math.max(0, FES.hallNeed() - n)}</b> 個で殿堂入り！ 「★ おすすめ」のゲームからどうぞ。`; }
   // 新しくコンプリートした瞬間だけ、お祝い
   if (card.done && !stampDoneSeen && stampPrev) celebrate(card);
   stampDoneSeen = !!card.done;
@@ -658,7 +658,7 @@ function celebrate(card) {
   const ep = FES.eligiblePrizes(card);
   if (ep.length) { cp.innerHTML = `<div style="font-weight:900;color:var(--gold);margin-bottom:6px">🎁 景品ゲット！</div><div class="prize-list"></div><div style="color:var(--muted);font-size:12px;margin-top:6px">スマホのカメラで読んでね</div>`; const box = cp.querySelector('.prize-list'); ep.forEach(p => { const d = document.createElement('div'); d.className = 'prize-item'; d.innerHTML = `<div class="pt">${esc(p.icon || '🎁')} ${esc(p.title)}</div><div class="qrwrap"></div>`; box.appendChild(d); drawQR(d.querySelector('.qrwrap'), FES.prizeQrUrl(p)); }); }
   document.getElementById('cName').textContent = (card.name || 'ななし') + ' さん';
-  document.getElementById('cTime').textContent = `${GAMES.length} 個のスタンプを ${FES.formatDuration(card.done - card.started)} で集めました`;
+  document.getElementById('cTime').textContent = `${FES.hallNeed()} 個のスタンプを ${FES.formatDuration(card.done - card.started)} で集めました`;
   document.getElementById('cAward').style.display = FES.isRoomPC() ? '' : 'none';   // 表彰状は会場の PC だけ（手でわたす）
   document.getElementById('complete').classList.add('open');
   if (window.__fesBurst) window.__fesBurst(160);
@@ -696,7 +696,7 @@ function openHall() {
   FES.sfx('select');
   const list = FES.stampHall().slice().sort((a, b) => a.timeMs - b.timeMs);
   const ol = document.getElementById('hallList'); ol.innerHTML = '';
-  if (!list.length) ol.innerHTML = '<li class="empty">まだ誰もコンプリートしていません。1番乗りになろう！</li>';
+  if (!list.length) ol.innerHTML = '<li class="empty">まだ誰も殿堂入りしていません。スタンプ8個で1番乗り！</li>';
   list.slice(0, 20).forEach((e, i) => {
     const li = document.createElement('li');
     const d = new Date(e.date);
@@ -740,7 +740,7 @@ function buildSlides() {
   });
   const hall = FES.stampHall().slice().sort((a, b) => a.timeMs - b.timeMs).slice(0, 3);
   const demo = GAMES.map((g, i) => `<i class="${i < Math.ceil(GAMES.length * .6) ? 'on' : ''}">${g.icon}</i>`).join('');
-  add(`<div class="big-icon">🎟</div><div class="big-title">スタンプラリー</div><div class="desc">全部のゲームを1回ずつ遊ぶとコンプリート！<br>いちばん速く集めた人は <b style="color:var(--gold)">殿堂入り</b></div><div class="stamps-demo">${demo}</div>${hall.length ? `<div class="top3">${hall.map((e, i) => `<div><b>${['🥇', '🥈', '🥉'][i]}</b>${esc(e.name)} ${FES.formatDuration(e.timeMs)}</div>`).join('')}</div>` : ''}`);
+  add(`<div class="big-icon">🎟</div><div class="big-title">スタンプラリー</div><div class="desc">ちがうゲームを8個遊ぶと殿堂入り！<br>速く集めた人ほど上の方に名前が出る。いちばん速い人は <b style="color:var(--gold)">殿堂入り</b></div><div class="stamps-demo">${demo}</div>${hall.length ? `<div class="top3">${hall.map((e, i) => `<div><b>${['🥇', '🥈', '🥉'][i]}</b>${esc(e.name)} ${FES.formatDuration(e.timeMs)}</div>`).join('')}</div>` : ''}`);
   const dots = document.getElementById('dots'); dots.innerHTML = slideEls.map(() => '<i></i>').join('');
 }
 function showSlide(i) {

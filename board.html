@@ -75,6 +75,18 @@
   #flash .g { font-size: 4vh; font-weight: 800; }
   #flash .s { font-size: 6vh; font-weight: 900; color: var(--gold); margin-top: 1vh; }
   @keyframes pop { from { transform: scale(.7); opacity: 0 } }
+  /* 空き PC（部屋の PC が知らせてくる） */
+  .vac { display: none; align-items: center; gap: .8vw; padding: .9vh 1.6vw; border-radius: 999px; font-size: 2.6vh; font-weight: 900; background: rgba(92,255,141,.14); border: 2px solid #5cff8d; color: #c9ffd9; }
+  .vac.show { display: flex; }
+  .vac b { font-size: 3.6vh; color: #5cff8d; font-variant-numeric: tabular-nums; }
+  .vac.zero { background: rgba(255,107,139,.14); border-color: #ff6b8b; color: #ffc2cf; }
+  .vac.zero b { color: #ff6b8b; }
+  .vac small { font-size: 1.7vh; color: var(--muted); font-weight: 700; }
+  /* ラストスパート（14:00〜15:00） */
+  footer .ev { display: none; font-weight: 900; color: #fff; padding: .6vh 1.4vw; border-radius: 999px; background: linear-gradient(90deg, #ff4d8d, #ff9f43); box-shadow: 0 0 30px rgba(255,120,80,.5); animation: blink 1.6s infinite; }
+  footer .ev b { font-variant-numeric: tabular-nums; font-size: 2.6vh; }
+  body.event footer .ev { display: block; }
+  body.event footer .rule { display: none; }
   @media (max-aspect-ratio: 1/1) { main { grid-template-columns: 1fr; } .champ { display: none; } }
 </style>
 </head>
@@ -82,6 +94,7 @@
 <div class="app">
   <header>
     <div class="brand" id="brand">NEON FESTA<small>LIVE RANKING</small></div>
+    <div class="vac" id="vac"></div>
     <div class="live" id="live"><i></i><span id="liveText">接続中…</span></div>
   </header>
   <main>
@@ -92,7 +105,8 @@
     </div>
   </main>
   <footer>
-    <div>ハイスコアで <b>チャンピオン</b>、3個・5個で <b>景品</b>、全ゲーム遊んで <b>殿堂入り</b> をめざそう！</div>
+    <div class="rule">ハイスコアで <b>チャンピオン</b>、3個・5個で <b>景品</b>、8個で <b>殿堂入り</b> をめざそう！</div>
+    <div class="ev" id="ev"></div>
     <div class="dots" id="dots"></div>
   </footer>
 </div>
@@ -117,6 +131,7 @@ const GAMES = [
   { id: 'memory',   title: 'メモリーフラッシュ',    genre: '記憶',          icon: '🧠', accent: '#c86bff' },
 ];
 const N_GAMES = GAMES.length + 1;   // スタンプラリーの対象（ランキングのないネオンデュエルも入る）
+const HALL_NEED = 8;                // 殿堂入りに必要なスタンプ（common.js の HALL_NEED と同じ）
 const SLIDE_SEC = 8, POLL_SEC = 15;
 const fmtTime = ms => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return (h ? h + ':' : '') + (h ? String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0'); };
 const $ = id => document.getElementById(id);
@@ -124,6 +139,18 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 let api = DEFAULT_API;
 try { const r = JSON.parse(localStorage.getItem('fes:room')); if (r && r.api) api = r.api; } catch (e) {}
 try { const t = localStorage.getItem('fes:title'); if (t) $('brand').firstChild.textContent = t; } catch (e) {}
+
+// ラストスパート（軽音部の時間 14:00〜15:00 も人を呼ぶためのイベント。common.js の EVENT と同じ）。
+// 本番の日だけ動く。ためすときは board.html?evnow=2026-11-03T14:10 のように時刻を決めて開く
+const EVENT = { date: '2026-11-03', start: '14:00', end: '15:00' };
+const evOffset = (() => { const q = new URLSearchParams(location.search).get('evnow'); const t = q && Date.parse(q); return t ? t - Date.now() : 0; })();
+const evNow = () => new Date(Date.now() + evOffset);
+const evAt = hm => new Date(`${EVENT.date}T${hm}:00`);
+function eventPhase(d) {
+  const t = +d, a = +evAt(EVENT.start), b = +evAt(EVENT.end);
+  if (t < a - 6 * 3600e3 || t > b + 6 * 3600e3) return null;   // 本番の日以外は出さない
+  return t < a ? 'before' : t < b ? 'on' : 'after';
+}
 
 let data = { rankings: {}, hall: [] };
 let champs = null;        // 前回のチャンピオン（新チャンピオンの検出用）
@@ -164,9 +191,9 @@ function renderSlides() {
   hall.className = 'slide hall'; hall.style.setProperty('--accent', '#ffd36e');
   const fresh = Date.now() - 10 * 60 * 1000;
   const top = (data.hall || []).slice(0, 8);
-  hall.innerHTML = `<div class="g-head"><div class="g-icon">🏅</div><div><div class="g-genre">STAMP RALLY</div><div class="g-title">殿堂</div><div class="g-sub">全 ${N_GAMES} ゲームをクリアした人 · 速い順</div></div></div>
+  hall.innerHTML = `<div class="g-head"><div class="g-icon">🏅</div><div><div class="g-genre">STAMP RALLY</div><div class="g-title">殿堂</div><div class="g-sub">スタンプ ${HALL_NEED} 個を集めた人 · 速い順</div></div></div>
     <ol class="top hall">${top.length ? top.map((e, i) => `<li class="r${i + 1}"><span class="rk">${['🥇', '🥈', '🥉'][i] || i + 1}</span><span class="nm">${esc(e.name)}${e.date > fresh ? '<span class="tag">NEW</span>' : ''}</span><span class="tm">${fmtTime(e.timeMs)}</span></li>`).join('')
-      : `<li class="empty">まだいない — 全 ${N_GAMES} ゲーム遊ぶと殿堂入り！</li>`}</ol>`;
+      : `<li class="empty">まだいない — スタンプ ${HALL_NEED} 個で殿堂入り！</li>`}</ol>`;
   wrap.appendChild(hall); slideEls.push(hall);
   // 案内（スタンプラリー・遊び方）
   const info = document.createElement('div');
@@ -176,7 +203,7 @@ function renderSlides() {
       <div class="st"><span class="n">1</span><span>「次の人」を押して、なまえを選ぶ<small>色＋どうぶつをボタンで。🎲 おまかせでもOK</small></span></div>
       <div class="st"><span class="n">2</span><span>好きなゲームを選んで「スタート」<small>全 ${N_GAMES} ゲーム · 1回 1〜3分 · ⚔️ 2人対戦「ネオンデュエル」もあり</small></span></div>
       <div class="st"><span class="n">3</span><span>ハイスコアで <b>チャンピオン</b> に名前が出る<small>1位をとると、この画面に大きく出ます</small></span></div>
-      <div class="st hot"><span class="n">🏅</span><span>スタンプを全部集めると <b>殿堂入り</b><small>名前とタイムが殿堂に残り、表彰状ももらえる。スタンプ 3 個・5 個で自作ゲームの QR、遊んだ人はみんな出口でシール</small></span></div>
+      <div class="st hot"><span class="n">🏅</span><span>スタンプを ${HALL_NEED} 個集めると <b>殿堂入り</b><small>名前とタイムが殿堂に残り、表彰状ももらえる。スタンプ 3 個・5 個で自作ゲームの QR、遊んだ人はみんな出口でシール</small></span></div>
     </div>`;
   wrap.appendChild(info); slideEls.push(info);
   $('dots').innerHTML = slideEls.map(() => '<i></i>').join('');
@@ -222,10 +249,13 @@ function detectNewHall() {
 function nextFlash() {
   const f = flashQueue.shift();
   if (!f) { $('flash').classList.remove('open'); return; }
-  if (f.hall) {
+  if (f.ev) {
+    $('flash').firstElementChild.textContent = f.ev.k;
+    $('fName').textContent = f.ev.n; $('fGame').textContent = f.ev.g; $('fScore').textContent = f.ev.s;
+  } else if (f.hall) {
     $('flash').firstElementChild.textContent = 'HALL OF FAME!';
     $('fName').textContent = f.hall.name;
-    $('fGame').textContent = `🏅 殿堂入り！ 全 ${N_GAMES} ゲームクリア`;
+    $('fGame').textContent = `🏅 殿堂入り！ スタンプ ${HALL_NEED} 個`;
     $('fScore').textContent = fmtTime(f.hall.timeMs);
   } else {
     $('flash').firstElementChild.textContent = 'NEW CHAMPION!';
@@ -259,6 +289,40 @@ async function poll() {
 }
 poll();
 setInterval(poll, POLL_SEC * 1000);
+
+// ---- 空き PC（10 秒ごと）----
+async function pollVacancy() {
+  try {
+    const r = await fetch(api + '/api/vacancy', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    const v = await r.json();
+    const live = (v.pcs || []).filter(p => v.now - p.at <= 3 * 60 * 1000);
+    const free = live.filter(p => p.state === 'free').length;
+    const el = $('vac');
+    el.classList.toggle('show', live.length > 0); el.classList.toggle('zero', !free);
+    el.innerHTML = free ? `🟢 空き <b>${free}</b> 台 <small>/ ${live.length} 台</small>` : `🔴 満席 <small>まもなく空きます（1 人 15 分くらい）</small>`;
+  } catch (e) { /* 出せないときは消したまま */ }
+}
+pollVacancy(); setInterval(pollVacancy, 10000);
+
+// ---- ラストスパート ----
+const evShown = {};
+function evFlash(id, ev) { if (evShown[id]) return; evShown[id] = true; flashQueue.push({ ev }); if (!$('flash').classList.contains('open')) nextFlash(); }
+function tickEvent() {
+  const d = evNow(), ph = eventPhase(d);
+  document.body.classList.toggle('event', ph === 'on' || ph === 'after');
+  if (ph === 'on') {
+    const left = Math.max(0, Math.round((+evAt(EVENT.end) - d) / 1000)), m = Math.floor(left / 60), s = left % 60;
+    $('ev').innerHTML = `⏰ ラストスパート！ 本日のチャンピオン決定まで あと <b>${m}:${String(s).padStart(2, '0')}</b>`;
+    if (left > 50 * 60) evFlash('start', { k: 'LAST SPURT!', n: 'ラストスパート', g: `${EVENT.end} で 本日のチャンピオンが決まる！`, s: 'いまの 1 位をぬかそう' });
+    if (left <= 10 * 60 && left > 9 * 60) evFlash('ten', { k: 'LAST 10 MINUTES!', n: 'のこり 10 分', g: '本日のチャンピオン決定まで あと少し！', s: '最後の 1 回、いこう' });
+  } else if (ph === 'after') {
+    $('ev').innerHTML = '👑 本日のチャンピオン 決定！ 遊んでくれてありがとう！';
+    $('champ').previousElementSibling.textContent = '👑 本日のチャンピオン（決定）';
+    evFlash('end', { k: 'CHAMPIONS DECIDED!', n: '本日のチャンピオン決定', g: '右の表がきょうのチャンピオン！', s: 'ありがとうございました' });
+  }
+}
+tickEvent(); setInterval(tickEvent, 1000);
 setInterval(() => showSlide(slideIdx + 1), SLIDE_SEC * 1000);
 // クリック / キーで全画面
 const full = () => { if (!document.fullscreenElement) (document.documentElement.requestFullscreen || (() => {})).call(document.documentElement); };

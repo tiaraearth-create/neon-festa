@@ -27,6 +27,14 @@
   #status.ok { display: block; background: rgba(92,255,141,.15); border: 1px solid rgba(92,255,141,.5); }
   #status.ng { display: block; background: rgba(255,90,90,.15); border: 1px solid rgba(255,90,90,.5); }
   #status.info { display: block; background: rgba(255,255,255,.08); }
+  /* 番号のボタン（ルームキーが .bat から入っているときは、これを押すだけで登録できる） */
+  .keyok { margin: 4px 0 0; padding: 10px 14px; border-radius: 12px; background: rgba(92,255,141,.12); border: 1px solid rgba(92,255,141,.45); font-weight: 800; font-size: 14px; }
+  .nums { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; margin-top: 8px; }
+  .nums button { padding: 12px 0; font-size: 20px; border-radius: 12px; box-shadow: none; background: rgba(255,255,255,.1); border: 2px solid rgba(255,255,255,.2); }
+  .nums button:hover { border-color: #ffd36e; }
+  .nums button.on { background: linear-gradient(135deg,#6a5cff,#b04dff); border-color: #ffd36e; }
+  .nums button.spare { opacity: .7; font-size: 16px; }
+  .big-ok { font-size: 22px !important; text-align: center; }
 </style>
 </head>
 <body>
@@ -36,11 +44,17 @@
 
   <div id="current"></div>
 
-  <label for="key">ルームキー</label>
-  <input id="key" type="password" autocomplete="off" placeholder="運営から聞いたキー">
-  <small>お客さんに見られないように入力してください。</small>
+  <div id="keyBox">
+    <label for="key">ルームキー</label>
+    <input id="key" type="password" autocomplete="off" placeholder="運営から聞いたキー">
+    <small>お客さんに見られないように入力してください。</small>
+  </div>
+  <div class="keyok" id="keyOk" style="display:none">🔑 ルームキーは入っています。下の <b>PC の番号</b>（番号札と同じ）を押すだけで登録できます。</div>
 
-  <label for="pc">PCの番号・名前</label>
+  <label>PC の番号をおす（番号札と同じ）</label>
+  <div class="nums" id="nums"></div>
+
+  <label for="pc">リストにない番号・名前は ここに書く</label>
   <input id="pc" maxlength="20" placeholder="例: 12">
   <small>空のままでも登録できます（自動で番号をつけます）。</small>
 
@@ -69,6 +83,16 @@ const load = () => { try { return JSON.parse(localStorage.getItem('fes:room')); 
 const hash = new URLSearchParams(location.hash.slice(1));
 if (hash.get('key')) { $('key').value = hash.get('key'); history.replaceState(null, '', location.pathname); }
 if (hash.get('pc')) $('pc').value = hash.get('pc');
+if ($('key').value) { $('keyBox').style.display = 'none'; $('keyOk').style.display = ''; }
+// 番号のボタン: 1〜34 が会場の配置（05_会場レイアウト）、35〜50 は予備
+for (let i = 1; i <= 50; i++) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = i; if (i > 34) b.className = 'spare';
+  b.onclick = () => { $('pc').value = String(i); markNum(); $('save').click(); };
+  $('nums').appendChild(b);
+}
+function markNum() { [...$('nums').children].forEach(b => b.classList.toggle('on', b.textContent === $('pc').value.trim())); }
+$('pc').addEventListener('input', markNum);
 
 function showCurrent() {
   const r = load();
@@ -80,6 +104,7 @@ function showCurrent() {
     d.textContent = `✅ このPCは登録済み（PC: ${r.pc}）`;
     $('current').appendChild(d);
     if (!$('pc').value) $('pc').value = r.pc;
+    markNum();
     if (r.api && r.api !== DEFAULT_API) $('api').value = r.api;
   }
 }
@@ -87,7 +112,7 @@ showCurrent();
 
 $('save').onclick = async () => {
   const key = $('key').value.trim();
-  if (!key) { status('ng', 'ルームキーを入れてください。'); $('key').focus(); return; }
+  if (!key) { $('keyBox').style.display = ''; $('keyOk').style.display = 'none'; status('ng', 'ルームキーを入れてください。'); $('key').focus(); return; }
   const pc = $('pc').value.trim() || 'PC-' + Math.random().toString(36).slice(2, 6).toUpperCase();
   const api = $('api').value.trim().replace(/\/+$/, '') || DEFAULT_API;
   status('info', 'サーバーに確認しています…');
@@ -103,9 +128,9 @@ $('save').onclick = async () => {
   if (api !== DEFAULT_API) room.api = api;
   localStorage.setItem('fes:room', JSON.stringify(room));
   // 前のこのPCだけのランキングは、共有ランキングと混ざらないようにそのまま残す（表示はされなくなる）
-  $('key').value = '';
   showCurrent();
-  status('ok', `✅ 登録しました（PC: ${pc}）。「ホームへ」で始められます。`);
+  status('ok', `✅ 登録しました（PC: ${pc}）。この画面を閉じて、つぎの PC へ。本番の朝は「部屋PC起動.bat」で始めます。`);
+  $('status').classList.add('big-ok');
 };
 
 $('remove').onclick = () => {
