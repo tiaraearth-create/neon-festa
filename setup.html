@@ -35,6 +35,23 @@
   .nums button.on { background: linear-gradient(135deg,#6a5cff,#b04dff); border-color: #ffd36e; }
   .nums button.spare { opacity: .7; font-size: 16px; }
   .big-ok { font-size: 22px !important; text-align: center; }
+  /* ゲームの世界観（ネオン・方眼・光るふち・キーボードのキー） */
+  body { background: #07061a; }
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background:
+      radial-gradient(ellipse 70% 45% at 15% 0%, rgba(176,107,255,.3), transparent 70%), radial-gradient(ellipse 60% 40% at 100% 100%, rgba(94,231,255,.2), transparent 70%),
+      linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px) 0 0 / 28px 28px; }
+  .card { position: relative; border: 2px solid #b06bff; box-shadow: 0 0 0 4px rgba(8,8,26,.9), 0 0 0 6px rgba(176,107,255,.45), 0 0 50px rgba(176,107,255,.35); }
+  .card::before { content: "SETUP ・ ROOM PC"; display: inline-block; margin-bottom: 10px; font-family: Consolas,"Courier New",monospace; font-size: 12px; font-weight: 900; letter-spacing: .16em; color: #07061a; background: #ffd36e; border-radius: 4px; padding: 2px 8px; }
+  h1 { font-size: 26px; text-shadow: 0 0 8px rgba(176,107,255,.9), 0 0 20px rgba(176,107,255,.5); }
+  .nums { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 9px; }
+  .nums button { font-family: Consolas,"Courier New",monospace; padding: 12px 0 10px; font-size: 22px; border-radius: 10px; background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.04));
+    border: 2px solid rgba(255,255,255,.45); border-bottom-width: 6px; transition: transform .06s, border-color .1s; }
+  .nums button:hover { border-color: #5ee7ff; box-shadow: 0 0 14px rgba(94,231,255,.5); }
+  .nums button:active { transform: translateY(3px); border-bottom-width: 3px; }
+  .nums button.on { background: linear-gradient(180deg, #ff6fa5, #b04dff); border-color: #ffd36e; box-shadow: 0 0 18px rgba(255,211,110,.7); }
+  .nums button.spare { opacity: .6; font-size: 17px; border-style: dashed; border-bottom-style: solid; }
+  #status.ok { border: 2px solid #5cff8d; box-shadow: 0 0 22px rgba(92,255,141,.45); }
+  #status.ok::before { content: "STAGE CLEAR!"; display: block; font-family: Consolas,"Courier New",monospace; font-size: 13px; letter-spacing: .3em; color: #5cff8d; margin-bottom: 4px; }
 </style>
 </head>
 <body>

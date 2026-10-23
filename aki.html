@@ -5,45 +5,71 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>空いている PC | NEON FESTA</title>
 <style>
-  :root { --gold: #ffd36e; --muted: rgba(255,255,255,.62); --free: #5cff8d; --busy: #ff6b8b; --off: #6b6b85; }
+  :root { --bg: #07061a; --gold: #ffd36e; --pink: #ff4d8d; --cyan: #5ee7ff; --muted: rgba(255,255,255,.65); --free: #5cff8d; --busy: #ff6b8b; --off: #6b6b85;
+    --mono: Consolas, "Courier New", monospace; --sans: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: #07071a; color: #fff; font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
-  body::before { content: ""; position: fixed; inset: 0; background: radial-gradient(ellipse at 50% -10%, rgba(110,70,255,.4), transparent 60%); pointer-events: none; }
-  .wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 18px 16px 28px; }
-  h1 { margin: 0; font-size: 22px; letter-spacing: .06em; }
-  h1 small { display: block; font-size: 12px; color: var(--muted); letter-spacing: .3em; margin-bottom: 2px; }
-  .big { margin: 16px 0 8px; padding: 18px 16px; border-radius: 22px; text-align: center; background: linear-gradient(160deg, rgba(30,30,70,.9), rgba(10,10,30,.95)); border: 1px solid rgba(255,255,255,.16); }
-  .big .n { font-size: 72px; font-weight: 900; line-height: 1; color: var(--free); text-shadow: 0 0 30px rgba(92,255,141,.5); font-variant-numeric: tabular-nums; }
-  .big .n.zero { color: var(--busy); text-shadow: 0 0 30px rgba(255,107,139,.5); }
-  .big .l { font-size: 18px; font-weight: 900; margin-top: 4px; }
-  .big .m { font-size: 14px; color: var(--muted); margin-top: 8px; line-height: 1.6; }
-  .free-list { font-size: 15px; font-weight: 800; margin-top: 10px; line-height: 1.7; }
-  .free-list b { display: inline-block; min-width: 2.2em; margin: 2px; padding: 2px 8px; border-radius: 8px; background: rgba(92,255,141,.18); border: 1px solid var(--free); color: #c9ffd9; }
-  .legend { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 14px 0 8px; }
-  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 5px; vertical-align: -1px; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: #fff; font-family: var(--sans); }
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(92,255,141,.28), transparent 70%),
+      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(255,77,141,.18), transparent 70%),
+      linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px) 0 0 / 28px 28px,
+      linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px) 0 0 / 28px 28px; }
+  body::after { content: ""; position: fixed; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px); }
+  .wrap { position: relative; z-index: 1; max-width: 760px; margin: 0 auto; padding: 14px 16px 28px; }
+  .hud { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .stage { font-family: var(--mono); font-size: 12px; font-weight: 900; letter-spacing: .14em; color: var(--bg); background: var(--gold); border-radius: 4px; padding: 2px 8px; }
+  .where { font-size: 12px; font-weight: 900; color: var(--cyan); border: 1.5px solid var(--cyan); border-radius: 99px; padding: 1px 10px; }
+  .live { margin-left: auto; display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; font-weight: 900; letter-spacing: .14em; color: var(--free); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--free); box-shadow: 0 0 10px var(--free); animation: blink 1.4s infinite; }
+  .live.off { color: var(--busy); } .live.off i { background: var(--busy); box-shadow: 0 0 10px var(--busy); }
+  @keyframes blink { 50% { opacity: .3 } }
+  h1 { margin: 12px 0 0; font-size: 28px; font-weight: 900; letter-spacing: .02em; text-shadow: 0 0 8px rgba(92,255,141,.8), 0 0 22px rgba(92,255,141,.45); }
+  h1 small { display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .32em; color: var(--muted); text-shadow: none; margin-bottom: 2px; }
+  .big { position: relative; margin: 14px 0 10px; padding: 18px 16px 16px; border-radius: 22px; text-align: center; overflow: hidden;
+    background: linear-gradient(160deg, rgba(24,30,60,.92), rgba(8,8,26,.96)); border: 2px solid var(--c, var(--free)); box-shadow: 0 0 0 4px rgba(8,8,26,.9), 0 0 0 6px color-mix(in srgb, var(--c, var(--free)) 45%, transparent), 0 0 40px color-mix(in srgb, var(--c, var(--free)) 35%, transparent); }
+  .big .k { font-family: var(--mono); font-size: 12px; letter-spacing: .3em; font-weight: 900; color: var(--c, var(--free)); }
+  .big .n { font-family: var(--mono); font-size: 96px; font-weight: 900; line-height: 1; color: var(--c, var(--free)); text-shadow: 0 0 14px var(--c, var(--free)), 0 0 40px color-mix(in srgb, var(--c, var(--free)) 60%, transparent); font-variant-numeric: tabular-nums; }
+  .big .n.pop { animation: pop .5s cubic-bezier(.2,1.5,.4,1); }
+  @keyframes pop { 0% { transform: scale(.7) } 100% { transform: none } }
+  .big .l { font-size: 20px; font-weight: 900; margin-top: 2px; }
+  .big .of { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .big .m { font-size: 14px; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+  .free-list { margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .free-list b { font-family: var(--mono); min-width: 42px; padding: 4px 8px; border-radius: 8px; font-size: 18px; background: rgba(92,255,141,.2); border: 2px solid var(--free); color: #d6ffe2; box-shadow: 0 0 12px rgba(92,255,141,.5); }
+  .legend { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; font-size: 13px; font-weight: 800; color: var(--muted); margin: 14px 0 10px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; }
-  .pc { aspect-ratio: 1; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; border: 2px solid; }
-  .pc small { font-size: 10px; font-weight: 800; margin-top: 2px; }
-  .pc.free { background: rgba(92,255,141,.16); border-color: var(--free); color: #c9ffd9; }
-  .pc.busy { background: rgba(255,107,139,.12); border-color: rgba(255,107,139,.6); color: #ffc2cf; }
-  .pc.off { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.15); color: var(--off); }
-  .foot { margin-top: 16px; font-size: 12px; color: var(--muted); line-height: 1.7; text-align: center; }
+  .pc { position: relative; aspect-ratio: 1; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2px solid; overflow: hidden; }
+  .pc b { font-family: var(--mono); font-size: 22px; font-weight: 900; line-height: 1; }
+  .pc small { font-size: 10px; font-weight: 900; margin-top: 3px; letter-spacing: .04em; }
+  .pc::before { content: ''; position: absolute; left: 6px; right: 6px; top: 5px; height: 3px; border-radius: 2px; background: currentColor; opacity: .35; }
+  .pc.free { background: radial-gradient(circle at 50% 35%, rgba(92,255,141,.32), rgba(92,255,141,.08)); border-color: var(--free); color: #d6ffe2; box-shadow: 0 0 14px rgba(92,255,141,.45); animation: glow 1.8s ease-in-out infinite; }
+  @keyframes glow { 50% { box-shadow: 0 0 24px rgba(92,255,141,.8) } }
+  .pc.busy { background: rgba(255,107,139,.1); border-color: rgba(255,107,139,.6); color: #ffc2cf; }
+  .pc.off { background: rgba(255,255,255,.03); border-color: rgba(255,255,255,.14); color: var(--off); }
+  .play { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 18px auto 0; max-width: 380px; padding: 14px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 16px; color: #1a1040;
+    background: linear-gradient(90deg, var(--gold), #ff9f43); box-shadow: 0 0 0 2px rgba(255,255,255,.5) inset, 0 8px 26px rgba(255,170,70,.45); }
+  .play .key { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; background: #1a1040; color: var(--gold); border-radius: 6px; padding: 2px 7px; }
+  .foot { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.7; text-align: center; }
+  .foot b { font-family: var(--mono); color: #fff; }
   .err { color: #ffb3b3; }
-  .play { display: block; margin: 16px auto 0; max-width: 360px; padding: 14px; border-radius: 16px; text-align: center; font-weight: 900; font-size: 16px; color: #1a1040; text-decoration: none; background: linear-gradient(90deg, var(--gold), #ff9f43); }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1><small>NEON FESTA ・ 7F パソコン室</small>空いている PC</h1>
-  <div class="big">
+  <div class="hud"><span class="stage">VACANCY</span><span class="where">7F パソコン室</span><span class="live" id="live"><i></i><span id="liveT">LIVE</span></span></div>
+  <h1><small>NEON FESTA ・ PC MONITOR</small>空いている PC</h1>
+  <div class="big" id="bigbox">
+    <div class="k" id="bigk">FREE PC</div>
     <div class="n" id="n">-</div>
     <div class="l" id="nl">台 空いています</div>
+    <div class="of" id="of"></div>
     <div class="free-list" id="freeList"></div>
     <div class="m" id="msg">よみこみ中…</div>
   </div>
-  <div class="legend"><span><i style="background:var(--free)"></i>空き</span><span><i style="background:var(--busy)"></i>遊んでいる</span><span><i style="background:var(--off)"></i>休み中</span></div>
+  <div class="legend"><span><i style="background:var(--free);box-shadow:0 0 8px var(--free)"></i>空き</span><span><i style="background:var(--busy)"></i>遊んでいる</span><span><i style="background:var(--off)"></i>休み中</span></div>
   <div class="grid" id="grid"></div>
-  <a class="play" href="index.html">📱 待っているあいだ、スマホで遊ぶ</a>
+  <a class="play" href="index.html"><span class="key">PLAY</span>📱 待っているあいだ、スマホで遊ぶ</a>
   <div class="foot" id="foot">10 秒ごとに自動で新しくなります。番号は PC に貼ってある番号札と同じです。</div>
 </div>
 <script>
@@ -54,18 +80,26 @@ const STALE_MS = 3 * 60 * 1000;   // 3 分知らせてこない PC は「休み�
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const byNum = (a, b) => (parseFloat(a.pc) || 9999) - (parseFloat(b.pc) || 9999) || String(a.pc).localeCompare(String(b.pc), 'ja');
+let lastFree = null;
 
 function render(data) {
   const pcs = (data.pcs || []).map(p => Object.assign({}, p, { state: data.now - p.at > STALE_MS ? 'off' : p.state })).sort(byNum);
-  const free = pcs.filter(p => p.state === 'free');
-  const n = $('n'); n.textContent = free.length; n.classList.toggle('zero', !free.length);
-  $('freeList').innerHTML = free.length ? 'すぐ遊べる番号：' + free.map(p => `<b>${esc(p.pc)}</b>`).join('') : '';
-  const busy = pcs.filter(p => p.state === 'busy').length;
+  const free = pcs.filter(p => p.state === 'free'), busy = pcs.filter(p => p.state === 'busy').length;
+  const n = $('n'); n.textContent = free.length;
+  if (lastFree !== null && lastFree !== free.length) { n.classList.remove('pop'); void n.offsetWidth; n.classList.add('pop'); }
+  lastFree = free.length;
+  $('bigbox').style.setProperty('--c', free.length ? 'var(--free)' : 'var(--busy)');
+  $('bigk').textContent = free.length ? 'FREE PC' : 'FULL';
+  $('nl').textContent = free.length ? '台 空いています' : '満席';
+  $('of').textContent = pcs.length ? `${free.length} / ${pcs.filter(p => p.state !== 'off').length} 台` : '';
+  $('freeList').innerHTML = free.map(p => `<b>${esc(p.pc)}</b>`).join('');
   $('msg').textContent = !pcs.length ? 'まだ PC の情報がありません（開場前か、PC が起動していません）'
     : free.length ? '受付で番号を言ってね。空いている PC にどうぞ！'
     : `いま ${busy} 台ぜんぶ遊んでいます。1 人 15 分くらいで交代するので、少しだけお待ちください`;
-  $('grid').innerHTML = pcs.map(p => `<div class="pc ${p.state}">${esc(p.pc)}<small>${p.state === 'free' ? '空き' : p.state === 'busy' ? '使用中' : '休み'}</small></div>`).join('');
-  const d = new Date(data.now); $('foot').textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')} 更新 ・ 10 秒ごとに自動で新しくなります。番号は PC に貼ってある番号札と同じです。`;
+  $('grid').innerHTML = pcs.map(p => `<div class="pc ${p.state}"><b>${esc(p.pc)}</b><small>${p.state === 'free' ? '空き' : p.state === 'busy' ? 'PLAY' : '休み'}</small></div>`).join('');
+  const d = new Date(data.now), t = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  $('foot').innerHTML = `<b>${t}</b> 更新 ・ 10 秒ごとに自動で新しくなります。番号は PC に貼ってある番号札と同じです。`;
+  $('live').classList.remove('off'); $('liveT').textContent = 'LIVE';
 }
 async function poll() {
   try {
@@ -75,6 +109,7 @@ async function poll() {
     render(await r.json());
   } catch (e) {
     $('msg').innerHTML = '<span class="err">通信できませんでした。少し待つと自動でもう一度読みます</span>';
+    $('live').classList.add('off'); $('liveT').textContent = 'OFFLINE';
   }
 }
 poll(); setInterval(poll, 10000);

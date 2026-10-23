@@ -131,7 +131,7 @@
       bar.style.display = ph === 'on' ? '' : 'none';
       if (ph !== 'on') return;
       const left = Math.max(0, Math.round((+evAt(EVENT.end) - Date.now() - evOffset) / 1000));
-      bar.textContent = `⏰ ラストスパート中！ ${EVENT.end} で本日のチャンピオン決定 — あと ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+      bar.innerHTML = `<span class="tag">BOSS STAGE</span>⏰ ラストスパート！ ${EVENT.end} に本日のチャンピオン決定 あと <b>${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</b>`;
     };
     tick(); setInterval(tick, 1000);
     document.body.insertBefore(bar, document.body.firstChild);
@@ -607,28 +607,52 @@
   .fes-badge span { font-size: 12px; color: rgba(255,255,255,.8); }
   .fes-badge.mission { background: linear-gradient(135deg, rgba(92,255,141,.2), rgba(94,231,255,.16)); border-color: rgba(92,255,141,.5); box-shadow: 0 0 24px rgba(92,255,141,.2); }
   .fes-badge.mission b { color: #8dffb5; }
-  .fes-evbar { position: relative; z-index: 5; display: block; width: fit-content; max-width: calc(100% - 24px); margin: 8px auto 0; padding: 8px 18px; border-radius: 999px; font-weight: 900; font-size: 15px; color: #fff; text-align: center;
-    background: linear-gradient(90deg, #ff4d8d, #ff9f43); box-shadow: 0 6px 30px rgba(255,120,80,.5); font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; font-variant-numeric: tabular-nums; pointer-events: none; }
-  .fes-ladder { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 6px 0 4px; }
-  .fes-ladder .st { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: rgba(255,255,255,.06); border: 1px dashed rgba(255,255,255,.25); color: rgba(255,255,255,.7); }
-  .fes-ladder .st.done { background: linear-gradient(90deg, rgba(255,211,110,.3), rgba(255,179,71,.25)); border: 1px solid #ffd36e; color: #ffe9b0; }
-  .fes-ladder .st b { color: #ffd36e; }
-  .fes-next { font-size: 14px; font-weight: 900; color: #fff; margin: 2px 0 6px; }
-  .fes-next b { color: #ffd36e; font-size: 18px; }
-  .fes-get .fes-getcard { width: min(94vw, 640px); overflow-x: hidden; border-color: #ffd36e; box-shadow: 0 0 60px rgba(255,211,110,.35); }
-  .fes-get-big { font-size: clamp(30px, 6vw, 48px); font-weight: 900; color: #ffd36e; letter-spacing: .04em; text-shadow: 0 0 24px rgba(255,211,110,.6); animation: fesPop .6s cubic-bezier(.2,1.4,.4,1) both, fesBump 1.4s ease-in-out .8s infinite; margin: 4px 0 12px; }
-  .fes-get-list { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-  .fes-get-item { flex: 1 1 200px; max-width: 280px; padding: 14px 12px 12px; border-radius: 16px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,211,110,.5); animation: fesPop .55s cubic-bezier(.2,1.4,.4,1) .25s both; }
-  .fes-get-ic { font-size: 44px; line-height: 1.1; }
-  .fes-get-t { font-size: 18px; font-weight: 900; color: #ffd36e; margin: 4px 0 2px; }
+  /* ラストスパートの帯（ホーム画面の上） */
+  .fes-evbar { position: relative; z-index: 5; display: flex; align-items: center; gap: 10px; width: fit-content; max-width: calc(100% - 24px); margin: 8px auto 0; padding: 7px 16px 7px 8px; border-radius: 999px; font-weight: 900; font-size: 15px; color: #fff;
+    background: linear-gradient(90deg, rgba(255,77,141,.92), rgba(255,159,67,.92)); box-shadow: 0 0 0 2px rgba(255,255,255,.5) inset, 0 6px 30px rgba(255,90,120,.55); font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; font-variant-numeric: tabular-nums; pointer-events: none; }
+  .fes-evbar .tag { font-family: Consolas,"Courier New",monospace; font-size: 11px; letter-spacing: .16em; color: #2a0f30; background: #ffd36e; border-radius: 999px; padding: 3px 9px; animation: fesBlink 1s steps(2) infinite; }
+  .fes-evbar b { font-family: Consolas,"Courier New",monospace; font-size: 18px; letter-spacing: .04em; }
+  @keyframes fesBlink { 50% { opacity: .35 } }
+  /* 景品のはしご（ステージの地図） */
+  .fes-track { position: relative; margin: 14px 26px 6px; height: 66px; }
+  .fes-track .rail { position: absolute; left: 0; right: 0; top: 18px; height: 8px; border-radius: 99px; background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+  .fes-track .fill { position: absolute; left: 0; top: 18px; height: 8px; border-radius: 99px; background: linear-gradient(90deg, #5ee7ff, #ffd36e, #ff4d8d); box-shadow: 0 0 12px rgba(255,211,110,.7); }
+  .fes-track .node { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; width: 90px; }
+  .fes-track .node i { font-style: normal; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; font-size: 20px; background: #12122e; border: 2px dashed rgba(255,255,255,.35); filter: grayscale(.8); opacity: .7; }
+  .fes-track .node.done i { filter: none; opacity: 1; border: 2px solid #ffd36e; background: radial-gradient(circle, rgba(255,211,110,.45), #2a1a3a); box-shadow: 0 0 16px rgba(255,211,110,.75); }
+  .fes-track .node.next i { opacity: 1; filter: none; border: 2px solid #5ee7ff; animation: fesBump 1.1s ease-in-out infinite; box-shadow: 0 0 14px rgba(94,231,255,.7); }
+  .fes-track .node span { margin-top: 3px; font-size: 10.5px; font-weight: 800; line-height: 1.2; color: rgba(255,255,255,.78); text-align: center; white-space: nowrap; }
+  .fes-track .node span b { display: block; font-family: Consolas,"Courier New",monospace; font-size: 11px; color: #ffd36e; }
+  .fes-next { font-size: 14px; font-weight: 900; color: #fff; margin: 8px 0 6px; }
+  .fes-next b { color: #5ee7ff; font-size: 20px; font-family: Consolas,"Courier New",monospace; text-shadow: 0 0 10px rgba(94,231,255,.8); }
+  /* 景品ゲット（アイテムゲットの演出） */
+  .fes-get { overflow: hidden; }
+  .fes-get-rays { position: absolute; left: 50%; top: 50%; width: 1100px; height: 1100px; margin: -550px 0 0 -550px; pointer-events: none; opacity: .32; border-radius: 50%;
+    background: repeating-conic-gradient(from 0deg, rgba(255,211,110,.5) 0deg 8deg, transparent 8deg 22deg); animation: fesSpin 16s linear infinite; will-change: transform; }
+  .fes-lite .fes-get-rays { animation: none; opacity: .2; }
+  @keyframes fesSpin { to { transform: rotate(360deg) } }
+  .fes-get .fes-getcard { position: relative; width: min(94vw, 660px); overflow-x: hidden; border: 2px solid #ffd36e; box-shadow: 0 0 0 4px rgba(10,8,30,.9), 0 0 0 6px rgba(255,211,110,.55), 0 0 70px rgba(255,211,110,.45);
+    background: radial-gradient(ellipse at 50% 0%, rgba(255,211,110,.22), transparent 60%), linear-gradient(160deg, rgba(34,24,80,.97), rgba(10,8,30,.98)); }
+  .fes-get-k { font-family: Consolas,"Courier New",monospace; font-size: 15px; font-weight: 900; letter-spacing: .4em; color: #ffd36e; animation: fesBlink .9s steps(2) 6; }
+  .fes-get-big { font-size: clamp(32px, 6.4vw, 52px); font-weight: 900; color: #fff; letter-spacing: .03em; text-shadow: 0 0 10px #ffb347, 0 0 28px rgba(255,180,70,.8); animation: fesPop .6s cubic-bezier(.2,1.4,.4,1) both; margin: 2px 0 16px; }
+  .fes-get-list { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }
+  .fes-get-item { position: relative; flex: 1 1 210px; max-width: 290px; padding: 18px 12px 14px; border-radius: 18px; background: rgba(255,255,255,.06); border: 2px solid var(--gc, #ffd36e);
+    box-shadow: 0 0 22px color-mix(in srgb, var(--gc, #ffd36e) 45%, transparent), inset 0 0 18px color-mix(in srgb, var(--gc, #ffd36e) 15%, transparent); animation: fesGetIn .7s cubic-bezier(.2,1.5,.4,1) .2s both; }
+  .fes-get-item::before { content: 'NEW'; position: absolute; top: -11px; left: 50%; transform: translateX(-50%); font-family: Consolas,"Courier New",monospace; font-size: 11px; font-weight: 900; letter-spacing: .18em; color: #1a0f30; background: var(--gc, #ffd36e); padding: 2px 10px; border-radius: 99px; }
+  @keyframes fesGetIn { 0% { transform: translateY(40px) scale(.6); opacity: 0 } 70% { transform: translateY(-6px) scale(1.05); opacity: 1 } 100% { transform: none } }
+  .fes-get-ic { font-size: 50px; line-height: 1.1; animation: fesFloat 2.4s ease-in-out .9s infinite; }
+  @keyframes fesFloat { 50% { transform: translateY(-6px) } }
+  .fes-get-t { font-size: 19px; font-weight: 900; color: #fff; margin: 4px 0 2px; text-shadow: 0 0 10px color-mix(in srgb, var(--gc, #ffd36e) 80%, transparent); }
   .fes-get-d { font-size: 12px; color: rgba(255,255,255,.75); line-height: 1.4; margin-bottom: 6px; }
-  .fes-get-how { font-size: 14px; font-weight: 800; color: #fff; margin-top: 6px; }
-  .fes-get-qr { display: inline-block; padding: 10px; background: #fff; border-radius: 12px; color: #333; min-width: 60px; }
-  .fes-get-qr svg { display: block; width: 170px; height: 170px; }
+  .fes-get-how { font-size: 14px; font-weight: 800; color: #fff; margin-top: 8px; }
+  .fes-get-qr { display: inline-block; padding: 10px; background: #fff; border-radius: 12px; color: #333; min-width: 60px; box-shadow: 0 0 0 3px var(--gc, #ffd36e), 0 0 24px color-mix(in srgb, var(--gc, #ffd36e) 60%, transparent); }
+  .fes-get-qr svg { display: block; width: 172px; height: 172px; }
   .fes-get-open { display: inline-block; margin-top: 8px; }
-  .fes-get-next { margin: 14px 0 2px; font-size: 15px; font-weight: 800; }
-  .fes-get-next b { color: #ffd36e; font-size: 20px; }
-  .fes-get-note { font-size: 12px; color: rgba(255,255,255,.6); margin-top: 6px; }
+  .fes-get-next { margin: 18px auto 2px; max-width: 440px; font-size: 14px; font-weight: 800; }
+  .fes-get-next b { color: #5ee7ff; font-size: 20px; font-family: Consolas,"Courier New",monospace; }
+  .fes-get-bar { height: 12px; margin-top: 6px; border-radius: 99px; background: rgba(255,255,255,.12); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+  .fes-get-bar i { display: block; height: 100%; border-radius: 99px; background: repeating-linear-gradient(90deg, #5ee7ff 0 14px, #9ff3ff 14px 18px); box-shadow: 0 0 12px rgba(94,231,255,.8); transition: width 1s cubic-bezier(.2,1,.3,1) .5s; }
+  .fes-get-note { font-size: 12px; color: rgba(255,255,255,.6); margin-top: 8px; }
   .fes-prize { margin: 10px 0 2px; padding: 10px 14px; border-radius: 14px; font-weight: 900; color: #2a2200; background: linear-gradient(90deg, #ffd36e, #ffb347); animation: fesBump 1.2s ease-in-out infinite; }
   .fes-howto { position: fixed; left: 50%; bottom: 9vh; transform: translateX(-50%); z-index: 8980; pointer-events: none; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; max-width: min(94vw, 900px); animation: fesFade .3s ease both; }
   .fes-howto.out { animation: fesFeverOut .4s ease both; }
@@ -1005,10 +1029,15 @@
       // 景品のはしご（スタンプ何個で何がもらえるか）と、つぎの景品まであと何個か
       const ladder = FES.prizeLadder(cardNow);
       if (ladder.length) {
-        const lrow = el('div', { class: 'fes-ladder' });
-        ladder.forEach(x => lrow.appendChild(el('span', { class: 'st' + (x.done ? ' done' : '') }, [document.createTextNode(x.done ? '✔ ' : ''), el('b', { text: x.need ? `${x.need}個` : '🎯' }), document.createTextNode(` ${x.icon} ${x.title}`)])));
-        card.appendChild(lrow);
-        const nx = FES.nextPrize(cardNow);
+        // ステージの地図: 線の上に景品がならび、いまのスタンプの数まで光る
+        const nx = FES.nextPrize(cardNow), max = Math.max(...ladder.map(x => x.need || 0), 1);
+        const track = el('div', { class: 'fes-track' }, [el('div', { class: 'rail' }), el('div', { class: 'fill', style: `width:${Math.min(100, n / max * 100)}%` })]);
+        ladder.forEach(x => {
+          const pos = x.need ? Math.max(6, Math.min(94, x.need / max * 100)) : 97;
+          track.appendChild(el('div', { class: 'node' + (x.done ? ' done' : '') + (nx && nx.id === x.id ? ' next' : ''), style: `left:${pos}%`, title: x.title }, [
+            el('i', { text: x.icon }), el('span', {}, [el('b', { text: x.need ? `×${x.need}` : '🎯' }), document.createTextNode(x.title.replace('NEON FESTA ', '').replace('殿堂入りの', ''))])]));
+        });
+        card.appendChild(track);
         if (nx) card.appendChild(el('div', { class: 'fes-next' }, [document.createTextNode('🎁 あと '), el('b', { text: String(nx.rest) }), document.createTextNode(` 個で ${nx.icon} ${nx.title}！`)]));
       }
       // 会場の PC だけ: 手でわたす景品の案内（もらえることが決まったあと、ずっと出しておく）
@@ -1344,10 +1373,11 @@
     if (!items || !items.length) return;
     ensureUI(); FES.closePrizeGet(); opts = opts || {};
     const card = el('div', { class: 'fes-card fes-getcard' });
+    card.appendChild(el('div', { class: 'fes-get-k', text: 'ITEM GET!' }));
     card.appendChild(el('div', { class: 'fes-get-big', text: '🎁 景品ゲット！' }));
     const list = el('div', { class: 'fes-get-list' });
     items.forEach(x => {
-      const box = el('div', { class: 'fes-get-item ' + x.kind });
+      const box = el('div', { class: 'fes-get-item ' + x.kind, style: `--gc:${x.id === 'sticker' ? '#ffd36e' : x.id === 'award' ? '#ff4d8d' : '#5ee7ff'}` });
       box.appendChild(el('div', { class: 'fes-get-ic', text: x.icon }));
       box.appendChild(el('div', { class: 'fes-get-t', text: x.title }));
       if (x.kind === 'qr') {
@@ -1365,11 +1395,15 @@
     });
     card.appendChild(list);
     const nx = FES.nextPrize();
-    if (nx) card.appendChild(el('div', { class: 'fes-get-next' }, [document.createTextNode('つぎは あと '), el('b', { text: String(nx.rest) }), document.createTextNode(` 個で ${nx.icon} ${nx.title}`)]));
+    if (nx) {
+      const bar = el('i', { style: 'width:0%' });
+      card.appendChild(el('div', { class: 'fes-get-next' }, [document.createTextNode('NEXT ▶ あと '), el('b', { text: String(nx.rest) }), document.createTextNode(` 個で ${nx.icon} ${nx.title}`), el('div', { class: 'fes-get-bar' }, [bar])]));
+      setTimeout(() => { bar.style.width = `${Math.min(100, (nx.need - nx.rest) / nx.need * 100)}%`; }, 60);
+    }
     if (items.some(x => x.kind === 'qr')) card.appendChild(el('div', { class: 'fes-get-note', text: 'あとで読むときは 🏠 ホーム画面の「🎁 景品のQRコードを見る」' }));
     const ok = el('button', { class: 'fes-act', text: 'OK', onclick: () => { FES.sfx('select'); FES.closePrizeGet(); } });
     card.appendChild(el('div', { class: 'fes-actions' }, [ok]));
-    prizeEl = el('div', { class: 'fes-overlay fes-get', style: 'z-index:9300' }, [card]);
+    prizeEl = el('div', { class: 'fes-overlay fes-get', style: 'z-index:9300' }, [el('div', { class: 'fes-get-rays' }), card]);
     prizeEl.addEventListener('click', e => { if (e.target === prizeEl) FES.closePrizeGet(); });
     ui.appendChild(prizeEl);
     if (!opts.quiet) { FES.sfx('fanfare'); FES.vibrate([30, 40, 80]); confetti(3500); }
