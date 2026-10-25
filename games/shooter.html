@@ -18,7 +18,7 @@
 /* =====================================================================
    ギャラクシーブラスター — 縦スクロールシューティング
    ===================================================================== */
-FES.init({ id: 'shooter', title: 'ギャラクシーブラスター', ranking: true });
+FES.init({ id: 'shooter', title: 'ギャラクシーブラスター', ranking: true, portraitOk: true });   // プレイ画面が縦長なので、スマホは縦向きのままでよい（横向きの案内を出さない）
 
 const W = 540, H = 960;
 const canvas = document.getElementById('game');
@@ -1175,7 +1175,8 @@ function drawSidePanels() {
   ctx.save(); ctx.shadowColor = 'rgba(94,212,255,.55)'; ctx.shadowBlur = 24;
   ctx.strokeStyle = 'rgba(94,212,255,.5)'; ctx.lineWidth = 2; ctx.strokeRect(ox - 1, oy - 1, W * sc + 2, H * sc + 2); ctx.restore();
   const L = panelRect('L'), R = panelRect('R');
-  const u = clamp(L.w / 280, 0.75, 1.5);   // パネル幅に合わせた文字の倍率
+  // パネルの幅と高さの両方に合わせた文字の倍率（スマホを横にしたときはパネルが低いので、高さで小さくする）
+  const u = clamp(Math.min(L.w / 280, L.h / 460), 0.6, 1.5);
   const panel = (r, accent) => {
     ctx.fillStyle = 'rgba(10,12,34,.72)'; roundRect(r.x, r.y, r.w, r.h, 18); ctx.fill();
     ctx.strokeStyle = hexToRgba(accent, 0.35); ctx.lineWidth = 1.5; ctx.stroke();
@@ -1249,9 +1250,12 @@ function drawSidePanels() {
     rline('約3分。WAVE 9 の最終ボスを倒せ！', 14, '#ffe66d', 900, 36);
   }
   const help = [['移動', '矢印 / WASD / マウス'], ['ボム', 'Shift / Z / クリック'], ['ポーズ', 'Esc / P'], ['ショット', '自動連射']];
-  y = R.y + R.h - (help.length * 30 + 40) * u;
-  text('CONTROLS', rx, y, 11 * u, 'rgba(255,255,255,.5)', 'left', 900); y += 26 * u;
-  help.forEach(([k, v]) => { text(k, rx, y, 13 * u, '#8ed6ff', 'left', 900); text(v, rx + 60 * u, y, 13 * u, '#fff', 'left', 700); y += 30 * u; });
+  const helpTop = R.y + R.h - (help.length * 30 + 40) * u;
+  if (helpTop >= y + 8 * u) {   // 上の表示（LIFE・BOMB・POWER）と重なるときは操作説明を出さない
+    y = helpTop;
+    text('CONTROLS', rx, y, 11 * u, 'rgba(255,255,255,.5)', 'left', 900); y += 26 * u;
+    help.forEach(([k, v]) => { text(k, rx, y, 13 * u, '#8ed6ff', 'left', 900); text(v, rx + 60 * u, y, 13 * u, '#fff', 'left', 700); y += 30 * u; });
+  }
 }
 
 /* ------------------------------------------------------------ ゲーム進行 */
