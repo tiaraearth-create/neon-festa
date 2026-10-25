@@ -39,3 +39,7 @@ Thumbs.db
 
 # USB から外した古いもの（手元に残すだけ）
 開発用/古いもの（USBから外した）/
+開発用/reorg_prints.py
+開発用/make_pdfs.py
+開発用/pdf_list.json
+開発用/make_print_guide.py
