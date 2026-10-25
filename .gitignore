@@ -43,3 +43,6 @@ Thumbs.db
 開発用/make_pdfs.py
 開発用/pdf_list.json
 開発用/make_print_guide.py
+
+# クラス（1年1組）の文化祭シフト表など、NEON FESTA 以外でクラスメイトの名前が入るもの。公開しない
+クラス/
