@@ -33,14 +33,17 @@ const PX = BW + GAP_X, PY = BH + GAP_Y;
 const GRID_X0 = (W - (COLS * PX - GAP_X)) / 2;
 const GRID_Y0 = 178;
 const BALL_R = 9;
-const TOTAL_STAGES = 8;
+const TOTAL_STAGES = 9;         // 8 ステージ ＋ ボス「ネオンコア」
+const BOSS_HP = 30;
+const SMASH_SPEED = 700;        // パドルをこれより速く動かしながら打つと SMASH
 const PAUSE_BTN = { x: 682, y: 924, r: 24 };
 const SCALE = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26]; // ペンタトニック（列→音程）
 
 const clamp = FES.clamp, rand = FES.rand, randInt = FES.randInt, pick = FES.pick;
 
 /* ------------------------------------------------------------ ステージ定義
-   '.' 空  '1' 通常  '2' 硬い(2)  '3' 硬い(3)  'M' 金属  'X' 爆発  'R' レインボー */
+   '.' 空  '1' 通常  '2' 硬い(2)  '3' 硬い(3)  'M' 金属  'X' 爆発  'R' レインボー
+   'G' ゴールド（+300・かならずアイテム）  'F' スプリット（こわすとボールが増える）  '@' ボス（連続した @ の幅） */
 const STAGES = [
   { name: 'ハート', hue: 335, rows: [
     '.111....111.',
@@ -76,7 +79,7 @@ const STAGES = [
     '..21111112..',
     '.2111RR1112.',
     '2111X11X1112',
-    '211111111112',
+    '2111G11G1112',
     '.2111RR1112.',
     '..21111112..',
     '...211112...',
@@ -87,7 +90,7 @@ const STAGES = [
     '.....RR.....',
     '....1111....',
     '...111111...',
-    '..11111111..',
+    '..11G11G11..',
     '.1111111111.',
     '111111111111',
     '.2222222222.',
@@ -102,7 +105,7 @@ const STAGES = [
     '111331133111',
     '111111111111',
     '1X11111111X1',
-    '11R111111R11',
+    '11R1F11F1R11',
     '.11RRRRRR11.',
     '.1111111111.',
     '..11111111..',
@@ -112,7 +115,7 @@ const STAGES = [
     'M22M22M22M22',
     '2R1X1111X1R2',
     'M22M22M22M22',
-    '211111111112',
+    '21111FF11112',
     'M22M22M22M22',
     '2111X11X1112',
     'M22M22M22M22',
@@ -124,7 +127,7 @@ const STAGES = [
     '....1..1....',
     '...222222...',
     '..22R22R22..',
-    '.2222222222.',
+    '.2222GG2222.',
     '.2.222222.2.',
     '.2.2....2.2.',
     '....22.22...',
@@ -132,6 +135,15 @@ const STAGES = [
     '.M3X3MM3X3M.',
     '............',
     '..3X33X33X..',
+  ] },
+  { name: 'ネオンコア', hue: 300, boss: true, rows: [
+    '............',
+    '....@@@@....',
+    '............',
+    '............',
+    '............',
+    '............',
+    '.M........M.',
   ] },
 ];
 
@@ -144,7 +156,7 @@ function randomRows() {
         let ch = '.';
         if (Math.random() < 0.7) {
           const t = Math.random();
-          ch = t < 0.6 ? '1' : t < 0.78 ? '2' : t < 0.85 ? '3' : t < 0.92 ? 'X' : t < 0.96 ? 'R' : 'M';
+          ch = t < 0.58 ? '1' : t < 0.74 ? '2' : t < 0.81 ? '3' : t < 0.88 ? 'X' : t < 0.92 ? 'R' : t < 0.955 ? 'G' : t < 0.98 ? 'F' : 'M';
           count++;
         }
         half += ch;
@@ -198,13 +210,14 @@ function newGame() {
   return {
     state: 'title', stateT: 0, paused: false,
     stage: 0, score: 0, dispScore: 0, lives: 3,
-    blocksDestroyed: 0, combo: 0, maxCombo: 0,
+    blocksDestroyed: 0, combo: 0, maxCombo: 0, smashes: 0, perfects: 0, stageMiss: 0,
     balls: [], blocks: [], items: [], lasers: [], particles: [], pops: [], ripples: [], explosions: [],
-    paddle: { x: W / 2, wCur: 120, sizeMode: 'normal', sizeT: 0, laserT: 0, laserCd: 0, flash: 0 },
+    paddle: { x: W / 2, px: W / 2, vx: 0, wCur: 120, sizeMode: 'normal', sizeT: 0, laserT: 0, laserCd: 0, flash: 0 },
     slowT: 0, pierceT: 0, barrier: false,
     stageTime: 0, time: 0, shake: 0, flash: 0, flashColor: '#ffffff', hitStop: 0,
     ballWaiting: true, introDur: 1.5, clearBonus: 0, fwTimer: 0,
     countdownStep: -1, cursorHide: false,
+    clearPerfect: false, bossEnrage: false,
   };
 }
 G = newGame();
@@ -231,7 +244,29 @@ function makeBlock(col, row, ch, def) {
   else if (ch === 'M') { b.type = 'm'; b.hp = b.maxHp = 99; }
   else if (ch === 'X') { b.type = 'x'; }
   else if (ch === 'R') { b.type = 'r'; }
+  else if (ch === 'G') { b.type = 'g'; }
+  else if (ch === 'F') { b.type = 'f'; }
+  else if (ch === '@') { b.type = 'boss'; b.hp = b.maxHp = BOSS_HP; b.h = BH * 2 + GAP_Y; }
   return b;
+}
+function bossBlock() { return G.blocks.find(b => b.type === 'boss' && b.alive) || null; }
+// ボスの盾: 空いているマスにふつうのブロックを出す（ボールの近くは避ける）
+function spawnShield(n) {
+  const def = stageDef();
+  const cells = [];
+  for (const r of [3, 4, 5]) for (let c = 1; c <= 10; c++) {
+    const x = GRID_X0 + c * PX, y = GRID_Y0 + r * PY;
+    if (G.blocks.some(b => b.alive && b.row === r && b.col === c)) continue;
+    if (G.balls.some(ball => Math.abs(ball.x - (x + BW / 2)) < BW && Math.abs(ball.y - (y + BH / 2)) < BH * 2)) continue;
+    cells.push([c, r]);
+  }
+  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+  for (const [c, r] of cells.slice(0, n)) {
+    const b = makeBlock(c, r, G.bossEnrage && Math.random() < 0.3 ? 'X' : '1', def);
+    b.appear = 0; b.t = 0;
+    G.blocks.push(b);
+    addRipple(b.x + b.w / 2, b.y + b.h / 2, 0, 40, 0.4, '#ff4de1', 2);
+  }
 }
 
 function buildStage(idx) {
@@ -242,9 +277,17 @@ function buildStage(idx) {
     for (let c = 0; c < COLS; c++) {
       const ch = row[c] || '.';
       if (ch === '.') continue;
+      if (ch === '@') {
+        if (row[c - 1] === '@') continue;              // 連続した @ はひとつのボス
+        let n = 1; while (row[c + n] === '@') n++;
+        const b = makeBlock(c, r, '@', def); b.w = n * PX - GAP_X;
+        G.blocks.push(b);
+        continue;
+      }
       G.blocks.push(makeBlock(c, r, ch, def));
     }
   });
+  G.stageMiss = 0; G.clearPerfect = false; G.bossEnrage = false;
   G.blocks.forEach((b, i) => { b.appear = 0.15 + i * 0.016; b.t = 0; });
   G.introDur = 0.15 + G.blocks.length * 0.016 + 0.9;
   G.items = []; G.lasers = []; G.explosions = [];
@@ -262,6 +305,11 @@ function updateBlocks(dt) {
     if (b.flash > 0) b.flash = Math.max(0, b.flash - dt * 6);
     if (b.hitCd > 0) b.hitCd -= dt;
     if (b.shakeT > 0) b.shakeT -= dt;
+    if (b.type === 'boss' && b.alive) {
+      const k = 1 - b.hp / b.maxHp;
+      b.x = b.bx + Math.sin(G.stageTime * (0.9 + k * 1.6)) * 240;
+      continue;
+    }
     if (def.moving && b.alive) {
       const t = G.stageTime;
       let off = 0;
@@ -280,6 +328,9 @@ function blockColor(b) {
     case 'm': return '#a9b2c4';
     case 'x': return '#ff7a2a';
     case 'r': return `hsl(${(G.time * 200 + b.col * 30) % 360},100%,62%)`;
+    case 'g': return '#ffd24a';
+    case 'f': return '#6ff2e0';
+    case 'boss': return G.bossEnrage ? `hsl(${350 + Math.sin(G.time * 10) * 10},100%,60%)` : `hsl(${300 + Math.sin(G.time * 3) * 15},100%,62%)`;
   }
   return '#fff';
 }
@@ -297,6 +348,31 @@ function damageBlock(b, dmg, cause) {
     FES.noise({ dur: 0.05, freq: 5000, filter: 'highpass', vol: 0.12 });
     b.shakeT = 0.15; b.flash = 0.6;
     spawnParticles(cx, cy, 5, '#e8eefc', 120, 3, 0.35);
+    return;
+  }
+  if (b.type === 'boss') {
+    b.hp -= dmg;
+    b.flash = 1; b.shakeT = 0.18;
+    const k = 1 - Math.max(0, b.hp) / b.maxHp;
+    FES.tone({ freq: 160 + k * 260, slide: -80, dur: 0.12, type: 'sawtooth', vol: 0.26 });
+    FES.noise({ dur: 0.08, freq: 3000, slide: -1500, vol: 0.14 });
+    spawnParticles(cx, cy, 10 + dmg * 4, blockColor(b), 220, 5, 0.5, true);
+    addRipple(cx, cy, 10, 70, 0.3, '#ff4de1', 3);
+    G.shake = Math.max(G.shake, 5 + dmg * 2);
+    G.score += 100 * dmg;
+    addPop(cx, cy - 30, '+' + (100 * dmg), '#ffb3f0', 18, 0.5);
+    if (b.hp <= 0) { destroyBlock(b, cause); return; }
+    if (b.hp % 6 === 0) {                                           // 6 ダメージごとに盾を呼ぶ
+      spawnShield(G.bossEnrage ? 6 : 4);
+      addPop(cx, cy + 40, 'シールド！', '#ff4de1', 22, 0.8, true);
+      FES.sfx('powerup');
+    }
+    if (!G.bossEnrage && b.hp <= 10) {                              // 残り 1/3 で怒りモード
+      G.bossEnrage = true;
+      addPop(W / 2, 560, 'コアが 怒った！', '#ff4d4d', 34, 1.2, true);
+      G.flash = 0.5; G.flashColor = '#ff3355'; G.shake = Math.max(G.shake, 14);
+      FES.sfx('wrong'); FES.noise({ dur: 0.4, freq: 900, slide: -600, vol: 0.25 });
+    }
     return;
   }
   b.hp -= dmg;
@@ -324,9 +400,14 @@ function destroyBlock(b, cause) {
   if (b.type === 'h') base = 150 + 50 * b.maxHp;
   else if (b.type === 'x') base = 150;
   else if (b.type === 'r') base = 500;
+  else if (b.type === 'g') base = 300;
+  else if (b.type === 'f') base = 200;
+  else if (b.type === 'boss') base = 5000;
+  if (cause === 'smash') base = Math.floor(base * 1.5);
   const gain = Math.floor(base * mult);
   G.score += gain;
-  addPop(cx, cy - 6, '+' + gain, b.type === 'r' ? '#ffe36e' : '#ffffff', b.type === 'r' ? 26 : 20, 0.7);
+  const big = b.type === 'r' || b.type === 'g' || b.type === 'boss';
+  addPop(cx, cy - 6, '+' + gain, big ? '#ffe36e' : cause === 'smash' ? '#ff9af0' : '#ffffff', b.type === 'boss' ? 40 : big ? 26 : 20, 0.7);
   if (G.combo >= 2) {
     const tier = G.combo >= 15 ? '#ff4de1' : G.combo >= 8 ? '#ffb347' : G.combo >= 4 ? '#7dff8a' : '#8ed6ff';
     addPop(cx, cy - 34, `${G.combo} COMBO!`, tier, 22 + Math.min(G.combo, 20), 0.8, true);
@@ -350,6 +431,30 @@ function destroyBlock(b, cause) {
   } else if (b.type === 'r') {
     FES.sfx('coin');
     addRipple(cx, cy, 0, 80, 0.45, '#ffffff', 4);
+  } else if (b.type === 'g') {
+    FES.sfx('coin'); FES.tone({ freq: 1200, slide: 1800, dur: 0.15, type: 'sine', vol: 0.18 });
+    spawnParticles(cx, cy, 18, '#ffe36e', 260, 5, 0.8, true);
+    addRipple(cx, cy, 0, 70, 0.4, '#ffd24a', 4);
+    if (G.items.length < 6) spawnItem(cx, cy);                      // ゴールドはかならずアイテム
+    return;
+  } else if (b.type === 'f') {
+    FES.tone({ freq: 600, slide: 1500, dur: 0.18, type: 'square', vol: 0.18 });
+    addRipple(cx, cy, 0, 90, 0.45, '#6ff2e0', 4);
+    if (!G.ballWaiting && G.balls.length < 12) {                    // ボールがひとつ増える
+      const sp = targetSpeed(), dir = cx < W / 2 ? 1 : -1;
+      G.balls.push(makeBall(cx, cy, dir * sp * 0.5, sp * 0.87));
+      addPop(cx, cy - 56, 'ボール追加！', '#6ff2e0', 22, 0.8, true);
+    }
+  } else if (b.type === 'boss') {
+    FES.sfx('explode'); FES.sfx('fanfare');
+    G.shake = Math.max(G.shake, 34); G.flash = 0.8; G.flashColor = '#ffffff'; G.hitStop = 0.1;
+    spawnParticles(cx, cy, 90, '#ff4de1', 560, 9, 1.2, true);
+    spawnParticles(cx, cy, 60, '#ffe36e', 420, 7, 1.0, true);
+    spawnParticles(cx, cy, 40, '#ffffff', 300, 4, 0.8);
+    for (let i = 0; i < 4; i++) addRipple(cx, cy, 10 + i * 20, 260 + i * 60, 0.7 + i * 0.1, i % 2 ? '#ffffff' : '#ff4de1', 6);
+    addPop(W / 2, 520, 'CORE BREAK!!', '#ffe36e', 52, 1.6, true);
+    for (const o of G.blocks) if (o.alive && o.type !== 'm' && o !== b) destroyBlock(o, 'explosion');   // 盾も全部くだける
+    return;
   } else {
     FES.tone({ freq: noteFreq(b), dur: 0.09, type: 'square', vol: 0.2, slide: noteFreq(b) * 1.5 });
     FES.noise({ dur: 0.06, freq: 2500, slide: 300, vol: 0.08 });
@@ -369,7 +474,7 @@ function processExplosions(dt) {
     for (const b of G.blocks) {
       if (!b.alive || b.type === 'm' || b.t < b.appear) continue;
       const bx = b.x + b.w / 2, by = b.y + b.h / 2;
-      if (Math.abs(bx - e.x) <= PX * 1.55 && Math.abs(by - e.y) <= PY * 1.55) destroyBlock(b, 'explosion');
+      if (Math.abs(bx - e.x) <= PX * 1.55 && Math.abs(by - e.y) <= PY * 1.55) { if (b.type === 'boss') damageBlock(b, 3, 'explosion'); else destroyBlock(b, 'explosion'); }
     }
   }
 }
@@ -382,7 +487,7 @@ function remainingBlocks() {
 
 /* ------------------------------------------------------------ ボール */
 function makeBall(x, y, vx, vy) {
-  return { x, y, vx, vy, r: BALL_R, speed: targetSpeed(), trail: [], lost: false };
+  return { x, y, vx, vy, r: BALL_R, speed: targetSpeed(), trail: [], lost: false, smash: false };
 }
 function spawnWaitingBall() {
   G.balls = [makeBall(G.paddle.x, paddleTop() - BALL_R, 0, 0)];
@@ -433,7 +538,19 @@ function paddleReflect(ball) {
   ball.vy = -Math.cos(ang) * sp;
   ball.y = paddleTop() - ball.r - 0.5;
   p.flash = 1;
-  FES.sfx('bounce');
+  // SMASH: パドルを速く動かしながら打つと、次に当たるブロックに 2 ダメージ ＆ 得点 1.5 倍
+  if (Math.abs(p.vx) >= SMASH_SPEED) {
+    ball.smash = true; G.smashes++;
+    FES.tone({ freq: 500, slide: 1600, dur: 0.16, type: 'sawtooth', vol: 0.22 });
+    FES.noise({ dur: 0.1, freq: 2000, slide: 2000, vol: 0.12 });
+    addPop(ball.x, paddleTop() - 56, 'SMASH!', '#ff4de1', 30, 0.7, true);
+    addRipple(ball.x, paddleTop(), 6, 110, 0.45, '#ff4de1', 5);
+    spawnParticles(ball.x, paddleTop(), 14, '#ff9af0', 260, 4, 0.5);
+    G.shake = Math.max(G.shake, 5);
+  } else {
+    ball.smash = false;
+    FES.sfx('bounce');
+  }
   addRipple(ball.x, paddleTop(), 4, 60, 0.4, '#7ff5ff', 3);
   addRipple(ball.x, paddleTop(), 0, 30, 0.25, '#ffffff', 2);
   spawnParticles(ball.x, paddleTop(), 5, '#9ef7ff', 140, 3, 0.35);
@@ -447,7 +564,7 @@ function hitBlocks(ball, px, py) {
     const cx = clamp(ball.x, b.x, b.x + b.w), cy = clamp(ball.y, b.y, b.y + b.h);
     const dx = ball.x - cx, dy = ball.y - cy;
     if (dx * dx + dy * dy > r * r) continue;
-    const pierce = G.pierceT > 0 && b.type !== 'm';
+    const pierce = G.pierceT > 0 && b.type !== 'm' && b.type !== 'boss';
     if (!pierce) {
       if (py + r <= b.y + 0.5) { ball.vy = -Math.abs(ball.vy); ball.y = b.y - r; }
       else if (py - r >= b.y + b.h - 0.5) { ball.vy = Math.abs(ball.vy); ball.y = b.y + b.h + r; }
@@ -466,7 +583,8 @@ function hitBlocks(ball, px, py) {
       }
     }
     b.hitCd = 0.1;
-    damageBlock(b, 1, 'ball');
+    if (ball.smash && b.type !== 'm') { ball.smash = false; damageBlock(b, 2, 'smash'); }
+    else damageBlock(b, 1, 'ball');
     return true;
   }
   return false;
@@ -665,7 +783,7 @@ const BGM = {
   update() {
     if (!this.on) return;
     const ac = FES.audioContext(); if (!ac) return;
-    const stepLen = Math.max(0.15, 0.205 - G.stage * 0.005);
+    const stepLen = stageDef().boss ? (G.bossEnrage ? 0.13 : 0.15) : Math.max(0.15, 0.205 - G.stage * 0.005);
     if (ac.currentTime - this.next > 0.5) this.next = ac.currentTime + 0.05;
     while (this.next < ac.currentTime + 0.25) {
       const d = Math.max(0, this.next - ac.currentTime);
@@ -685,7 +803,7 @@ const BGM = {
 
 /* ------------------------------------------------------------ 進行 */
 function startGame() {
-  FES.howto(['← → / マウス でパドルを動かす', '🧱 ブロックを全部こわす', '⚡ 落ちてくるアイテムでパワーアップ']);
+  FES.howto(['← → / マウス でパドルを動かす', '🧱 ブロックを全部こわす・最後はボス「ネオンコア」', '💥 パドルを速く動かしながら打つと SMASH（2 ダメージ）']);
   if (resultTimer) { clearTimeout(resultTimer); resultTimer = null; }
   FES.hideResult(); FES.pause(false);
   G = newGame();
@@ -699,7 +817,7 @@ function loseLife() {
   FES.sfx('miss');
   G.shake = Math.max(G.shake, 14);
   G.flash = 0.35; G.flashColor = '#ff3355';
-  G.lives--;
+  G.lives--; G.stageMiss++;
   G.combo = 0; FES.fever(false);
   G.items = []; G.lasers = [];
   G.pierceT = 0; G.slowT = 0; G.barrier = false;
@@ -729,6 +847,8 @@ function gameOver(cleared) {
         { label: 'STAGE', value: `${stageReached}/${TOTAL_STAGES}` },
         { label: 'BLOCKS', value: G.blocksDestroyed },
         { label: 'MAX COMBO', value: G.maxCombo },
+        { label: 'SMASH', value: G.smashes },
+        { label: 'PERFECT', value: G.perfects },
       ],
       retryLabel: 'もう一度',
     }, () => startGame());
@@ -740,7 +860,9 @@ function stageClear() {
   BGM.stop();
   const timeBonus = Math.floor(Math.max(0, 75 - G.stageTime)) * 25;
   const lifeBonus = G.lives * 200;
-  G.clearBonus = timeBonus + lifeBonus;
+  G.clearPerfect = G.stageMiss === 0;
+  if (G.clearPerfect) G.perfects++;
+  G.clearBonus = timeBonus + lifeBonus + (G.clearPerfect ? 1500 : 0);
   G.score += G.clearBonus;
   G.items = []; G.lasers = []; G.explosions = [];
   G.barrier = false;
@@ -833,6 +955,8 @@ function updatePlay(dt) {
   if (keys.ArrowRight || keys.d) dir += 1;
   if (dir) p.x += dir * 860 * dt;
   p.x = clamp(p.x, p.wCur / 2, W - p.wCur / 2);
+  const vxNow = (p.x - p.px) / Math.max(dt, 0.001); p.px = p.x;
+  p.vx += (vxNow - p.vx) * Math.min(1, dt * 14);
 
   updateBlocks(dt);
   processExplosions(dt);
@@ -1001,6 +1125,36 @@ function drawBlocks() {
         ctx.beginPath(); ctx.moveTo(x - w + shift, y); ctx.lineTo(x - w + shift + 14, y); ctx.lineTo(x - w + shift - 6, y + h); ctx.lineTo(x - w + shift - 20, y + h); ctx.closePath(); ctx.fill();
         ctx.restore();
         text('★', 0, 1, 14, 'rgba(255,255,255,0.9)');
+      } else if (b.type === 'g') {
+        ctx.save(); rrect(x, y, w, h, 5); ctx.clip();
+        const shift = (G.time * 220 + b.col * 40) % (w * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.beginPath(); ctx.moveTo(x - w + shift, y); ctx.lineTo(x - w + shift + 10, y); ctx.lineTo(x - w + shift - 8, y + h); ctx.lineTo(x - w + shift - 18, y + h); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        text('◆', 0, 1, 13, 'rgba(120,70,0,0.85)');
+      } else if (b.type === 'f') {
+        const k = 0.5 + 0.5 * Math.sin(G.time * 6 + b.col);
+        ctx.fillStyle = 'rgba(10,60,60,0.8)';
+        ctx.beginPath(); ctx.arc(-7 - k * 3, 1, 4.5, 0, 6.29); ctx.fill();
+        ctx.beginPath(); ctx.arc(7 + k * 3, 1, 4.5, 0, 6.29); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.beginPath(); ctx.arc(-8 - k * 3, 0, 1.6, 0, 6.29); ctx.fill();
+        ctx.beginPath(); ctx.arc(6 + k * 3, 0, 1.6, 0, 6.29); ctx.fill();
+      } else if (b.type === 'boss') {
+        // コア: 中央の目がこちらを見る
+        const k = 1 - b.hp / b.maxHp;
+        const pulse = 0.5 + 0.5 * Math.sin(G.time * (6 + k * 10));
+        const eg = ctx.createRadialGradient(0, 0, 2, 0, 0, 20);
+        eg.addColorStop(0, '#ffffff'); eg.addColorStop(0.4, G.bossEnrage ? '#ff6b6b' : '#ffb3f0'); eg.addColorStop(1, 'rgba(255,77,225,0)');
+        ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(0, 0, 18 + pulse * 4, 0, 6.29); ctx.fill();
+        const target = G.balls[0];
+        const ex = target ? clamp((target.x - (b.x + b.w / 2)) / 200, -1, 1) * 5 : 0, ey = target ? clamp((target.y - (b.y + b.h / 2)) / 400, -1, 1) * 3 : 0;
+        ctx.fillStyle = '#2a0030'; ctx.beginPath(); ctx.arc(ex, ey, 7, 0, 6.29); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(ex - 2, ey - 2, 2.2, 0, 6.29); ctx.fill();
+        // 側面のパネル線
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1.5;
+        for (const dx of [-70, -45, 45, 70]) { ctx.beginPath(); ctx.moveTo(dx, y + 5); ctx.lineTo(dx, y + h - 5); ctx.stroke(); }
+        text(String(b.hp), -w / 2 + 22, 1, 16, '#fff'); text(String(b.hp), w / 2 - 22, 1, 16, '#fff');
       } else if (b.type === 'h') {
         ctx.strokeStyle = 'rgba(20,30,60,0.75)'; ctx.lineWidth = 1.6;
         const lost = b.maxHp - b.hp;
@@ -1087,9 +1241,9 @@ function drawPaddle() {
 
 function drawBalls() {
   for (const ball of G.balls) {
-    const pierce = G.pierceT > 0, slow = G.slowT > 0;
-    const core = pierce ? '#ffd28a' : slow ? '#bfe3ff' : '#ffffff';
-    const glow = pierce ? '255,160,40' : slow ? '100,170,255' : '120,240,255';
+    const pierce = G.pierceT > 0, slow = G.slowT > 0, smash = ball.smash;
+    const core = smash ? '#ffc2f5' : pierce ? '#ffd28a' : slow ? '#bfe3ff' : '#ffffff';
+    const glow = smash ? '255,77,225' : pierce ? '255,160,40' : slow ? '100,170,255' : '120,240,255';
     // トレイル
     const n = ball.trail.length;
     for (let i = 0; i < n; i++) {
@@ -1104,6 +1258,7 @@ function drawBalls() {
     ctx.fillStyle = core; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.29); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(ball.x - 3, ball.y - 3, ball.r * 0.35, 0, 6.29); ctx.fill();
     if (pierce) { ctx.strokeStyle = 'rgba(255,200,80,0.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r + 4 + Math.sin(G.time * 12) * 2, 0, 6.29); ctx.stroke(); }
+    if (smash) { ctx.strokeStyle = 'rgba(255,77,225,0.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r + 6 + Math.sin(G.time * 20) * 2, 0, 6.29); ctx.stroke(); }
   }
 }
 
@@ -1177,6 +1332,16 @@ function drawHUD() {
       ctx.fillStyle = 'rgba(120,240,255,0.4)'; ctx.beginPath(); ctx.arc(x, y, 8, 0, 6.29); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 6.29); ctx.fill();
     }
+  }
+  // ボスの HP バー
+  const boss = stageDef().boss ? bossBlock() : null;
+  if (boss && ['play', 'stageintro'].includes(G.state)) {
+    const bw = 420, bx = W / 2 - bw / 2, by = TOP + 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; rrect(bx, by, bw, 14, 7); ctx.fill();
+    const k = clamp(boss.hp / boss.maxHp, 0, 1);
+    ctx.fillStyle = G.bossEnrage ? '#ff4d4d' : '#ff4de1'; rrect(bx, by, Math.max(14, bw * k), 14, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5; rrect(bx, by, bw, 14, 7); ctx.stroke();
+    text(`NEON CORE  ${boss.hp} / ${boss.maxHp}`, W / 2, by + 7, 11, '#fff');
   }
   // コンボ
   if (G.combo >= 2 && G.state === 'play') {
@@ -1269,7 +1434,7 @@ function drawTitle() {
     text(k, W / 2 - 16, y, 17, '#8ed6ff', 'right', 700);
     text(v, W / 2 + 16, y, 17, 'rgba(255,255,255,0.85)', 'left', 700);
   });
-  text('ブロックを全部こわせ！ アイテムをパドルでキャッチ！', W / 2, 890, 15, 'rgba(255,255,255,0.55)', 'center', 700);
+  text('全 9 ステージ。最後はボス「ネオンコア」！ パドルを速く動かして打つと SMASH', W / 2, 890, 15, 'rgba(255,255,255,0.55)', 'center', 700);
 }
 
 function drawOverlays() {
@@ -1294,6 +1459,7 @@ function drawOverlays() {
     glowText(`STAGE ${G.stage + 1}`, W / 2, 620, 64, '#fff', `hsl(${stageHue()},100%,70%)`);
     text(`「${stageDef().name}」`, W / 2, 690, 32, `hsl(${stageHue()},100%,75%)`);
     if (stageDef().moving) text('ブロックが動くぞ！', W / 2, 740, 20, 'rgba(255,255,255,0.8)');
+    if (stageDef().boss) { text('ボス登場！ コアを 30 回 たたけ！', W / 2, 740, 22, '#ff9af0'); text('6 回たたくごとに 盾を呼ぶぞ', W / 2, 772, 16, 'rgba(255,255,255,0.75)'); }
     ctx.globalAlpha = 1;
   } else if (st === 'stageclear') {
     const s = t < 0.25 ? 0.5 + (t / 0.25) * 0.7 : t < 0.4 ? 1.2 - ((t - 0.25) / 0.15) * 0.2 : 1;
@@ -1303,7 +1469,8 @@ function drawOverlays() {
     ctx.restore();
     if (t > 0.5) {
       ctx.globalAlpha = a;
-      text(`TIME BONUS  +${G.clearBonus.toLocaleString()}`, W / 2, 670, 28, '#fff');
+      text(`BONUS  +${G.clearBonus.toLocaleString()}`, W / 2, 670, 28, '#fff');
+      if (G.clearPerfect && t > 0.9) glowText('PERFECT!  ノーミス +1,500', W / 2, 720, 26, '#ffe36e', '#ffb347');
       ctx.globalAlpha = 1;
     }
   } else if (st === 'ending') {
@@ -1411,8 +1578,8 @@ function drawSidePanels() {
     });
   } else {
     rline('HOW TO PLAY', 12, 'rgba(255,255,255,.6)', 900, 30);
-    rline(`全 ${TOTAL_STAGES} ステージ。ブロックを全部こわせ！`, 14, '#ffe36e', 900, 30);
-    rline('アイテムをパドルでキャッチすると強くなる', 13, 'rgba(255,255,255,.8)', 700, 40);
+    rline(`全 ${TOTAL_STAGES} ステージ。最後はボス「ネオンコア」！`, 14, '#ffe36e', 900, 30);
+    rline('アイテムをキャッチ／速く動かして打つと SMASH', 13, 'rgba(255,255,255,.8)', 700, 40);
     rline('ITEMS', 12, 'rgba(255,255,255,.6)', 900, 26);
     for (const k of Object.keys(ITEM_DEFS)) {
       const d = ITEM_DEFS[k];
