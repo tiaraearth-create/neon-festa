@@ -625,7 +625,7 @@ function drawTitle() {
     text(ty2.icon, x - cw / 2 + 30, y, 26 * S + 4, '#fff', 'center', { stroke: false }); text(ty2.name, x + 14, y, 20 * S + 2, ty2.color);
   });
   // 操作（両方押すとスタート）
-  const by = PORTRAIT ? H * 0.72 : 440;
+  const by = PORTRAIT ? H * 0.72 : 428;
   [0, 1].forEach(p => {
     const x = px(p), press = G.press[p], on = G.ready[p];
     ctx.save(); ctx.translate(x, by); ctx.scale(1 + press * .2, 1 + press * .2);
