@@ -67,6 +67,8 @@ let shuffleInfo = null;
 let bgGems = [];
 let timeNow = 0, lastBounceSfx = 0, timeUpT = -1;
 let sprites = null, spriteCell = 0;
+let fever = 0, feverT = 0, feverCount = 0, spurtShown = false;   // フィーバーゲージ（0〜100）・フィーバー残り秒・回数・ラストスパートの帯を出したか
+const FEVER_DUR = 8;
 
 /* ---------------------------------------------------------------- レイアウト */
 const L = { portrait: null, W: 960, H: 600, cell: 60, bx: 440, by: 70, bs: 480 };
@@ -79,14 +81,16 @@ function buildLayout(portrait) {
     L.title = { x: 220, y: 116 };
     L.timer = { x: 220, y: 258, r: 70 };
     L.score = { x: 220, y: 368 };
-    L.chain = { x: 220, y: 450 };
-    L.pause = { x: 130, y: 486, w: 180, h: 46 };
+    L.chain = { x: 220, y: 446 };
+    L.fever = { x: 120, y: 472, w: 200, h: 12 };
+    L.pause = { x: 130, y: 506, w: 180, h: 44 };
   } else {
     L.W = 600; L.H = 920; L.cell = 66; L.bx = 36; L.by = 330;
     L.title = { x: 300, y: 96 };
     L.timer = { x: 112, y: 232, r: 62 };
     L.score = { x: 385, y: 186 };
-    L.chain = { x: 385, y: 282 };
+    L.chain = { x: 385, y: 276 };
+    L.fever = { x: 285, y: 300, w: 200, h: 12 };
     L.pause = { x: 210, y: 868, w: 180, h: 42 };
   }
   L.bs = L.cell * N;
@@ -180,6 +184,13 @@ function makeGemSprite(S, ci, special) {
   g.globalAlpha = 0.85; g.fillStyle = '#fff';
   g.beginPath(); g.ellipse(cx - r * 0.35, cy - r * 0.45, r * 0.28, r * 0.16, -Math.PI / 5, 0, TAU); g.fill();
   g.globalAlpha = 0.5; g.beginPath(); g.arc(cx + r * 0.35, cy + r * 0.4, r * 0.09, 0, TAU); g.fill();
+  // 特殊: ボム（まわりに光る点）
+  if (special === 'bomb') {
+    g.globalAlpha = 0.95; g.fillStyle = '#fff';
+    for (let i = 0; i < 8; i++) { const a = i * TAU / 8; g.beginPath(); g.arc(cx + Math.cos(a) * r * 0.62, cy + Math.sin(a) * r * 0.62, S * 0.035, 0, TAU); g.fill(); }
+    g.beginPath(); g.arc(cx, cy, S * 0.07, 0, TAU); g.fill();
+    g.globalAlpha = 0.7; g.lineWidth = S * 0.025; g.strokeStyle = '#fff'; g.beginPath(); g.arc(cx, cy, r * 0.62, 0, TAU); g.stroke();
+  }
   // 特殊: ストライプ
   if (special === 'lineH' || special === 'lineV') {
     g.globalAlpha = 0.9; g.lineWidth = S * 0.045; g.strokeStyle = '#fff'; g.lineCap = 'round';
@@ -215,11 +226,12 @@ function makeRainbowSprite(S) {
 }
 function buildSprites() {
   const S = Math.round(L.cell * 2);
-  sprites = { normal: [], lineH: [], lineV: [], rainbow: makeRainbowSprite(S) };
+  sprites = { normal: [], lineH: [], lineV: [], bomb: [], rainbow: makeRainbowSprite(S) };
   for (let i = 0; i < 6; i++) {
     sprites.normal[i] = makeGemSprite(S, i, null);
     sprites.lineH[i] = makeGemSprite(S, i, 'lineH');
     sprites.lineV[i] = makeGemSprite(S, i, 'lineV');
+    sprites.bomb[i] = makeGemSprite(S, i, 'bomb');
   }
   spriteCell = L.cell;
 }
@@ -327,7 +339,8 @@ function findMatches() {
     const cells = [...G.cells];
     const maxLen = Math.max(...G.runs.map(x => x.cells.length));
     let special = null, at = -1;
-    if (G.runs.length >= 2 || maxLen >= 5) special = 'rainbow';
+    if (maxLen >= 5) special = 'rainbow';
+    else if (G.runs.length >= 2) special = 'bomb';
     else if (maxLen === 4) special = G.runs[0].dir === 'h' ? 'lineH' : 'lineV';
     if (special) {
       if (lastSwapCells) for (const idx of lastSwapCells) if (G.cells.has(idx)) { at = idx; break; }
@@ -362,18 +375,20 @@ function applyClear(groups, extra) {
     if (g.special) spawns.push({ idx: g.at, type: g.special, color: g.special === 'rainbow' ? -1 : g.color });
   }
   const groupCells = clearSet.size;
+  let sx0 = 0, sy0 = 0; clearSet.forEach(i => { sx0 += i % N; sy0 += (i / N) | 0; });
   if (extra) extra.forEach(i => clearSet.add(i));
   // 特殊ジュエルの連鎖発動
   const queue = [...clearSet].filter(i => { const g = gemAt(i); return g && g.special; });
   const seen = new Set(queue);
   const add = j => { const gj = gemAt(j); if (!gj) return; clearSet.add(j); if (gj.special && !seen.has(j)) { seen.add(j); queue.push(j); } };
-  let specialCount = 0, lineCount = 0, rainbowCount = 0;
+  let specialCount = 0, lineCount = 0, rainbowCount = 0, bombCount = 0;
   while (queue.length) {
     const idx = queue.shift(); const gem = gemAt(idx); if (!gem) continue;
     const r = (idx / N) | 0, c = idx % N;
     specialCount++;
     if (gem.special === 'lineH') { for (let cc = 0; cc < N; cc++) add(idxOf(r, cc)); streaks.push({ r, c, dir: 'h', t: 0, color: gem.color }); lineCount++; }
     else if (gem.special === 'lineV') { for (let rr = 0; rr < N; rr++) add(idxOf(rr, c)); streaks.push({ r, c, dir: 'v', t: 0, color: gem.color }); lineCount++; }
+    else if (gem.special === 'bomb') { for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const rr = r + dr, cc = c + dc; if (rr >= 0 && rr < N && cc >= 0 && cc < N) add(idxOf(rr, cc)); } bursts.push({ r, c, t: 0, small: true, color: gem.color }); bombCount++; }
     else if (gem.special === 'rainbow') {
       const col = gem.targetColor != null ? gem.targetColor : mostCommonColor(); gem.targetColor = null;
       for (let i = 0; i < N * N; i++) { const gi = gemAt(i); if (gi && (col === -2 || gi.color === col)) add(i); }
@@ -382,8 +397,10 @@ function applyClear(groups, extra) {
   }
   if (lineCount) { FES.noise({ dur: 0.25, freq: 2500, slide: 300, vol: 0.25 }); FES.sfx('shoot'); shake = Math.max(shake, 7); flash = Math.max(flash, 0.25); }
   if (rainbowCount) { FES.sfx('perfect'); FES.sfx('explode'); shake = Math.max(shake, 14); flash = Math.max(flash, 0.55); }
+  if (bombCount) { FES.sfx('explode'); FES.noise({ dur: 0.3, freq: 700, slide: 80, vol: 0.3 }); shake = Math.max(shake, 10); flash = Math.max(flash, 0.3); }
   const extraCells = Math.max(0, clearSet.size - groupCells);
-  const pts = base + extraCells * 30 * mult;
+  const bonusMul = (feverT > 0 ? 2 : 1) * (timeLeft <= 10 && timeLeft > 0 ? 1.5 : 1);
+  const pts = Math.round((base + extraCells * 30 * mult) * bonusMul);
   // 演出
   clearSet.forEach(i => {
     const g = gemAt(i); if (!g) return;
@@ -401,6 +418,8 @@ function applyClear(groups, extra) {
   if (!groups.length) timeBonus = 2;
   if (specialCount) timeBonus += 1;
   gemsCleared += clearSet.size; specialsUsed += specialCount;
+  if (feverT <= 0) { fever = Math.min(100, fever + clearSet.size * 3.2 + (chain >= 2 ? 5 : 0) + specialCount * 6); if (fever >= 100) startFever(); }
+  if (bonusMul > 1) floats.push({ x: bx + (sx0 / Math.max(1, groupCells) + 0.5) * cell, y: by + (sy0 / Math.max(1, groupCells) + 0.5) * cell - cell * 0.7, text: `×${bonusMul}`, t: 0, dur: 0.8, color: feverT > 0 ? '#ff9ee8' : '#ffd36e', size: 18 });
   if (timeLeft > 0) {
     timeLeft = Math.min(TIME_MAX, timeLeft + timeBonus);
     floats.push({ x: L.timer.x + L.timer.r * 0.7, y: L.timer.y - L.timer.r * 0.7, text: '+' + timeBonus + 's', t: 0, dur: 1.0, color: '#7dffb3', size: 22 });
@@ -479,8 +498,8 @@ function updateFalling(dt) {
 }
 function afterFall() {
   const groups = findMatches();
-  if (groups.length) { chain++; maxChain = Math.max(maxChain, chain); if (chain === 3) FES.fever(true, 'CHAIN FEVER!'); applyClear(groups, null); return; }
-  chain = 0; lastSwapCells = null; FES.fever(false);
+  if (groups.length) { chain++; maxChain = Math.max(maxChain, chain); if (chain === 3 && feverT <= 0) FES.fever(true, 'CHAIN FEVER!'); applyClear(groups, null); return; }
+  chain = 0; lastSwapCells = null; if (feverT <= 0) FES.fever(false);
   hintMove = findHint();
   if (!hintMove) startShuffle(); else phase = 'idle';
 }
@@ -574,12 +593,18 @@ function startGame() {
   chain = 0; maxChain = 0; gemsCleared = 0; specialsUsed = 0;
   sel = null; hover = null; drag = null; swapInfo = null; lastSwapCells = null; pendingSpawns = [];
   particles = []; floats = []; streaks = []; bursts = []; comboPop = null; banner = null; shuffleInfo = null;
-  shake = 0; flash = 0; idleTime = 0; hintShown = false;
+  shake = 0; flash = 0; idleTime = 0; hintShown = false; fever = 0; feverT = 0; feverCount = 0; spurtShown = false; FES.fever(false);
   cursor = { r: 3, c: 3, visible: false };
   paused = false; phase = 'idle'; phaseT = 0;
   newBoard(); hintMove = findHint();
   mode = 'countdown'; countdownT = 0; countdownStep = -1;
   FES.sfx('start');
+}
+function startFever() {
+  feverT = FEVER_DUR; fever = 100; feverCount++;
+  banner = { text: 'JEWEL FEVER!', sub: '8 秒間 得点 2 倍・時間が止まる', t: 0, dur: 1.6, color: '#ff9ee8' };
+  FES.fever(true, 'JEWEL FEVER!'); FES.sfx('powerup'); FES.sfx('fanfare');
+  flash = Math.max(flash, 0.5); shake = Math.max(shake, 10);
 }
 function endGame() {
   mode = 'result'; bgmStop(); sel = null; drag = null; paused = false; hintShown = false;
@@ -587,7 +612,7 @@ function endGame() {
     score, scoreLabel: 'pt', title: 'TIME UP!',
     rank: { S: 30000, A: 18000, B: 9000, C: 3000 }, titles: { S: 'ジュエルの神', A: '連鎖の達人', B: 'いい連鎖！' },
     subtitle: `最大 ${maxChain} 連鎖 ／ 宝石 ${gemsCleared} 個を消した`,
-    stats: [{ label: '最大連鎖', value: maxChain }, { label: '消した宝石', value: gemsCleared }, { label: '特殊ジュエル', value: specialsUsed }],
+    stats: [{ label: '最大連鎖', value: maxChain }, { label: '消した宝石', value: gemsCleared }, { label: '特殊ジュエル', value: specialsUsed }, { label: 'フィーバー', value: feverCount + ' 回' }],
   }, () => startGame());
 }
 function setPaused(v) {
@@ -612,10 +637,14 @@ function updateCountdown(dt) {
   if (countdownT >= 3.7) { mode = 'play'; lastTickSec = -1; idleTime = 0; bgmStart(); }
 }
 function updatePlay(dt) {
-  if (timeLeft > 0) {
+  if (feverT > 0) {   // フィーバー中: 時間は止まる。ゲージが減っていく
+    feverT = Math.max(0, feverT - dt); fever = 100 * feverT / FEVER_DUR;
+    if (feverT <= 0) { fever = 0; if (chain < 3) FES.fever(false); floats.push({ x: L.fever.x + L.fever.w / 2, y: L.fever.y - 10, text: 'FEVER 終了', t: 0, dur: 1.0, color: 'rgba(255,255,255,0.8)', size: 16 }); }
+  } else if (timeLeft > 0) {
     timeLeft = Math.max(0, timeLeft - dt);
     const sec = Math.ceil(timeLeft);
     if (timeLeft <= 10 && sec > 0 && sec !== lastTickSec) { lastTickSec = sec; FES.sfx('tick'); }
+    if (!spurtShown && timeLeft <= 10) { spurtShown = true; banner = { text: 'LAST SPURT!', sub: '残り 10 秒は 得点 1.5 倍', t: 0, dur: 1.4, color: '#ffd36e' }; FES.sfx('whoosh'); }
   }
   // 時間切れ: 連鎖が落ち着いたら「TIME UP!」を一拍見せてからリザルトへ
   if (timeLeft <= 0 && (phase === 'idle' || phase === 'shuffle')) {
@@ -747,7 +776,7 @@ function drawTitle() {
     'となりの宝石を入れ替えて 3つ以上そろえよう！ 制限時間 90秒',
     '🖱️ クリック/タップで 2つ選ぶ ・ ドラッグ/スワイプでも OK',
     '⌨️ 矢印キー：カーソル　Space：選択/入れ替え　Esc / P：ポーズ',
-    '4つで ライン爆弾 ・ 5つ / L字 T字で レインボー ・ 連鎖で倍率アップ！',
+    '4つで ライン爆弾 ・ L字 T字で ボム ・ 5つで レインボー ・ ゲージ満タンで FEVER！',
   ];
   const btnTop = L.startBtn.y; const ly = gy + 62; const lh = Math.min(L.portrait ? 30 : 28, (btnTop - 34 - ly) / lines.length); const fs = Math.min(L.portrait ? 15 : 17, lh * 0.62);
   lines.forEach((s, i) => text(s, cx, ly + i * lh, fs, i === 0 ? '#ffd36e' : 'rgba(255,255,255,0.88)', 'center', 700, 3));
@@ -809,6 +838,18 @@ function drawPanel() {
   } else {
     text(`最大連鎖 ${maxChain}　HI ${FES.getHiScore().toLocaleString()}`, ch.x, ch.y, 14, 'rgba(255,255,255,0.6)', 'center', 700);
   }
+  // フィーバーゲージ
+  const f = L.fever, ff = clamp(fever / 100, 0, 1);
+  rrect(f.x, f.y, f.w, f.h, 6); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+  if (ff > 0) {
+    const fg2 = ctx.createLinearGradient(f.x, 0, f.x + f.w, 0);
+    if (feverT > 0) { const hh = (timeNow * 240) % 360; fg2.addColorStop(0, `hsl(${hh},100%,65%)`); fg2.addColorStop(1, `hsl(${(hh + 120) % 360},100%,65%)`); }
+    else { fg2.addColorStop(0, '#ff4d8d'); fg2.addColorStop(1, '#ff9ee8'); }
+    rrect(f.x, f.y, f.w * ff, f.h, 6); ctx.fillStyle = fg2; ctx.fill();
+    if (ff > 0.85 && feverT <= 0) { ctx.fillStyle = `rgba(255,255,255,${0.2 + 0.2 * Math.sin(timeNow * 10)})`; rrect(f.x, f.y, f.w * ff, f.h, 6); ctx.fill(); }
+  }
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.3)'; rrect(f.x, f.y, f.w, f.h, 6); ctx.stroke();
+  text(feverT > 0 ? `FEVER ${feverT.toFixed(1)}` : 'FEVER', f.x + f.w / 2, f.y - 9, 11, feverT > 0 ? '#ff9ee8' : 'rgba(255,255,255,0.65)', 'center', 900, 3);
   // ポーズボタン
   const b = L.pause;
   rrect(b.x, b.y, b.w, b.h, 12); ctx.fillStyle = paused ? 'rgba(255,211,110,0.35)' : 'rgba(255,255,255,0.1)'; ctx.fill();
@@ -910,6 +951,15 @@ function drawBoard() {
   for (const b of bursts) {
     const k = b.t / 0.6, a = 1 - k;
     const px = bx + (b.c + 0.5) * cell, py = by + (b.r + 0.5) * cell;
+    if (b.small) {   // ボム: 3×3 のオレンジの爆発
+      const rad = cell * (0.4 + easeOutCubic(k) * 1.3), col = GEMS[b.color >= 0 ? b.color : 3].rgb;
+      ctx.save(); ctx.globalAlpha = a;
+      const rg2 = ctx.createRadialGradient(px, py, 0, px, py, rad); rg2.addColorStop(0, `rgba(255,255,255,${a * 0.8})`); rg2.addColorStop(0.5, `rgba(${col},${a * 0.6})`); rg2.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = rg2; ctx.fillRect(px - rad, py - rad, rad * 2, rad * 2);
+      ctx.lineWidth = 3 + (1 - k) * 6; ctx.strokeStyle = `rgba(255,220,140,${a})`; rrect(px - rad * 0.9, py - rad * 0.9, rad * 1.8, rad * 1.8, 14); ctx.stroke();
+      ctx.restore();
+      continue;
+    }
     const rad = 10 + easeOutCubic(k) * bs * 0.95;
     const g = ctx.createLinearGradient(px - rad, py, px + rad, py);
     g.addColorStop(0, '#ff4d8d'); g.addColorStop(0.33, '#ffd36e'); g.addColorStop(0.66, '#34e5ff'); g.addColorStop(1, '#b04dff');
@@ -956,6 +1006,8 @@ function drawEffects() {
     ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.translate(bx + bs / 2, by + bs * 0.42); ctx.scale(sc, sc);
     text(`${comboPop.n} CHAIN!`, 0, 0, cell * 1.05, col, 'center', 900, 10);
     text(`x${comboPop.n}`, 0, cell * 0.85, cell * 0.6, '#fff', 'center', 900, 6);
+    const word = comboPop.n >= 7 ? 'UNBELIEVABLE!!' : comboPop.n >= 5 ? 'AMAZING!' : comboPop.n >= 4 ? 'EXCELLENT!' : comboPop.n >= 3 ? 'GREAT!' : '';
+    if (word) text(word, 0, -cell * 0.95, cell * 0.42, '#fff', 'center', 900, 5);
     ctx.restore();
   }
   if (banner) {
