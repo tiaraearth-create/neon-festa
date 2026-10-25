@@ -6,7 +6,7 @@
 <title>ネオンスタック</title>
 <style>
   html, body { margin: 0; height: 100%; background: #07071a; overflow: hidden; font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
-  #game { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  #game { position: absolute; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 </style>
 </head>
 <body>
@@ -16,62 +16,138 @@
 'use strict';
 /* =====================================================================
    ネオンスタック — 動くブロックをタイミングよく積む。ズレた分は落ちて細くなる。
+   10 階ごとにゾーンが変わる（街 → 空 → 雲の上 → 宇宙 → 銀河）。PERFECT を 3 回続けると幅が戻る。
+   7 個に 1 つ出る金ブロックは PERFECT で 3 倍。宇宙から先は動き方が変わる（一定速度で折り返す）。
    操作: Space / Enter / ↓ / クリック / タップ。 Esc / P でポーズ。
+   画面: 横長なら 960×540、スマホの縦なら 540×960。
    ===================================================================== */
-FES.init({ id: 'stack', title: 'ネオンスタック' });
+FES.init({ id: 'stack', title: 'ネオンスタック', portraitOk: true });
 
-const W = 960, H = 540;
+const { clamp, lerp } = FES;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const view = FES.fitCanvas(canvas, W, H);
 const fx = FES.fx();
 const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
 const TAU = Math.PI * 2;
 
+/* ------------------------------------------------------------ ルール */
 const BASE_W = 240, BH = 26, DEPTH = 18;      // ブロックの幅・高さ・奥行き（見た目）
 const PERFECT_TOL = 7;                        // これ以内なら PERFECT（ぴったり）
-const GROW_EVERY = 4;                         // PERFECT を続けると幅が戻る
-const CX = W * 0.5 - 40;                      // 塔の中心（右にHUDを置くので少し左）
-const RANK = { S: 4000, A: 2500, B: 1500, C: 600 };
+const GROW_EVERY = 3;                         // PERFECT を続けると幅が戻る
+const GOLD_EVERY = 7;                         // 金ブロックの間隔
+const RANK = { S: 6000, A: 3800, B: 2200, C: 900 };
+const ZONES = [
+  { name: 'CITY',   label: 'ネオンの街',   from: 0,  top: [12, 10, 44],  bottom: [40, 20, 70],  color: '#5ee7ff' },
+  { name: 'SKY',    label: '空へ',        from: 10, top: [10, 18, 70],  bottom: [60, 40, 120], color: '#8ea7ff' },
+  { name: 'CLOUDS', label: '雲の上',      from: 20, top: [8, 12, 60],   bottom: [120, 80, 170], color: '#ff9ee8' },
+  { name: 'SPACE',  label: '宇宙へ',      from: 30, top: [2, 2, 14],    bottom: [30, 10, 60],  color: '#ffd36e' },
+  { name: 'GALAXY', label: '銀河のかなた', from: 40, top: [6, 0, 20],    bottom: [60, 10, 90],  color: '#ff4d8d' },
+];
+const zoneOf = floors => { let z = 0; for (let i = 0; i < ZONES.length; i++) if (floors >= ZONES[i].from) z = i; return z; };
 
+/* ------------------------------------------------------------ 画面（横長 960×540 ／ 縦長 540×960） */
+let W = 960, H = 540, PORTRAIT = false, CX = 440, HUD_TOP = 24;
+const view = { scale: 1, offsetX: 0, offsetY: 0, toGame(cx, cy) { return { x: (cx - view.offsetX) / view.scale, y: (cy - view.offsetY) / view.scale }; } };
+let stars = [];
+function fit() {
+  const vw = innerWidth, vh = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  PORTRAIT = vh > vw * 1.05;
+  W = PORTRAIT ? 540 : 960; H = PORTRAIT ? 960 : 540;
+  const s = Math.min(vw / W, vh / H);
+  view.scale = s; view.offsetX = (vw - W * s) / 2; view.offsetY = (vh - H * s) / 2;
+  canvas.width = Math.round(W * s * dpr); canvas.height = Math.round(H * s * dpr);
+  canvas.style.width = (W * s) + 'px'; canvas.style.height = (H * s) + 'px'; canvas.style.left = view.offsetX + 'px'; canvas.style.top = view.offsetY + 'px';
+  ctx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
+  CX = PORTRAIT ? W / 2 : W / 2 - 40;
+  HUD_TOP = PORTRAIT ? Math.ceil(60 / s) + 8 : Math.max(24, Math.ceil(60 / s) - 20);
+  stars = Array.from({ length: PORTRAIT ? 70 : 90 }, (_, i) => ({ x: (i * 7919) % W, y: (i * 104729) % (H * 3), r: 0.6 + (i % 3) * 0.6, p: (i % 7) / 7 }));
+}
+addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 60));
+const floorY = i => H - (PORTRAIT ? 150 : 90) - i * BH;   // 床 i の上端（カメラ前）
+const topAnchor = () => H * (PORTRAIT ? 0.46 : 0.42);
+
+/* ------------------------------------------------------------ 状態 */
 let G = null;
-const stars = Array.from({ length: 90 }, (_, i) => ({ x: (i * 7919) % W, y: (i * 104729) % (H * 3), r: 0.6 + (i % 3) * 0.6, p: (i % 7) / 7 }));
-
 function newGame() {
   return {
     state: 'title', t: 0,
     blocks: [{ x: CX - BASE_W / 2, w: BASE_W, hue: 200 }],   // 下から順。y は index で決まる
-    mover: null,                 // { x, w, dir, hue, speed }
-    falling: [],                 // 切り落とされた破片
-    camY: 0, camTarget: 0,
-    score: 0, dispScore: 0, perfects: 0, combo: 0, maxCombo: 0, grow: 0,
-    over: false, overT: 0, lastPerfectT: 0, pop: 0, shakeFloor: -1,
-    titleT: 0, countT: 0, countStep: -1,
+    mover: null, falling: [], camY: 0, camTarget: 0,
+    score: 0, dispScore: 0, perfects: 0, combo: 0, maxCombo: 0, grow: 0, golds: 0,
+    over: false, overT: 0, pop: 0, zone: 0, zoneFlash: 0, banner: null, clouds: [], props: [],
+    titleT: 0, countT: 0, countStep: -1, resultShown: false, beat: 0, lastDropT: 0, shots: 0,
   };
 }
-G = newGame();
-
-function floorY(i) { return H - 90 - i * BH; }   // 床 i の上端（カメラ前）
-function speedFor(n) { return 1.5 + Math.min(3.2, n * 0.055); }
+const speedFor = n => 1.5 + Math.min(3.4, n * 0.052);
 function newMover() {
   const top = G.blocks[G.blocks.length - 1];
   const n = G.blocks.length;
   const dir = n % 2 ? 1 : -1;
-  const amp = Math.min(W * 0.42, 220 + top.w * 0.5);
-  return { x: CX - top.w / 2 + -dir * amp, w: top.w, dir, hue: (top.hue + 18) % 360, speed: speedFor(n), amp, ph: -dir * Math.PI / 2 };
-}
-function startGame() {
-  FES.howto(['Space / クリック / タップ でブロックを落とす', '🎯 ぴったり重ねると PERFECT', '✂ はみ出た分は落ちて細くなる']);
-  FES.hideResult(); FES.pause(false); FES.fever(false); fx.clear();
-  G = newGame();
-  G.state = 'count'; G.countT = 0; G.countStep = -1;
-}
-function beginPlay() {
-  G.state = 'play'; G.t = 0;
-  G.mover = newMover();
-  FES.sfx('go');
+  const amp = Math.min(W * (PORTRAIT ? 0.46 : 0.42), 200 + top.w * 0.5);
+  const gold = n % GOLD_EVERY === GOLD_EVERY - 1;
+  const linear = zoneOf(n - 1) >= 3 && n % 2 === 0;   // 宇宙から先: 一定速度で折り返す動きがまざる
+  return { x: CX - top.w / 2 - dir * amp, w: top.w, dir, hue: gold ? 48 : (top.hue + 18) % 360, gold, speed: speedFor(n), amp, ph: -dir * Math.PI / 2, linear };
 }
 function colorOf(hue, l) { return `hsl(${hue} 95% ${l}%)`; }
+
+/* ------------------------------------------------------------ 音 */
+const SND = {
+  drop: () => { FES.noise({ dur: 0.1, freq: 900, slide: 200, vol: 0.2 }); FES.tone({ freq: 160, slide: 60, dur: 0.12, type: 'sine', vol: 0.22 }); },
+  perfect: (combo) => { const base = 880 + Math.min(12, combo) * 55; [0, 0.06, 0.12].forEach((d, k) => FES.tone({ freq: base * [1, 1.25, 1.5][k], dur: 0.16, type: 'triangle', vol: 0.16, delay: d })); FES.noise({ dur: 0.2, freq: 4000, slide: 9000, vol: 0.05, filter: 'highpass' }); },
+  gold: () => { [0, 0.07, 0.14, 0.21, 0.28].forEach((d, k) => FES.tone({ freq: [1319, 1568, 1976, 2637, 3136][k], dur: 0.2, type: 'triangle', vol: 0.15, delay: d })); },
+  crumble: () => { FES.noise({ dur: 0.25, freq: 1800, slide: 300, vol: 0.14 }); },
+  wider: () => { [0, 0.08].forEach((d, k) => FES.tone({ freq: [660, 990][k], dur: 0.18, type: 'square', vol: 0.09, delay: d })); },
+  zone: () => { [0, 0.1, 0.2, 0.3, 0.5].forEach((d, k) => FES.tone({ freq: [523, 659, 784, 1047, 1319][k], dur: k === 4 ? 0.6 : 0.18, type: 'triangle', vol: 0.15, delay: d })); FES.noise({ dur: 0.5, freq: 500, slide: 6000, vol: 0.12, filter: 'bandpass' }); },
+  danger: () => FES.tone({ freq: 440, slide: 330, dur: 0.15, type: 'square', vol: 0.08 }),
+  over: () => { FES.noise({ dur: 0.6, freq: 800, slide: 60, vol: 0.4 }); FES.tone({ freq: 200, slide: 40, dur: 0.6, type: 'sawtooth', vol: 0.2 }); },
+};
+/* BGM: 軽いテクノ。ゾーンが上がるごとに半音上がって音が増える */
+const BGM = { on: false, next: 0, step: 0 };
+const NOTE = m => 440 * Math.pow(2, (m - 69) / 12);
+const ARP = [0, 2, 1, 3, 0, 2, 3, 1];
+function bgmUpdate() {
+  if (!BGM.on) return;
+  const ac = FES.audioContext(); if (!ac) return;
+  const z = G.zone, st = 60 / (124 + z * 5) / 4;
+  if (BGM.next < ac.currentTime - 0.3) BGM.next = ac.currentTime;
+  let guard = 0;
+  while (BGM.next < ac.currentTime + 0.22 && guard++ < 8) {
+    const d = Math.max(0, BGM.next - ac.currentTime), s = BGM.step, bar = (s >> 4) & 3, q = s & 15;
+    const root = [45, 50, 48, 43][bar] + z;   // A, D, C, G（ゾーンごとに半音上）
+    const ch = bar === 1 ? [0, 4, 7, 11] : [0, 3, 7, 10];
+    if (q % 4 === 0) FES.tone({ freq: 150, slide: 42, dur: 0.12, delay: d, type: 'sine', vol: 0.2 });
+    if (q % 2 === 1) FES.noise({ dur: 0.03, freq: 7000, vol: z >= 2 ? 0.03 : 0.018, delay: d, filter: 'highpass' });
+    if (q === 4 || q === 12) FES.noise({ dur: 0.1, freq: 1600, vol: 0.07, delay: d, filter: 'highpass' });
+    if (q % 4 === 0 || q === 6 || q === 14) FES.tone({ freq: NOTE(root - 12), dur: st * 1.6, delay: d, type: 'triangle', vol: 0.07 });
+    if (z >= 1 && q % 2 === 0) FES.tone({ freq: NOTE(root + 12 + ch[ARP[(q >> 1) & 7]]), dur: st * 1.6, delay: d, type: 'square', vol: 0.028 });
+    if (z >= 3 && q % 8 === 0) FES.tone({ freq: NOTE(root + 24 + ch[(bar + (q >> 3)) % 4]), dur: st * 5, delay: d, type: 'sawtooth', vol: 0.02 });
+    if (q % 4 === 0) G.beatQueue.push(ac.currentTime + d);
+    BGM.step = (s + 1) % 64; BGM.next += st;
+  }
+}
+function bgmStart() { const ac = FES.audioContext(); BGM.on = true; BGM.step = 0; BGM.next = ac ? ac.currentTime + 0.05 : 0; }
+function bgmStop() { BGM.on = false; }
+
+/* ------------------------------------------------------------ ゲーム進行 */
+function startGame() {
+  FES.howto(['Space / クリック / タップ でブロックを落とす', '🎯 ぴったり重ねると PERFECT・3 回続けると幅が戻る', '✨ 金ブロックは PERFECT で 3 倍'], 4000);
+  FES.hideResult(); FES.pause(false); FES.fever(false); fx.clear(); bgmStop();
+  const keep = G ? G.titleT : 0;
+  G = newGame(); G.titleT = keep; G.beatQueue = []; paused = false;
+  buildProps();
+  G.state = 'count'; G.countT = 0; G.countStep = -1;
+}
+function beginPlay() { G.state = 'play'; G.t = 0; G.mover = newMover(); FES.sfx('go'); bgmStart(); }
+function buildProps() {
+  // 雲（10〜30 階のあたり）・飛行機・衛星・惑星。位置は床の番号（世界座標）で持つ
+  G.clouds = Array.from({ length: 14 }, (_, i) => ({ f: 6 + i * 1.8 + Math.random(), x: Math.random() * W, w: 90 + Math.random() * 120, v: 10 + Math.random() * 14, a: 0.35 + Math.random() * 0.35 }));
+  G.props = [
+    { kind: 'plane', f: 14, x: -100, v: 70 }, { kind: 'plane', f: 24, x: W + 60, v: -55 },
+    { kind: 'sat', f: 33, x: W * 0.78, v: 0 }, { kind: 'planet', f: 36, x: W * 0.2, r: 44, hue: 20 }, { kind: 'planet', f: 44, x: W * 0.8, r: 70, hue: 280 },
+    { kind: 'ring', f: 48, x: W * 0.3, r: 36, hue: 48 }, { kind: 'planet', f: 56, x: W * 0.72, r: 90, hue: 190 },
+  ];
+}
+function setBanner(text, sub, color) { G.banner = { text, sub, color, t: 0, dur: 2 }; }
 
 /* ------------------------------------------------------------ 落とす */
 function drop() {
@@ -81,70 +157,87 @@ function drop() {
   const ox0 = Math.max(mx0, tx0), ox1 = Math.min(mx1, tx1);
   const ovl = ox1 - ox0;
   const n = G.blocks.length, y = floorY(n) - G.camY;
+  G.shots++; G.lastDropT = G.t;
   if (ovl <= 2) {
     // 完全にはずれた → ゲームオーバー
     G.falling.push({ x: m.x, w: m.w, y, vy: -60, vx: m.dir * 120, rot: 0, vr: m.dir * 2.4, hue: m.hue, life: 2 });
     G.mover = null; G.over = true; G.overT = 0; G.state = 'over';
-    fx.shake(1.2, 0.5); fx.flash('#ff4d8d', 0.35, 0.2); FES.sfx('gameover'); FES.fever(false); FES.vibrate([60, 40, 80]);
-    setTimeout(showResult, 1500);
+    fx.shake(1.2, 0.5); fx.flash('#ff4d8d', 0.35, 0.2); SND.over(); FES.sfx('gameover'); FES.fever(false); FES.vibrate([60, 40, 80]); bgmStop();
+    setTimeout(showResult, 1600);
     return;
   }
   const dx = Math.abs(mx0 - tx0);
   let placed;
   if (dx <= PERFECT_TOL) {
     // PERFECT: ぴったりそろえる
-    placed = { x: tx0, w: top.w, hue: m.hue };
+    placed = { x: tx0, w: top.w, hue: m.hue, gold: m.gold };
     G.perfects++; G.combo++; G.maxCombo = Math.max(G.maxCombo, G.combo); G.grow++;
-    const bonus = 50 + Math.min(10, G.combo) * 25;
-    G.score += 100 + bonus;
+    const mult = m.gold ? 3 : 1;
+    const gain = (100 + 50 + Math.min(10, G.combo) * 25) * mult;
+    G.score += gain;
     fx.ring(CX, y + BH / 2, { color: '#fff', r: top.w * 0.3, r1: top.w * 1.1, life: 0.45 });
-    fx.ring(CX, y + BH / 2, { color: colorOf(m.hue, 70), r: 10, r1: top.w * 0.8, life: 0.6 });
-    fx.text(CX, y - 30, G.combo >= 2 ? `PERFECT ×${G.combo}` : 'PERFECT!', { color: '#ffd36e', size: G.combo >= 5 ? 34 : 28, life: 0.9 });
-    fx.burst(CX, y + BH / 2, { color: ['#fff', '#ffd36e', colorOf(m.hue, 75)], n: 22, speed: 260, life: 0.6, size: 4, gravity: 200, shape: 'spark' });
-    FES.sfx('perfect'); FES.tone({ freq: 880 + Math.min(12, G.combo) * 60, dur: 0.12, type: 'triangle', vol: 0.18 });
-    G.lastPerfectT = G.t; G.pop = 1;
-    if (G.grow >= GROW_EVERY && placed.w < BASE_W) { placed.w = Math.min(BASE_W, placed.w + 24); placed.x = tx0 - (placed.w - top.w) / 2; G.grow = 0; fx.text(CX, y - 62, 'WIDER!', { color: '#5ee7ff', size: 22, life: 0.9 }); FES.sfx('powerup'); }
+    fx.ring(CX, y + BH / 2, { color: m.gold ? '#ffd36e' : colorOf(m.hue, 70), r: 10, r1: top.w * 0.8, life: 0.6 });
+    fx.text(CX, y - 30, m.gold ? `GOLD PERFECT! +${gain}` : G.combo >= 2 ? `PERFECT ×${G.combo}  +${gain}` : `PERFECT!  +${gain}`, { color: '#ffd36e', size: G.combo >= 5 || m.gold ? 32 : 26, life: 0.9 });
+    fx.burst(CX, y + BH / 2, { color: ['#fff', '#ffd36e', colorOf(m.hue, 75)], n: m.gold ? 40 : 22, speed: 260, life: 0.6, size: 4, gravity: 200, shape: m.gold ? 'star' : 'spark' });
+    if (m.gold) { SND.gold(); G.golds++; fx.flash('#ffd36e', 0.3, 0.25); } else SND.perfect(G.combo);
+    G.pop = 1; fx.hitStop(0.03);
+    if (G.grow >= GROW_EVERY && placed.w < BASE_W) { placed.w = Math.min(BASE_W, placed.w + 30); placed.x = tx0 - (placed.w - top.w) / 2; G.grow = 0; fx.text(CX, y - 62, 'WIDER!  幅がもどった', { color: '#5ee7ff', size: 22, life: 0.9 }); SND.wider(); }
     if (G.combo === 5) FES.fever(true, 'PERFECT FEVER!');
   } else {
-    placed = { x: ox0, w: ovl, hue: m.hue };
+    placed = { x: ox0, w: ovl, hue: m.hue, gold: false };
     // はみ出た破片が落ちる
     if (mx0 < tx0) G.falling.push({ x: mx0, w: tx0 - mx0, y, vy: 0, vx: -80, rot: 0, vr: -1.8, hue: m.hue, life: 1.6 });
     if (mx1 > tx1) G.falling.push({ x: tx1, w: mx1 - tx1, y, vy: 0, vx: 80, rot: 0, vr: 1.8, hue: m.hue, life: 1.6 });
-    G.combo = 0; G.grow = 0; G.score += 100;
-    fx.text(CX, y - 30, '+100', { color: '#fff', size: 22, life: 0.7 });
-    FES.sfx('hit'); FES.noise({ dur: 0.08, freq: 900, slide: 200, vol: 0.18 });
+    const ratio = ovl / m.w, gain = 60 + Math.round(ratio * 60);
+    G.combo = 0; G.grow = 0; G.score += gain;
+    fx.text(CX, y - 30, `+${gain}`, { color: '#fff', size: 22, life: 0.7 });
+    SND.drop(); SND.crumble();
     if (FES.isFever()) FES.fever(false);
-    if (ovl < 40) { fx.text(CX, y - 60, 'あぶない！', { color: '#ff4d8d', size: 24, life: 0.9 }); }
+    if (ovl < 40) { fx.text(CX, y - 60, 'あぶない！ 細い！', { color: '#ff4d8d', size: 24, life: 0.9 }); SND.danger(); }
   }
   G.blocks.push(placed);
-  G.shakeFloor = n; fx.shake(0.35, 0.18);
-  G.camTarget = Math.min(0, floorY(G.blocks.length) - H * 0.42);   // 塔のてっぺんが画面の 42% の高さに来るように下へずらす
+  fx.shake(0.35, 0.18);
+  const floors = G.blocks.length - 1;
+  // ゾーンと節目
+  const z = zoneOf(floors);
+  if (z !== G.zone) { G.zone = z; G.zoneFlash = 1; const Z = ZONES[z]; setBanner(`${floors} 階！ ${Z.label}`, `${Z.name} ZONE  +${500 * z}`, Z.color); G.score += 500 * z; SND.zone(); fx.flash(Z.color, 0.3, 0.3); FES.confetti(1200); }
+  else if (floors % 10 === 0 && floors >= 50) { G.score += 1000; setBanner(`${floors} 階！！`, '伝説の高さ +1000', '#ffd36e'); SND.zone(); FES.confetti(1500); }
+  G.camTarget = Math.min(0, floorY(G.blocks.length) - topAnchor());
   G.mover = newMover();
   FES.vibrate(15);
 }
 function showResult() {
-  const floors = G.blocks.length - 1;
+  if (G.resultShown) return; G.resultShown = true;
+  const floors = G.blocks.length - 1, Z = ZONES[G.zone];
   FES.showResult({
-    score: G.score, scoreLabel: 'pt', title: floors >= 30 ? 'すごい高さ！' : 'GAME OVER',
-    subtitle: `${floors} 階まで積んだ！`,
+    score: G.score, scoreLabel: 'pt', title: floors >= 40 ? '銀河に届いた！' : floors >= 30 ? '宇宙に届いた！' : floors >= 20 ? '雲の上まで！' : 'GAME OVER',
+    subtitle: `${floors} 階まで積んだ！（${Z.label}）`,
     rank: RANK, titles: { S: 'タワーの神', A: '積みの達人', B: 'なかなかの高さ！', C: 'いい感じ', D: 'つぎはもっと高く！' },
-    stats: [{ label: '高さ', value: floors + ' 階' }, { label: 'PERFECT', value: G.perfects }, { label: 'MAX COMBO', value: G.maxCombo }],
-  }, startGame);
+    stats: [{ label: '高さ', value: floors + ' 階' }, { label: 'PERFECT', value: G.perfects }, { label: 'MAX COMBO', value: G.maxCombo }, { label: '金ブロック', value: G.golds }],
+  }, () => { startGame(); FES.sfx('start'); });
 }
 
 /* ------------------------------------------------------------ 更新 */
 function update(dt) {
   G.t += dt;
   const d = fx.update(dt);
+  G.beat = Math.max(0, G.beat - dt * 3);
+  if (G.beatQueue.length) { const ac = FES.audioContext(); if (ac) while (G.beatQueue.length && G.beatQueue[0] <= ac.currentTime) { G.beatQueue.shift(); G.beat = 1; } }
+  if (G.banner) { G.banner.t += dt; if (G.banner.t > G.banner.dur) G.banner = null; }
+  G.zoneFlash = Math.max(0, G.zoneFlash - dt);
   if (G.state === 'count') {
     G.countT += dt;
     const step = Math.min(3, Math.floor(G.countT / 0.7));
     if (step !== G.countStep) { G.countStep = step; if (step < 3) FES.sfx('countdown'); else beginPlay(); }
   }
-  if (G.state === 'play' && G.mover) {
-    const m = G.mover;
-    m.ph += m.speed * d;
-    m.x = CX - m.w / 2 + Math.sin(m.ph) * m.amp;
+  if (G.state === 'play') {
+    bgmUpdate();
+    if (G.mover) {
+      const m = G.mover;
+      m.ph += m.speed * d;
+      const wave = m.linear ? (2 / Math.PI) * Math.asin(Math.sin(m.ph)) : Math.sin(m.ph);   // linear: 三角波（一定速度で折り返す）
+      m.x = CX - m.w / 2 + wave * m.amp;
+    }
   }
   G.camY += (G.camTarget - G.camY) * Math.min(1, d * 6);
   for (let i = G.falling.length - 1; i >= 0; i--) {
@@ -152,41 +245,93 @@ function update(dt) {
     f.vy += 1400 * d; f.y += f.vy * d; f.x += f.vx * d; f.rot += f.vr * d; f.life -= d;
     if (f.life <= 0 || f.y > H + 200) G.falling.splice(i, 1);
   }
+  for (const c of G.clouds) { c.x += c.v * d; if (c.x > W + c.w) c.x = -c.w; }
+  for (const p of G.props) if (p.kind === 'plane') { p.x += p.v * d; if (p.v > 0 && p.x > W + 120) p.x = -120; if (p.v < 0 && p.x < -120) p.x = W + 120; }
   G.pop = Math.max(0, G.pop - d * 3);
   G.dispScore += (G.score - G.dispScore) * Math.min(1, d * 8);
   if (G.state === 'over') G.overT += d;
 }
 
 /* ------------------------------------------------------------ 描画 */
-function drawBlock(x, y, w, hue, alpha, glow) {
+function text(s, x, y, size, color, o) {
+  o = o || {};
+  ctx.save(); ctx.font = `${o.w || 900} ${size}px ${FONT}`; ctx.textAlign = o.align || 'center'; ctx.textBaseline = 'middle';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = size * 0.5; }
+  if (o.stroke) { ctx.lineWidth = Math.max(3, size * 0.14); ctx.lineJoin = 'round'; ctx.strokeStyle = o.stroke; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function mix(a, b, k) { return [0, 1, 2].map(i => Math.round(a[i] + (b[i] - a[i]) * k)); }
+function rgb(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
+function drawBlock(x, y, w, hue, alpha, glow, gold) {
   ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha;
+  const L = gold ? 10 : 0;
   // 右側面
-  ctx.fillStyle = colorOf(hue, 28); ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w + DEPTH, y + BH - DEPTH * 0.6); ctx.lineTo(x + w, y + BH); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = colorOf(hue, 28 + L); ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w + DEPTH, y + BH - DEPTH * 0.6); ctx.lineTo(x + w, y + BH); ctx.closePath(); ctx.fill();
   // 上面
-  ctx.fillStyle = colorOf(hue, 72); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w, y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = colorOf(hue, 72 + L); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w + DEPTH, y - DEPTH * 0.6); ctx.lineTo(x + w, y); ctx.closePath(); ctx.fill();
   // 正面
-  const g = ctx.createLinearGradient(x, y, x, y + BH); g.addColorStop(0, colorOf(hue, 58)); g.addColorStop(1, colorOf(hue, 42));
+  const g = ctx.createLinearGradient(x, y, x, y + BH); g.addColorStop(0, colorOf(hue, 58 + L)); g.addColorStop(1, colorOf(hue, 42 + L));
   ctx.fillStyle = g; ctx.fillRect(x, y, w, BH);
-  if (glow) { ctx.shadowColor = colorOf(hue, 70); ctx.shadowBlur = glow; ctx.strokeStyle = colorOf(hue, 85); ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, w - 2, BH - 2); }
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x + 3, y + 3, w - 6, 3);   // ふちのハイライト
+  if (gold) { ctx.fillStyle = `rgba(255,255,255,${0.25 + 0.25 * Math.sin(G.t * 8)})`; const sx = x + ((G.t * 160) % (w + 40)) - 20; ctx.fillRect(Math.max(x, sx), y, Math.min(12, x + w - Math.max(x, sx)), BH); }
+  if (glow) { ctx.shadowColor = gold ? '#ffd36e' : colorOf(hue, 70); ctx.shadowBlur = glow; ctx.strokeStyle = gold ? '#fff' : colorOf(hue, 85); ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, w - 2, BH - 2); }
+  ctx.restore();
+}
+function drawBackground(floors) {
+  // ゾーンの色へなめらかに（10 階ごと）
+  const zf = clamp(floors / 10, 0, ZONES.length - 1), zi = Math.floor(zf), k = zf - zi, Za = ZONES[zi], Zb = ZONES[Math.min(ZONES.length - 1, zi + 1)];
+  const top = mix(Za.top, Zb.top, k), bot = mix(Za.bottom, Zb.bottom, k);
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, rgb(top)); bg.addColorStop(1, rgb(bot));
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // 星（高いほど濃い。カメラでゆっくり動く）
+  const starK = clamp((floors - 8) / 25, 0.15, 1);
+  ctx.fillStyle = '#fff';
+  for (const s of stars) { const y = (((s.y - G.camY * 0.3) % (H + 20)) + H + 20) % (H + 20) - 10; ctx.globalAlpha = starK * (0.35 + 0.4 * Math.sin(G.t * 2 + s.p * TAU)); ctx.beginPath(); ctx.arc(s.x, y, s.r, 0, TAU); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  // 惑星・衛星（宇宙ゾーン）
+  for (const p of G.props) {
+    const y = floorY(p.f) - G.camY * 0.85; if (y < -150 || y > H + 150) continue;
+    if (p.kind === 'planet' || p.kind === 'ring') {
+      const g = ctx.createRadialGradient(p.x - p.r * 0.3, y - p.r * 0.3, p.r * 0.1, p.x, y, p.r); g.addColorStop(0, `hsl(${p.hue} 70% 70%)`); g.addColorStop(1, `hsl(${p.hue} 70% 25%)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, y, p.r, 0, TAU); ctx.fill();
+      if (p.kind === 'ring') { ctx.save(); ctx.translate(p.x, y); ctx.rotate(-0.4); ctx.scale(1, 0.3); ctx.strokeStyle = `hsl(${p.hue} 80% 75% / .7)`; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, p.r * 1.7, 0, TAU); ctx.stroke(); ctx.restore(); }
+    } else if (p.kind === 'sat') {
+      ctx.save(); ctx.translate(p.x, y + Math.sin(G.t) * 6); ctx.rotate(0.3); ctx.fillStyle = '#cfd8ff'; ctx.fillRect(-10, -10, 20, 20); ctx.fillStyle = '#5ee7ff'; ctx.fillRect(-60, -6, 44, 12); ctx.fillRect(16, -6, 44, 12); ctx.restore();
+    } else if (p.kind === 'plane') {
+      ctx.save(); ctx.translate(p.x, y); if (p.v < 0) ctx.scale(-1, 1); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.moveTo(-26, 0); ctx.lineTo(18, -4); ctx.lineTo(26, 0); ctx.lineTo(18, 4); ctx.closePath(); ctx.fill(); ctx.fillRect(-4, -12, 10, 24); ctx.fillStyle = `rgba(255,80,80,${0.5 + 0.5 * Math.sin(G.t * 10)})`; ctx.fillRect(-26, -3, 4, 4); ctx.restore();
+    }
+  }
+  // 雲（空・雲の上）
+  for (const c of G.clouds) {
+    const y = floorY(c.f) - G.camY * 0.8; if (y < -80 || y > H + 80) continue;
+    ctx.fillStyle = `rgba(255,255,255,${c.a * clamp((floors - 4) / 10, 0, 1) * clamp((38 - floors) / 8, 0, 1)})`;   // 宇宙に出たら雲は消える
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(c.x + (i - 1.5) * c.w * 0.22, y + (i % 2) * 6, c.w * (0.18 + (i % 2) * 0.08), 0, TAU); ctx.fill(); }
+  }
+  // 遠くの街（下のほうにだけ）
+  const cityY = H - (PORTRAIT ? 130 : 70) - G.camY * 0.8;
+  if (cityY < H + 100) {
+    for (let i = 0; i < Math.ceil(W / 38) + 1; i++) { const bw = 26 + (i * 13) % 30, bh = 40 + (i * 37) % 120, bx = i * 38 - 10; ctx.fillStyle = `rgba(${40 + (i % 3) * 10},${20 + (i % 4) * 8},${70 + (i % 5) * 12},.9)`; ctx.fillRect(bx, cityY - bh, bw, bh + 200); ctx.fillStyle = `rgba(255,220,140,${0.3 + 0.1 * Math.sin(G.t * 3 + i)})`; for (let j = 0; j < 4; j++) { if ((i * 7 + j * 3) % 5 === 0) continue; ctx.fillRect(bx + 5 + (j % 2) * 10, cityY - bh + 8 + j * 14, 4, 6); } }
+  }
+  // ゾーン切りかえの光
+  if (G.zoneFlash > 0) { ctx.fillStyle = `rgba(255,255,255,${G.zoneFlash * 0.12})`; ctx.fillRect(0, 0, W, H); }
+}
+function drawRuler(floors) {
+  // 右端の高さメーター（10 階ごとの目盛りとゾーン名）
+  const x = W - (PORTRAIT ? 22 : 36);
+  ctx.save(); ctx.globalAlpha = 0.8;
+  for (let f = 0; f <= floors + 30; f += 5) {
+    const y = floorY(f) - G.camY; if (y < HUD_TOP + 10 || y > H - 20) continue;
+    const major = f % 10 === 0;
+    ctx.fillStyle = major ? 'rgba(255,255,255,.7)' : 'rgba(255,255,255,.25)'; ctx.fillRect(x - (major ? 14 : 7), y, major ? 14 : 7, 2);
+    if (major && f > 0) { const z = zoneOf(f); text(`${f}`, x - 18, y, 11, f <= floors ? ZONES[z].color : 'rgba(255,255,255,.5)', { align: 'right', w: 700 }); }
+  }
+  ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(x, HUD_TOP + 10, 2, H - HUD_TOP - 30);
   ctx.restore();
 }
 function render() {
   const floors = G.blocks.length - 1;
-  // 背景: 高くなるほど宇宙へ
-  const k = Math.min(1, floors / 45);
-  const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, k < 0.5 ? `rgb(${12 + 30 * (1 - k * 2)},${8 + 10 * (1 - k * 2)},${40 + 30 * (1 - k * 2)})` : '#04040f');
-  bg.addColorStop(1, `rgb(${40 - 30 * k},${20 - 14 * k},${70 - 50 * k})`);
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-  // 星（カメラでゆっくり動く）
-  ctx.fillStyle = '#fff';
-  for (const s of stars) { const y = (((s.y - G.camY * 0.3) % (H + 20)) + H + 20) % (H + 20) - 10; ctx.globalAlpha = 0.25 + 0.5 * k + 0.25 * Math.sin(G.t * 2 + s.p * TAU); ctx.beginPath(); ctx.arc(s.x, y, s.r, 0, TAU); ctx.fill(); }
-  ctx.globalAlpha = 1;
-  // 遠くの街（下のほうにだけ）
-  const cityY = H - 70 - G.camY * 0.8;
-  if (cityY < H + 100) {
-    for (let i = 0; i < 26; i++) { const bw = 26 + (i * 13) % 30, bh = 40 + (i * 37) % 120, bx = i * 38 - 10; ctx.fillStyle = `rgba(${40 + (i % 3) * 10},${20 + (i % 4) * 8},${70 + (i % 5) * 12},.9)`; ctx.fillRect(bx, cityY - bh, bw, bh + 200); ctx.fillStyle = 'rgba(255,220,140,.35)'; for (let j = 0; j < 4; j++) { if ((i * 7 + j * 3) % 5 === 0) continue; ctx.fillRect(bx + 5 + (j % 2) * 10, cityY - bh + 8 + j * 14, 4, 6); } }
-  }
+  drawBackground(floors);
   fx.begin(ctx);
   // 塔
   const n = G.blocks.length;
@@ -196,7 +341,7 @@ function render() {
     const isTop = i === n - 1;
     const pop = isTop ? 1 + G.pop * 0.06 : 1;
     const w = b.w * pop, x = b.x - (w - b.w) / 2;
-    drawBlock(x, y, w, b.hue, 1, isTop ? 14 : 0);
+    drawBlock(x, y, w, b.hue, 1, isTop ? 14 + G.beat * 6 : 0, b.gold);
   }
   // 破片
   for (const f of G.falling) {
@@ -206,58 +351,85 @@ function render() {
   // 動いているブロック
   if (G.mover && G.state === 'play') {
     const m = G.mover, y = floorY(n) - G.camY;
-    // 下のブロックとの重なりガイド（うっすら）
     const top = G.blocks[n - 1];
     const ox0 = Math.max(m.x, top.x), ox1 = Math.min(m.x + m.w, top.x + top.w);
-    if (ox1 > ox0) { ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(ox0, y + BH, ox1 - ox0, floorY(n - 1) - G.camY - y - BH + 1); }
-    drawBlock(m.x, y, m.w, m.hue, 1, 22);
+    // 重なりガイド: 重なる部分を下のブロックに影として落とす。PERFECT 圏内なら白く光る
+    const perfect = Math.abs(m.x - top.x) <= PERFECT_TOL;
+    if (ox1 > ox0) { ctx.fillStyle = perfect ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.08)'; ctx.fillRect(ox0, y + BH, ox1 - ox0, floorY(n - 1) - G.camY - y - BH + 1); }
+    if (ox1 <= ox0 + 2) { ctx.fillStyle = `rgba(255,60,90,${0.25 + 0.2 * Math.sin(G.t * 14)})`; ctx.fillRect(m.x, y + BH, m.w, 6); }
+    // 下のブロックの端の目印
+    ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(top.x, y - 4, 1, BH + 8); ctx.fillRect(top.x + top.w - 1, y - 4, 1, BH + 8);
+    drawBlock(m.x, y, m.w, m.hue, 1, m.gold ? 30 : 22, m.gold);
+    if (m.gold) text('✨ GOLD', m.x + m.w / 2, y - 16, 13, '#ffd36e', { glow: '#ffd36e' });
   }
   fx.draw(ctx);
   fx.end(ctx);
   fx.drawFlash(ctx, W, H);
+  drawRuler(floors);
   drawHUD(floors);
   if (G.state === 'title') drawTitle();
   if (G.state === 'count') drawCount();
 }
-function text(s, x, y, size, color, o) {
-  o = o || {};
-  ctx.save(); ctx.font = `${o.w || 900} ${size}px ${FONT}`; ctx.textAlign = o.align || 'center'; ctx.textBaseline = 'middle';
-  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = size * 0.5; }
-  if (o.stroke) { ctx.lineWidth = Math.max(3, size * 0.14); ctx.lineJoin = 'round'; ctx.strokeStyle = o.stroke; ctx.strokeText(s, x, y); }
-  ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.restore();
-}
+function panel(x, y, w, h) { ctx.fillStyle = 'rgba(0,0,0,.35)'; rr(x, y, w, h, 16); ctx.fill(); ctx.strokeStyle = `${ZONES[G.zone].color}55`; ctx.lineWidth = 1; ctx.stroke(); }
 function drawHUD(floors) {
   if (G.state === 'title') return;
-  // 右の HUD
-  const px = W - 150, py = 24;
-  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.roundRect(px - 20, py, 160, 150, 16); ctx.fill();
-  text('SCORE', px + 60, py + 22, 12, 'rgba(255,255,255,.6)');
-  text(Math.round(G.dispScore).toLocaleString(), px + 60, py + 50, 30, '#ffd36e', { glow: 'rgba(255,211,110,.6)' });
-  text('高さ', px + 20, py + 90, 12, 'rgba(255,255,255,.6)'); text(`${floors} 階`, px + 20, py + 118, 24, '#fff');
-  text('COMBO', px + 105, py + 90, 12, 'rgba(255,255,255,.6)'); text(G.combo >= 2 ? `×${G.combo}` : '—', px + 105, py + 118, 24, G.combo >= 5 ? '#ff4d8d' : '#5ee7ff');
-  // 左: 操作
-  if (G.state === 'play' && G.t < 6) text(FES.isTouch() ? '👆 タップで落とす' : 'Space / クリック で落とす', 150, H - 26, 16, 'rgba(255,255,255,.7)');
-  if (G.state === 'over') text('GAME OVER', CX, H * 0.4, 56 + Math.min(1, G.overT * 4) * 6, '#ff4d8d', { glow: '#ff4d8d', stroke: 'rgba(0,0,0,.6)' });
+  const Z = ZONES[G.zone];
+  if (PORTRAIT) {
+    const y = HUD_TOP, w = (W - 60) / 3, h = 84;
+    [0, 1, 2].forEach(k => panel(20 + k * (w + 10), y, w, h));
+    text('SCORE', 20 + w / 2, y + 18, 11, 'rgba(255,255,255,.6)'); text(Math.round(G.dispScore).toLocaleString(), 20 + w / 2, y + 50, 24, '#ffd36e', { glow: 'rgba(255,211,110,.6)' });
+    text('高さ', 30 + w + w / 2, y + 18, 11, 'rgba(255,255,255,.6)'); text(`${floors} 階`, 30 + w + w / 2, y + 50, 26, '#fff'); text(Z.name, 30 + w + w / 2, y + 72, 10, Z.color);
+    text('COMBO', 40 + 2 * w + w / 2, y + 18, 11, 'rgba(255,255,255,.6)'); text(G.combo >= 2 ? `×${G.combo}` : '—', 40 + 2 * w + w / 2, y + 50, 24, G.combo >= 5 ? '#ff4d8d' : '#5ee7ff');
+  } else {
+    const px = W - 150, py = HUD_TOP;
+    panel(px - 20, py, 160, 160);
+    text('SCORE', px + 60, py + 22, 12, 'rgba(255,255,255,.6)');
+    text(Math.round(G.dispScore).toLocaleString(), px + 60, py + 50, 30, '#ffd36e', { glow: 'rgba(255,211,110,.6)' });
+    text('高さ', px + 20, py + 88, 12, 'rgba(255,255,255,.6)'); text(`${floors} 階`, px + 20, py + 114, 24, '#fff');
+    text('COMBO', px + 105, py + 88, 12, 'rgba(255,255,255,.6)'); text(G.combo >= 2 ? `×${G.combo}` : '—', px + 105, py + 114, 24, G.combo >= 5 ? '#ff4d8d' : '#5ee7ff');
+    text(`${Z.name} ZONE`, px + 60, py + 142, 11, Z.color, { glow: Z.color });
+  }
+  if (G.state === 'play' && G.t < 6) text(FES.isTouch() ? '👆 タップで落とす' : 'Space / クリック で落とす', PORTRAIT ? CX : 150, H - 26, 16, 'rgba(255,255,255,.7)');
+  if (G.combo >= 2 && G.mover) { const w = 110, x = CX - w / 2, y = floorY(G.blocks.length) - G.camY - 46; ctx.fillStyle = 'rgba(255,255,255,.12)'; rr(x, y, w, 5, 3); ctx.fill(); ctx.fillStyle = '#ffd36e'; rr(x, y, w * Math.min(1, G.grow / GROW_EVERY), 5, 3); ctx.fill(); text(`あと ${Math.max(0, GROW_EVERY - G.grow)} で WIDER`, CX, y - 10, 11, 'rgba(255,255,255,.7)', { w: 700 }); }
+  if (G.state === 'over') text('GAME OVER', CX, H * 0.4, (PORTRAIT ? 46 : 56) + Math.min(1, G.overT * 4) * 6, '#ff4d8d', { glow: '#ff4d8d', stroke: 'rgba(0,0,0,.6)' });
+  // ゾーンの帯
+  if (G.banner) {
+    const b = G.banner, k = b.t / b.dur, ease = clamp(k < 0.15 ? k / 0.15 : k > 0.8 ? (1 - k) / 0.2 : 1, 0, 1);
+    ctx.save(); ctx.globalAlpha = ease;
+    const bh = PORTRAIT ? 86 : 96, by = H * 0.28 - bh / 2;
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(0, by, W, bh); ctx.fillStyle = b.color; ctx.fillRect(0, by, W, 3); ctx.fillRect(0, by + bh - 3, W, 3);
+    const slide = (1 - Math.min(1, b.t / 0.25)) * 60;
+    text(b.text, W / 2 - slide, by + bh * 0.4, PORTRAIT ? 30 : 38, '#fff', { glow: b.color, stroke: 'rgba(0,0,0,.5)' });
+    text(b.sub, W / 2 + slide, by + bh * 0.76, PORTRAIT ? 13 : 16, b.color, { w: 700 });
+    ctx.restore();
+  }
 }
 function drawTitle() {
   G.titleT += 1 / 60;
   const t = G.titleT;
   ctx.fillStyle = 'rgba(4,4,20,.55)'; ctx.fillRect(0, 0, W, H);
   // 飾りの塔
-  for (let i = 0; i < 9; i++) { const w = 200 - i * 14, x = 150 - w / 2 + Math.sin(t * 2 + i) * (i === 8 ? 30 : 0); drawBlock(x, 430 - i * BH, w, (200 + i * 18) % 360, 1, i === 8 ? 18 : 0); }
-  text('ネオンスタック', 560, 150, 74, '#fff', { glow: '#5ee7ff', stroke: 'rgba(0,0,0,.5)' });
-  text('— NEON STACK —', 560, 205, 18, 'rgba(255,255,255,.7)', { w: 700 });
-  text(`HI-SCORE ${FES.getHiScore().toLocaleString()}`, 560, 245, 20, '#ffd36e');
-  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.roundRect(330, 275, 460, 118, 16); ctx.fill();
-  text('動くブロックをタイミングよく落として積み上げよう', 560, 300, 17, '#fff', { w: 700 });
-  text('🎯 ぴったり重ねると PERFECT ＋ コンボ', 560, 328, 16, '#ffd36e', { w: 700 });
-  text('✂ ずれた分は落ちて、ブロックが細くなる', 560, 354, 16, 'rgba(255,255,255,.85)', { w: 700 });
-  text('Space / クリック / タップ ・ Esc でポーズ', 560, 380, 14, 'rgba(255,255,255,.6)', { w: 700 });
+  const tx = PORTRAIT ? W / 2 : 150, ty = PORTRAIT ? H - 120 : 430;
+  for (let i = 0; i < 9; i++) { const w = 200 - i * 14, x = tx - w / 2 + Math.sin(t * 2 + i) * (i === 8 ? 30 : 0); drawBlock(x, ty - i * BH, w, (200 + i * 18) % 360, 1, i === 8 ? 18 : 0, i === 6); }
+  const cx = PORTRAIT ? W / 2 : 560, hy = PORTRAIT ? 170 : 140, S = PORTRAIT ? 0.8 : 1;
+  text('NEON STACK', cx, hy - 48 * S, 15 * S, '#5ee7ff', { w: 700 });
+  text('ネオンスタック', cx, hy, 72 * S, '#fff', { glow: '#5ee7ff', stroke: 'rgba(0,0,0,.5)' });
+  text('— 街から 空へ、宇宙へ、銀河へ —', cx, hy + 50 * S, 17 * S, 'rgba(255,255,255,.75)', { w: 700 });
+  text(`HI-SCORE ${FES.getHiScore().toLocaleString()}`, cx, hy + 86 * S, 20 * S, '#ffd36e');
+  const bw = PORTRAIT ? W - 40 : 480, bx = cx - bw / 2, by = hy + 110 * S, lh = 27, lines = [
+    ['🏗️', '動くブロックをタイミングよく落として積み上げよう'],
+    ['🎯', 'ぴったり重ねると PERFECT。3 回続けると細くなった幅がもどる'],
+    ['✨', '7 個に 1 つの金ブロックは PERFECT で 3 倍'],
+    ['🚀', '10 階ごとにゾーンが変わる。ずれた分は落ちて細くなる'],
+  ];
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; rr(bx, by, bw, lh * lines.length + 16, 16); ctx.fill();
+  lines.forEach(([ic, s], i) => { const y = by + 8 + lh * (i + 0.5); text(ic, bx + 22, y, 15, '#fff'); text(s, bx + 42, y, PORTRAIT ? 12.5 : 14, i === 1 ? '#ffd36e' : 'rgba(255,255,255,.9)', { align: 'left', w: 700 }); });
+  const btnY = by + lh * lines.length + 16 + 50;
   const pulse = 1 + Math.sin(t * 4) * 0.04;
-  ctx.save(); ctx.translate(560, 450); ctx.scale(pulse, pulse);
-  ctx.shadowColor = '#ff4d8d'; ctx.shadowBlur = 24; ctx.fillStyle = '#ff4d8d'; ctx.beginPath(); ctx.roundRect(-130, -30, 260, 60, 30); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.save(); ctx.translate(cx, btnY); ctx.scale(pulse, pulse);
+  ctx.shadowColor = '#ff4d8d'; ctx.shadowBlur = 24; ctx.fillStyle = '#ff4d8d'; rr(-130, -30, 260, 60, 30); ctx.fill(); ctx.shadowBlur = 0;
   text('▶ スタート！', 0, 2, 26, '#fff'); ctx.restore();
-  text('タップ / クリック / Enter / Space でスタート', 560, 505, 13, 'rgba(255,255,255,.55)', { w: 700 });
+  text('Space / クリック / タップ ・ Esc でポーズ', cx, btnY + 50, 13, 'rgba(255,255,255,.6)', { w: 700 });
 }
 function drawCount() {
   const step = G.countStep, k = (G.countT - step * 0.7) / 0.7;
@@ -278,8 +450,8 @@ let paused = false;
 function togglePause() {
   if (G.state !== 'play') return;
   paused = !paused;
-  if (paused) FES.pause(true, { onResume: () => { if (paused) togglePause(); }, onRetry: () => { FES.pause(false); paused = false; startGame(); } });
-  else FES.pause(false);
+  if (paused) { bgmStop(); FES.pause(true, { onResume: () => { if (paused) togglePause(); }, onRetry: () => { FES.pause(false); paused = false; startGame(); FES.sfx('start'); } }); }
+  else { FES.pause(false); bgmStart(); }
 }
 window.addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -290,8 +462,11 @@ window.addEventListener('keydown', e => {
 });
 canvas.addEventListener('pointerdown', e => { e.preventDefault(); if (paused) return; press(); });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'play' && !paused) togglePause(); });
 
 /* ------------------------------------------------------------ ループ */
+G = newGame(); G.beatQueue = [];
+fit(); buildProps();
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
