@@ -70,7 +70,7 @@ function newState() {
     boss: null, bossIdx: 0, warning: 0, warnBeep: 0,
     countT: 0, announce: null, over: false, overT: 0, resultShown: false,
     cleared: false, clearT: 0, bombWave: null, bombPress: 0, warp: 0, uid: 1,
-    bgmMode: 'normal',
+    bgmMode: 'normal', waveHits: 0, bossKills: 0, carrierDone: false,
   };
 }
 
@@ -194,6 +194,12 @@ const SND = {
   phase: () => { FES.tone({ freq: 300, slide: 1200, dur: 0.3, type: 'square', vol: 0.18 }); FES.noise({ dur: 0.3, freq: 3000, slide: 300, vol: 0.2 }); },
   wave: () => { [660, 880, 1320].forEach((f, i) => FES.tone({ freq: f, dur: 0.12, delay: i * 0.07, type: 'square', vol: 0.15 })); },
   death: () => { FES.noise({ dur: 0.7, freq: 1000, slide: 60, vol: 0.5 }); FES.tone({ freq: 500, slide: 60, dur: 0.6, type: 'sawtooth', vol: 0.25 }); },
+  clink: () => { FES.tone({ freq: 2600, slide: 2000, dur: 0.04, type: 'square', vol: 0.07 }); FES.tone({ freq: 3600, dur: 0.03, type: 'sine', vol: 0.05, delay: 0.02 }); },
+  shieldBreak: () => { FES.noise({ dur: 0.25, freq: 3000, slide: 600, vol: 0.25 }); FES.tone({ freq: 1200, slide: 300, dur: 0.2, type: 'square', vol: 0.1 }); },
+  rock: () => { FES.noise({ dur: 0.3, freq: 500, slide: 80, vol: 0.3 }); FES.tone({ freq: 120, slide: 50, dur: 0.25, type: 'triangle', vol: 0.25 }); },
+  bonus: () => { [0, 0.08, 0.16, 0.24, 0.36].forEach((d, k) => FES.tone({ freq: [880, 1109, 1319, 1760, 2217][k], dur: k === 4 ? 0.4 : 0.14, type: 'triangle', vol: 0.16, delay: d })); },
+  noMiss: () => { [0, 0.1, 0.2].forEach((d, k) => FES.tone({ freq: [1047, 1319, 1568][k], dur: 0.18, type: 'square', vol: 0.12, delay: d })); },
+  charge: () => FES.tone({ freq: 200, slide: 900, dur: 0.3, type: 'sawtooth', vol: 0.06 }),
 };
 
 /* ------------------------------------------------------------ ユーティリティ */
@@ -422,6 +428,17 @@ function spawnFormation() {
     addEnemy({ type: 'form', x: p0.x, y: p0.y, p0, p1, p2, dur, delay: i * 0.1, fired: false, fireAt: dur * 0.42 + i * 0.09, hp: 10 * diffMul(), r: 14, score: 120, drops: i === 0 ? { P: 0.45, B: 0.05, S: 0.3 } : { P: 0.04, B: 0.02, S: 0.22 } });
   }
 }
+function spawnRock(x, y, big, vx) {
+  const r = big ? 26 : 14;
+  return addEnemy({ type: 'rock', big, x, y, vx: vx || rand(-25, 25), vy: (big ? 95 : 150) + S.wave * 6, rot: rand(0, TAU), spin: rand(-1.5, 1.5), hp: (big ? 34 : 10) * diffMul(), r, score: big ? 150 : 60, fireT: 99, drops: big ? { P: 0.02, B: 0.01, S: 0.5 } : { P: 0.01, B: 0, S: 0.35 }, shape: Array.from({ length: 9 }, () => rand(0.72, 1.0)) });
+}
+function spawnGuard(x) {
+  return addEnemy({ type: 'guard', x, y: -40, baseX: x, vy: 105 + S.wave * 6, hp: 26 * diffMul(), r: 20, score: 300, shield: 4, shieldMax: 4, fireT: rand(1.4, 2.2), drops: { P: 0.3, B: 0.05, S: 0.3 } });
+}
+function spawnCarrier() {
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  return addEnemy({ type: 'carrier', x: dir > 0 ? -70 : W + 70, y: rand(150, 230), vx: dir * (85 + S.wave * 4), vy: 0, hp: 110 * diffMul(), r: 34, score: 2000, fireT: 99, drops: { P: 0, B: 0, S: 0 }, bob: rand(0, TAU) });
+}
 function spawnBoss(idx) {
   const d = BOSS_DEFS[idx];
   const b = addEnemy({ type: 'boss', x: W / 2, y: -180, hp: d.hp, r: 74 * d.scale, score: d.bonus, def: d, idx, entering: true, phase: 0, fireT: 1.2, fire2T: 2.5, fire3T: 1.0, spA: 0, dying: false, dyingT: 0, boomT: 0, invuln: true, drops: { P: 0, B: 0, S: 0 } });
@@ -435,10 +452,11 @@ function spawnInterval() { return clamp(2.15 - S.wave * 0.17, 0.75, 2.15); }
 function queue(delay, fn) { S.spawnQueue.push({ t: delay, fn }); }
 function spawnEvent() {
   const w = S.wave;
-  const opts = [['zakoLine', 5], ['snake', 3]];
-  if (w >= 2) { opts.push(['formation', 3], ['turret', 2], ['missile', 2]); }
-  if (w >= 4) { opts.push(['zakoRain', 3], ['missile', 1]); }
-  if (w >= 7) { opts.push(['formation', 2], ['turret', 1]); }
+  const opts = [['zakoLine', 5], ['snake', 3], ['rocks', 2]];
+  if (w >= 2) { opts.push(['formation', 3], ['turret', 2], ['missile', 2]); if (!S.carrierDone) opts.push(['carrier', 2]); }
+  if (w >= 3) { opts.push(['guardLine', 2]); }
+  if (w >= 4) { opts.push(['zakoRain', 3], ['missile', 1], ['rocks', 1]); }
+  if (w >= 7) { opts.push(['formation', 2], ['turret', 1], ['guardLine', 1]); }
   let total = 0; for (const o of opts) total += o[1];
   let r = Math.random() * total, ev = opts[0][0];
   for (const o of opts) { r -= o[1]; if (r <= 0) { ev = o[0]; break; } }
@@ -470,10 +488,30 @@ function spawnEvent() {
       for (let i = 0; i < n; i++) queue(i * 0.35, () => spawnMissile(i % 2 ? rand(W * 0.6, W - 30) : rand(30, W * 0.4), -30));
       break;
     }
+    case 'rocks': {   // 小惑星群: 撃つと割れて星を落とす。撃たなくても当たる
+      const n = 3 + Math.min(3, Math.floor(w / 2));
+      for (let i = 0; i < n; i++) queue(i * 0.3, () => spawnRock(rand(40, W - 40), -40, Math.random() < 0.7));
+      break;
+    }
+    case 'guardLine': {   // 盾つき: 正面の盾を 4 発で割ってから本体
+      const n = 3, x0 = rand(90, W - 90 - 120);
+      for (let i = 0; i < n; i++) queue(i * 0.18, () => spawnGuard(x0 + i * 60));
+      break;
+    }
+    case 'carrier': {   // ボーナス輸送船: 1 WAVE に 1 回。倒すと星がたくさん
+      S.carrierDone = true; spawnCarrier();
+      announce('BONUS SHIP!', '横切る輸送船を撃ち落とせ！', '#ffe66d', 1.6);
+      break;
+    }
   }
 }
 function announce(txt, sub, color, dur) { S.announce = { txt, sub, color: color || '#8ed6ff', t: 0, dur: dur || 1.8 }; }
 function startWave(w) {
+  if (w > 1 && S.waveHits === 0 && !S.over) {   // 前の WAVE をノーミスで越えた
+    const bonus = 1000 * (w - 1); S.score += bonus; SND.noMiss();
+    popup(W / 2, H * 0.3, `NO MISS!  +${bonus.toLocaleString()}`, '#6bff9a', 26, 1.4);
+  }
+  S.waveHits = 0; S.carrierDone = false;
   S.wave = w; S.waveT = 0; S.spawnT = 1.0; S.spawnQueue = [];
   if (BOSS_WAVES.includes(w)) {
     S.warning = 2.6; S.warnBeep = 0; S.bossIdx = BOSS_WAVES.indexOf(w);
@@ -555,6 +593,12 @@ function useBomb() {
 }
 function damageEnemy(e, dmg, byBomb) {
   if (e.type === 'boss' && (e.invuln || e.dying)) return;
+  if (e.shield > 0 && !byBomb) {   // 盾つき: まず盾を割る
+    e.shield--; e.flash = 0.05; SND.clink(); spark(e.x, e.y + 14, 3, '#9ff0ff', 140, 0.25);
+    if (e.shield === 0) { SND.shieldBreak(); addRing(e.x, e.y, 70, 0.35, '#9ff0ff', 6); popup(e.x, e.y - 30, 'SHIELD BREAK!', '#9ff0ff', 16, 0.7); S.score += 100; }
+    return;
+  }
+  if (e.shield > 0 && byBomb) e.shield = 0;
   e.hp -= dmg; e.flash = 0.07;
   if (e.hp <= 0) killEnemy(e, byBomb);
 }
@@ -572,10 +616,18 @@ function killEnemy(e, byBomb) {
   if (d < 150 && !byBomb) { pts += e.score; popup(e.x, e.y - 26, `CLOSE!! +${e.score}`, '#ff9a3d', 22, 0.9); }
   S.score += pts;
   popup(e.x, e.y, `+${pts}`, '#ffe66d', 16, 0.6);
-  const col = { zako: '#ff6b4a', snake: '#c07cff', missile: '#ffd166', turret: '#9fb3d9', form: '#6bff9a' }[e.type] || '#fff';
-  explode(e.x, e.y, e.type === 'turret' ? 1.6 : e.type === 'missile' ? 0.8 : 1, col);
-  FES.sfx(e.type === 'turret' ? 'explode' : 'hit');
+  const col = { zako: '#ff6b4a', snake: '#c07cff', missile: '#ffd166', turret: '#9fb3d9', form: '#6bff9a', rock: '#c9b79c', guard: '#9ff0ff', carrier: '#ffd166' }[e.type] || '#fff';
+  explode(e.x, e.y, e.type === 'turret' ? 1.6 : e.type === 'carrier' ? 2.2 : e.type === 'missile' ? 0.8 : e.type === 'rock' && !e.big ? 0.6 : 1, col);
+  FES.sfx(e.type === 'turret' || e.type === 'carrier' ? 'explode' : 'hit');
   if (e.type === 'turret') FES.noise({ dur: 0.35, freq: 800, slide: 100, vol: 0.3 });
+  if (e.type === 'rock') { SND.rock(); if (e.big) { spawnRock(e.x - 14, e.y, false, -70 + rand(-20, 20)); spawnRock(e.x + 14, e.y, false, 70 + rand(-20, 20)); } }
+  if (e.type === 'carrier') {   // ボーナス船: 星 6 つ ＋ パワーアップ
+    SND.bonus(); addFlash('#ffe66d', 0.35); addShake(14); S.hitstop = 0.1;
+    popup(e.x, e.y - 60, 'BONUS SHIP DOWN!', '#ffe66d', 28, 1.4);
+    for (let k = 0; k < 6; k++) dropItem(e.x + Math.cos(k / 6 * TAU) * 40, e.y + Math.sin(k / 6 * TAU) * 30, 'S');
+    dropItem(e.x, e.y, 'P');
+    return;
+  }
   // ドロップ
   const r = Math.random(), t = e.drops;
   S.pity++;
@@ -588,7 +640,7 @@ function comboMult() { return 1 + Math.min(S.combo, 50) * 0.04; }
 function playerHit() {
   const p = S.player;
   if (p.inv > 0 || S.over || S.cleared) return;
-  p.lives--;
+  p.lives--; S.waveHits++;
   SND.death(); addFlash('#ff2040', 0.75); addShake(26); S.hitstop = 0.16;
   explode(p.x, p.y, 1.6, '#8ed6ff', '#fff');
   S.combo = 0; S.comboT = 0; FES.fever(false);
@@ -665,6 +717,19 @@ function updateEnemies(dt) {
         if (e.t - e.delay >= e.dur) { es.splice(i, 1); continue; }
         break;
       }
+      case 'rock':
+        e.x += e.vx * dt; e.y += e.vy * dt; e.rot += e.spin * dt;
+        if (e.x < 20 && e.vx < 0) e.vx = -e.vx; if (e.x > W - 20 && e.vx > 0) e.vx = -e.vx;
+        break;
+      case 'guard':
+        e.y += e.vy * dt; e.x = e.baseX + Math.sin(e.t * 1.4) * 28;
+        e.fireT -= dt * fr;
+        if (e.fireT <= 0) { e.fireT = rand(1.8, 2.6); if (canFire(e)) fireFan(e.x, e.y + 16, 2, 0.5, bs * 0.9, '#9ff0ff', 7); }
+        break;
+      case 'carrier':
+        e.x += e.vx * dt; e.y += Math.sin(e.t * 1.6 + e.bob) * 14 * dt;
+        if (Math.random() < dt * 20) S.parts.push({ k: 2, x: e.x - Math.sign(e.vx) * 40, y: e.y + rand(-10, 10), vx: -e.vx * 0.3, vy: rand(-10, 10), life: 0.5, max: 0.5, c: '#ffd166', s: 4, drag: 0.95 });
+        break;
       case 'boss': updateBoss(e, dt); continue;
     }
     if (e.y > H + 80 || (e.t > 2 && (e.x < -120 || e.x > W + 120 || e.y < -160))) es.splice(i, 1);
@@ -726,7 +791,7 @@ function startBossDeath(b) {
 }
 function finishBossDeath(b) {
   const idx = S.enemies.indexOf(b); if (idx >= 0) S.enemies.splice(idx, 1);
-  S.boss = null; S.kills++;
+  S.boss = null; S.kills++; S.bossKills++;
   explode(b.x, b.y, 3.2, b.def.color, b.def.color2);
   addRing(b.x, b.y, 600, 1.0, '#fff', 30); addRing(b.x, b.y, 420, 0.8, b.def.color, 18);
   SND.bigExplode(); addFlash('#fff', 0.9); addShake(36); S.hitstop = 0.25;
@@ -850,6 +915,17 @@ function drawPlayer() {
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 3, 0, TAU); ctx.fill();
   ctx.strokeStyle = 'rgba(255,80,150,.9)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, TAU); ctx.stroke();
   ctx.restore();
+  // オプション（随伴機）: パワー 3 で 2 つ、5 で金色に
+  if (p.power >= 3) {
+    const oc = p.power >= 5 ? '#ffe66d' : '#5cd4ff';
+    for (const sx of [-1, 1]) {
+      const ox = p.x + sx * (26 + Math.sin(S.t * 3 + sx) * 3), oy = p.y + 6 + Math.cos(S.t * 4 + sx) * 3;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const og = ctx.createRadialGradient(ox, oy, 0, ox, oy, 12); og.addColorStop(0, '#fff'); og.addColorStop(0.4, oc); og.addColorStop(1, hexToRgba(oc, 0));
+      ctx.fillStyle = og; ctx.beginPath(); ctx.arc(ox, oy, 12, 0, TAU); ctx.fill(); ctx.restore();
+      ctx.fillStyle = oc; ctx.beginPath(); ctx.arc(ox, oy, 4, 0, TAU); ctx.fill();
+    }
+  }
   if (p.inv > 0 && p.inv < 50) {
     ctx.strokeStyle = `rgba(140,220,255,${0.4 + 0.3 * Math.sin(S.t * 20)})`; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(p.x, p.y, 30 + Math.sin(S.t * 12) * 3, 0, TAU); ctx.stroke();
@@ -945,6 +1021,44 @@ function drawEnemy(e) {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 3, 3, 0, TAU); ctx.fill();
       break;
     }
+    case 'rock': {
+      ctx.rotate(e.rot);
+      const g = ctx.createRadialGradient(-e.r * 0.3, -e.r * 0.3, e.r * 0.1, 0, 0, e.r); g.addColorStop(0, '#d9c8a8'); g.addColorStop(0.6, '#8a7560'); g.addColorStop(1, '#3a2e24');
+      ctx.fillStyle = g; ctx.strokeStyle = 'rgba(255,230,190,.45)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); for (let i = 0; i < 9; i++) { const a = i * TAU / 9, rr = e.r * e.shape[i]; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.arc(e.r * 0.3, e.r * 0.2, e.r * 0.22, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.arc(-e.r * 0.35, e.r * 0.35, e.r * 0.14, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'guard': {
+      ctx.fillStyle = 'rgba(159,240,255,.2)'; ctx.beginPath(); ctx.arc(0, 0, 24, 0, TAU); ctx.fill();
+      const g = ctx.createLinearGradient(0, -16, 0, 18); g.addColorStop(0, '#dffaff'); g.addColorStop(1, '#1d6d8a');
+      ctx.fillStyle = g; ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(0, 18); ctx.lineTo(16, -4); ctx.lineTo(8, -16); ctx.lineTo(-8, -16); ctx.lineTo(-16, -4); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#ffe66d'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, TAU); ctx.fill();
+      if (e.shield > 0) {   // 正面（下向き）の盾。残りに応じて薄くなる
+        const k = e.shield / e.shieldMax;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = `rgba(159,240,255,${0.35 + 0.6 * k})`; ctx.lineWidth = 4 + k * 3; ctx.shadowColor = '#9ff0ff'; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(0, 4, 26, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke(); ctx.restore();
+        for (let i = 0; i < e.shieldMax; i++) { ctx.fillStyle = i < e.shield ? '#9ff0ff' : 'rgba(255,255,255,.2)'; ctx.fillRect(-14 + i * 8, -26, 6, 3); }
+      }
+      break;
+    }
+    case 'carrier': {
+      const dir = Math.sign(e.vx) || 1;
+      ctx.scale(dir, 1);
+      ctx.fillStyle = 'rgba(255,209,102,.18)'; ctx.beginPath(); ctx.ellipse(0, 0, 50, 26, 0, 0, TAU); ctx.fill();
+      const g = ctx.createLinearGradient(0, -22, 0, 22); g.addColorStop(0, '#fff2c2'); g.addColorStop(0.5, '#ffd166'); g.addColorStop(1, '#8a5a12');
+      ctx.fillStyle = g; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 2;
+      roundRect(-44, -16, 88, 32, 14); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#5a3a0a'; roundRect(-30, -8, 60, 16, 6); ctx.fill();
+      for (let i = 0; i < 4; i++) { ctx.fillStyle = `rgba(255,255,255,${0.5 + 0.5 * Math.sin(e.t * 6 + i)})`; ctx.beginPath(); ctx.arc(-24 + i * 16, 0, 3.5, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = `rgba(255,180,60,${0.5 + Math.random() * 0.4})`; ctx.beginPath(); ctx.moveTo(-44, -8); ctx.lineTo(-62 - Math.random() * 14, 0); ctx.lineTo(-44, 8); ctx.closePath(); ctx.fill();
+      ctx.scale(dir, 1);
+      text('BONUS', 0, -30, 11, '#ffe66d', 'center', 900, 3);
+      // HP バー
+      ctx.fillStyle = 'rgba(0,0,0,.5)'; roundRect(-30, 24, 60, 5, 2); ctx.fill(); ctx.fillStyle = '#ffe66d'; roundRect(-30, 24, 60 * clamp(e.hp / e.maxHp, 0, 1), 5, 2); ctx.fill();
+      break;
+    }
     case 'boss': drawBoss(e); break;
   }
   if (e.flash > 0 && e.type !== 'boss') { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,255,255,${e.flash * 9})`; ctx.beginPath(); ctx.arc(0, 0, e.r, 0, TAU); ctx.fill(); }
@@ -958,14 +1072,33 @@ function drawBoss(b) {
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (const ex of [-70, 70]) { const g = ctx.createRadialGradient(ex, -50, 0, ex, -50, 30); g.addColorStop(0, hexToRgba(d.color2, 0.8)); g.addColorStop(1, hexToRgba(d.color2, 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ex, -50 - Math.random() * 6, 30, 0, TAU); ctx.fill(); }
   ctx.restore();
-  // 船体
+  // 船体（ボスごとに形がちがう）
   const g = ctx.createLinearGradient(0, -70, 0, 80); g.addColorStop(0, '#2a2f4a'); g.addColorStop(0.5, '#4a5070'); g.addColorStop(1, '#1a1c30');
   ctx.fillStyle = g; ctx.strokeStyle = d.color; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(0, 82); ctx.lineTo(50, 40); ctx.lineTo(115, 50); ctx.lineTo(128, -10); ctx.lineTo(90, -45); ctx.lineTo(45, -68); ctx.lineTo(0, -58);
-  ctx.lineTo(-45, -68); ctx.lineTo(-90, -45); ctx.lineTo(-128, -10); ctx.lineTo(-115, 50); ctx.lineTo(-50, 40); ctx.closePath(); ctx.fill(); ctx.stroke();
-  // 装甲ライン
-  ctx.strokeStyle = hexToRgba(d.color, 0.5); ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(-95, -20); ctx.lineTo(-40, 30); ctx.lineTo(0, 55); ctx.lineTo(40, 30); ctx.lineTo(95, -20); ctx.stroke();
+  if (b.idx === 0) {   // クリムゾン・ハウンド: 前に突き出た牙のような船体
+    ctx.beginPath(); ctx.moveTo(0, 92); ctx.lineTo(28, 50); ctx.lineTo(70, 70); ctx.lineTo(118, 10); ctx.lineTo(96, -40); ctx.lineTo(40, -62); ctx.lineTo(0, -50);
+    ctx.lineTo(-40, -62); ctx.lineTo(-96, -40); ctx.lineTo(-118, 10); ctx.lineTo(-70, 70); ctx.lineTo(-28, 50); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = hexToRgba(d.color, 0.7); for (const sx of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx * 70, 70); ctx.lineTo(sx * 82, 118); ctx.lineTo(sx * 96, 60); ctx.closePath(); ctx.fill(); }
+    ctx.strokeStyle = hexToRgba(d.color, 0.5); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-80, -10); ctx.lineTo(-30, 40); ctx.lineTo(0, 62); ctx.lineTo(30, 40); ctx.lineTo(80, -10); ctx.stroke();
+  } else if (b.idx === 1) {   // ヴォイド・サーペント: 細長い胴体と光る節
+    ctx.beginPath(); ctx.moveTo(0, 96); ctx.lineTo(34, 60); ctx.lineTo(40, 0); ctx.lineTo(60, -40); ctx.lineTo(120, -30); ctx.lineTo(135, 20); ctx.lineTo(100, 36); ctx.lineTo(70, 10); ctx.lineTo(48, 24);
+    ctx.lineTo(0, -70); ctx.lineTo(-48, 24); ctx.lineTo(-70, 10); ctx.lineTo(-100, 36); ctx.lineTo(-135, 20); ctx.lineTo(-120, -30); ctx.lineTo(-60, -40); ctx.lineTo(-40, 0); ctx.lineTo(-34, 60); ctx.closePath(); ctx.fill(); ctx.stroke();
+    for (let i = 0; i < 3; i++) { const yy = -36 + i * 34, k = 0.5 + 0.5 * Math.sin(b.t * 5 - i * 1.2); ctx.fillStyle = hexToRgba(d.color2, 0.4 + 0.6 * k); ctx.beginPath(); ctx.arc(0, yy, 9 + k * 3, 0, TAU); ctx.fill(); }
+    ctx.strokeStyle = hexToRgba(d.color, 0.5); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-110, -20); ctx.lineTo(-60, 6); ctx.moveTo(110, -20); ctx.lineTo(60, 6); ctx.stroke();
+  } else {   // オメガ・ドレッドノート: 横に広い要塞
+    ctx.beginPath(); ctx.moveTo(0, 82); ctx.lineTo(50, 40); ctx.lineTo(115, 50); ctx.lineTo(128, -10); ctx.lineTo(90, -45); ctx.lineTo(45, -68); ctx.lineTo(0, -58);
+    ctx.lineTo(-45, -68); ctx.lineTo(-90, -45); ctx.lineTo(-128, -10); ctx.lineTo(-115, 50); ctx.lineTo(-50, 40); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#20233a'; ctx.strokeStyle = hexToRgba(d.color, 0.8); ctx.lineWidth = 2;
+    for (const sx of [-1, 1]) { roundRect(sx * 60 - 16, -74, 32, 40, 6); ctx.fill(); ctx.stroke(); ctx.fillStyle = d.color2; ctx.beginPath(); ctx.arc(sx * 60, -78, 6 + 2 * Math.sin(b.t * 4), 0, TAU); ctx.fill(); ctx.fillStyle = '#20233a'; }
+    ctx.strokeStyle = hexToRgba(d.color, 0.5); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-95, -20); ctx.lineTo(-40, 30); ctx.lineTo(0, 55); ctx.lineTo(40, 30); ctx.lineTo(95, -20); ctx.stroke();
+  }
+  // 攻撃前のチャージ光（主砲）: 撃つ 0.3 秒前から光る
+  if (!b.entering && !b.dying && !S.over && !S.cleared) {
+    const nxt = Math.min(b.fireT, b.fire2T);
+    const ch = clamp(1 - nxt / 0.3, 0, 1);
+    if (ch > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const cg2 = ctx.createRadialGradient(0, 50, 0, 0, 50, 14 + ch * 26); cg2.addColorStop(0, `rgba(255,255,255,${0.9 * ch})`); cg2.addColorStop(0.5, hexToRgba(d.color2, 0.7 * ch)); cg2.addColorStop(1, hexToRgba(d.color2, 0)); ctx.fillStyle = cg2; ctx.beginPath(); ctx.arc(0, 50, 14 + ch * 26, 0, TAU); ctx.fill(); ctx.restore(); }
+  }
   // 砲塔ポッド
   for (const px of [-95, 95]) {
     ctx.fillStyle = '#242840'; ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, 10, 24, 0, TAU); ctx.fill(); ctx.stroke();
@@ -1292,7 +1425,7 @@ function finishGame() {
   FES.showResult({
     score: S.score, scoreLabel: 'pt', title, subtitle,
     rank: { S: 60000, A: 35000, B: 15000, C: 5000 }, titles: { S: '銀河の英雄', A: 'エースパイロット', B: 'いい腕だ！' },
-    stats: [{ label: 'WAVE', value: S.wave }, { label: '撃破数', value: S.kills }, { label: 'MAX COMBO', value: S.maxCombo }, { label: 'GRAZE', value: S.graze }],
+    stats: [{ label: 'WAVE', value: S.wave }, { label: '撃破数', value: S.kills }, { label: 'ボス撃破', value: `${S.bossKills} / 3` }, { label: 'MAX COMBO', value: S.maxCombo }, { label: 'GRAZE', value: S.graze }],
   }, restartGame);
 }
 
