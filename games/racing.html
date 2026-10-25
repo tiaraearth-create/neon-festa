@@ -59,6 +59,8 @@ const MAX_CARS = 42;
 const BILL_TEXT = ['文化祭', 'WELCOME', 'NEON DRIVE', 'ようこそ', '全力疾走!', 'FESTIVAL', '大盛況', 'GO GO!!', '飛ばせ!!', 'ネオン'];
 const BILL_COL = ['#5ef2ff', '#ff4dd2', '#ffd36e', '#7dff6e', '#ff8a2b'];
 const CAR_COLORS = ['#ff3b5c', '#3b8bff', '#ffd23b', '#2fe07a', '#f4f4ff', '#b04dff', '#ff8a2b'];
+const AREAS = ['海岸ハイウェイ', 'ネオン街', '山岳ロード', '夜のハイウェイ', '砂漠の直線', '工業地帯', '湖畔ロード'];
+const ITEM_DEFS = { coin: { label: 'COIN +150', color: '#ffd36e' }, time: { label: 'TIME +3s', color: '#7dff6e' }, nitro: { label: 'NITRO +40', color: '#5ef2ff' } };
 const CAR_TYPES = [
   { name: 'car', w: 400, h: 240, speed: [0.3, 0.6] },
   { name: 'van', w: 430, h: 330, speed: [0.25, 0.45] },
@@ -72,7 +74,7 @@ const G = {
   state: 'title', clock: 0, dayClock: 0, dayT: 0,
   position: 0, speed: 0, playerX: 0, playerY: 0, steer: 0, fov: 100, camDepth: 1, playerZ: 0,
   timeLeft: START_TIME, score: 0, dispScore: 0, distM: 0, distUnits: 0, nextCheckM: CHECK_DIST_M, checkpoints: 0,
-  passes: 0, nearMiss: 0, speedBonus: 0, maxKmh: 0,
+  passes: 0, nearMiss: 0, speedBonus: 0, maxKmh: 0, coins: 0, itemScore: 0, nmChain: 0, lastNearT: -9, chainBonus: 0,
   nitro: 0, nitroT: 0, nitroGlow: 0, crash: 0, spinDir: 0, invuln: 0, shake: 0, flash: 0, flashColor: '#fff',
   offroad: false, dustT: 0, rumbleT: 0, cars: [], carsBySeg: new Map(), playerSegIdx: 0,
   hOffset: 0, cdT: 0, cdLast: -1, overT: 0, roadHorizon: H / 2, lastTick: -1, autoAccel: false,
@@ -250,7 +252,12 @@ const SPR = {
   bill: { w: 1100, h: 780, draw: drawBillboard },
   bush: { w: 420, h: 300, draw: drawBush },
   gate: { w: 5400, h: 1250, draw: drawGate, noCollide: true },
+  item: { w: 300, h: 300, draw: drawItem, noCollide: true, item: true },
 };
+function addItem(segIdx, kind, lane) {
+  const seg = segments[((segIdx % segments.length) + segments.length) % segments.length];
+  seg.sprites.push({ def: SPR.item, offset: lane, kind, ph: Math.random() * TAU });
+}
 function placeSprites() {
   const n = segments.length;
   for (let i = 0; i < n; i++) {
@@ -260,6 +267,13 @@ function placeSprites() {
     if (i % 70 === 35) seg.sprites.push({ def: SPR.bill, offset: pick([-1.62, 1.62]), text: pick(BILL_TEXT), color: pick(BILL_COL) });
     if (i > 12 && Math.random() < 0.10) seg.sprites.push({ def: SPR.palm, offset: pick([-1, 1]) * rand(1.5, 2.7) });
     if (Math.random() < 0.06) seg.sprites.push({ def: SPR.bush, offset: pick([-1, 1]) * rand(1.25, 2.4) });
+  }
+  // 道の上のアイテム: コインは 3 枚ならび、時計とニトロ缶はひとつ。30 セグメントごと（約 42 m）
+  for (let i = 45; i < n - 20; i += 30) {
+    const r = Math.random(), lane = pick([-0.62, 0, 0.62]);
+    if (r < 0.6) { for (let k = 0; k < 3; k++) addItem(i + k * 4, 'coin', lane); }
+    else if (r < 0.82) addItem(i, 'time', lane);
+    else addItem(i, 'nitro', lane);
   }
 }
 
@@ -563,7 +577,7 @@ function resetGame() {
   Object.assign(G, {
     dayClock: 0, dayT: 0, position: 0, speed: 0, playerX: 0, playerY: 0, steer: 0, fov: 100,
     timeLeft: START_TIME, score: 0, dispScore: 0, distM: 0, distUnits: 0, nextCheckM: CHECK_DIST_M, checkpoints: 0,
-    passes: 0, nearMiss: 0, speedBonus: 0, maxKmh: 0,
+    passes: 0, nearMiss: 0, speedBonus: 0, maxKmh: 0, coins: 0, itemScore: 0, nmChain: 0, lastNearT: -9, chainBonus: 0,
     nitro: 30, nitroT: 0, nitroGlow: 0, crash: 0, spinDir: 0, invuln: 0, shake: 0, flash: 0,
     offroad: false, dustT: 0, rumbleT: 0, carsBySeg: new Map(), playerSegIdx: 0,
     hOffset: 0, cdT: 3.6, cdLast: -1, overT: 0, lastTick: -1, bgmT: 0, bgmI: 0, parts: [], popups: [], resultShown: false,
@@ -626,6 +640,8 @@ function showResult() {
       { label: '距離', value: Math.floor(G.distM).toLocaleString() + ' m' },
       { label: '最高速', value: Math.floor(G.maxKmh) + ' km/h' },
       { label: '追い抜き', value: G.passes },
+      { label: 'ニアミス', value: G.nearMiss },
+      { label: 'コイン', value: G.coins },
       { label: 'チェックポイント', value: G.checkpoints },
     ],
   }, () => startGame());
@@ -698,9 +714,30 @@ function hitObstacle() {
   addPopup('BUMP!', W / 2, 250, '#ffb347', 40, 0.9);
   SND.bump();
 }
+function collectItem(seg, s) {
+  const i = seg.sprites.indexOf(s); if (i >= 0) seg.sprites.splice(i, 1);
+  const d = ITEM_DEFS[s.kind];
+  if (s.kind === 'coin') { G.coins++; G.itemScore += 150; G.nitro = Math.min(100, G.nitro + 5); FES.sfx('coin'); }
+  else if (s.kind === 'time') { G.timeLeft += 3; G.itemScore += 100; FES.sfx('powerup'); }
+  else { G.nitro = Math.min(100, G.nitro + 40); G.itemScore += 100; SND.nitro(); }
+  const slot = G.popups.length % 3;
+  addPopup(d.label, W / 2 + G.playerX * 120, 260 + slot * 30, d.color, 24, 0.8);
+  spawnParts(14, W / 2 + G.playerX * 120, H - 120, { s0: 80, s1: 320, l0: 0.25, l1: 0.6, z0: 2, z1: 5, colors: [d.color, '#fff'], grav: 500, jx: 20, jy: 20 });
+  G.flash = Math.max(G.flash, 0.12); G.flashColor = d.color;
+  // 取ったアイテムは、ずっと先にまた置く
+  addItem(seg.index + Math.floor(rand(500, 1000)), s.kind, pick([-0.62, 0, 0.62]));
+}
 function checkCollisions() {
   const playerPos = G.position + G.playerZ;
   const segIdx = G.playerSegIdx;
+  // アイテム（自分のいるセグメントと次のセグメント）
+  for (let k = 0; k < 2; k++) {
+    const seg = segments[(segIdx + k) % segments.length];
+    for (let j = seg.sprites.length - 1; j >= 0; j--) {
+      const s = seg.sprites[j];
+      if (s.def.item && overlap(G.playerX, PLAYER_W, s.offset, 0.28, 1.0)) collectItem(seg, s);
+    }
+  }
   if (G.offroad && G.invuln <= 0) {
     for (const s of segments[segIdx].sprites) {
       if (s.def.noCollide) continue;
@@ -723,7 +760,9 @@ function checkCollisions() {
       if (gap < 0.12 && G.speed > MAX_SPEED * 0.5) {
         G.nearMiss++;
         G.nitro = Math.min(100, G.nitro + 20);
-        addPopup('NEAR MISS +200', W / 2, 150 + slot * 34, '#ff4dd2', 30);
+        G.nmChain = (G.clock - G.lastNearT < 4) ? G.nmChain + 1 : 1; G.lastNearT = G.clock;
+        if (G.nmChain >= 3) { G.nmChain = 0; G.chainBonus += 500; addPopup('NEAR MISS CHAIN!! +500', W / 2, 110, '#ff4dd2', 34, 1.2); FES.sfx('perfect'); G.shake = Math.max(G.shake, 0.3); }
+        else addPopup(G.nmChain >= 2 ? `NEAR MISS ×${G.nmChain} +200` : 'NEAR MISS +200', W / 2, 150 + slot * 34, '#ff4dd2', 30);
         SND.near();
       } else {
         addPopup('PASS +100', W / 2, 150 + slot * 34, '#5ef2ff', 26);
@@ -760,7 +799,7 @@ function updatePlay(dt) {
   if (pct > 0.9) G.shake = Math.max(G.shake, (pct - 0.9) * 0.6);
 
   // スコア
-  G.score = Math.floor(G.distM) + G.passes * 100 + G.nearMiss * 200 + Math.floor(G.speedBonus);
+  G.score = Math.floor(G.distM) + G.passes * 100 + G.nearMiss * 200 + Math.floor(G.speedBonus) + G.itemScore + G.chainBonus;
 
   // チェックポイント
   if (G.distM >= G.nextCheckM) {
@@ -770,6 +809,7 @@ function updatePlay(dt) {
     G.nitro = Math.min(100, G.nitro + 30);
     G.flash = 0.6; G.flashColor = '#ffffff';
     addPopup(`CHECKPOINT! +${CHECK_BONUS}s`, W / 2, 225, '#ffd36e', 42, 1.4);
+    addPopup(`→ ${AREAS[G.checkpoints % AREAS.length]}`, W / 2, 268, '#8ef', 24, 1.6);
     addCars(5);
     SND.check();
   }
@@ -1140,6 +1180,33 @@ function drawBillboard(s, x, y, w, h, pal) {
     }
   }
 }
+function drawItem(s, x, y, w, h, pal) {
+  const bob = Math.sin(G.clock * 4 + s.ph) * h * 0.08;
+  const cy = y - h * 0.55 + bob, r = w * 0.36;
+  const d = ITEM_DEFS[s.kind];
+  // 影
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x, y - h * 0.02, r * 0.9, r * 0.25, 0, 0, TAU); ctx.fill();
+  // 光
+  const g = ctx.createRadialGradient(x, cy, r * 0.3, x, cy, r * 1.8); g.addColorStop(0, d.color + 'aa'); g.addColorStop(1, d.color + '00');
+  ctx.fillStyle = g; ctx.fillRect(x - r * 1.8, cy - r * 1.8, r * 3.6, r * 3.6);
+  if (s.kind === 'coin') {
+    const sq = Math.abs(Math.cos(G.clock * 3 + s.ph));   // 回っているように横幅が変わる
+    ctx.fillStyle = '#ffd36e'; ctx.beginPath(); ctx.ellipse(x, cy, r * Math.max(0.15, sq), r, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#fff6c8'; ctx.lineWidth = Math.max(1, r * 0.12); ctx.stroke();
+    if (sq > 0.5 && r > 8) { ctx.fillStyle = '#b07a10'; ctx.font = `900 ${r * 1.1}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('★', x, cy + r * 0.05); }
+  } else if (s.kind === 'time') {
+    ctx.fillStyle = '#eafff0'; ctx.beginPath(); ctx.arc(x, cy, r, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#7dff6e'; ctx.lineWidth = Math.max(1.5, r * 0.16); ctx.stroke();
+    ctx.strokeStyle = '#1a5a2a'; ctx.lineWidth = Math.max(1, r * 0.12); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x, cy - r * 0.6); ctx.moveTo(x, cy); ctx.lineTo(x + r * 0.45, cy + r * 0.1); ctx.stroke();
+    if (r > 10) { ctx.fillStyle = '#7dff6e'; ctx.font = `900 ${r * 0.7}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('+3', x, cy + r * 1.45); }
+  } else {
+    ctx.fillStyle = '#1d3a7a'; rr(x - r * 0.55, cy - r, r * 1.1, r * 2, r * 0.3); ctx.fill();
+    ctx.strokeStyle = '#5ef2ff'; ctx.lineWidth = Math.max(1.5, r * 0.14); ctx.stroke();
+    ctx.fillStyle = '#5ef2ff'; rr(x - r * 0.3, cy - r * 1.25, r * 0.6, r * 0.35, r * 0.1); ctx.fill();
+    if (r > 8) { ctx.fillStyle = '#fff'; ctx.font = `900 ${r * 0.9}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('N', x, cy + r * 0.05); }
+  }
+}
 function drawBush(s, x, y, w, h, pal) {
   ctx.fillStyle = pal.treeS;
   const parts = [[0, 0, 0.5, 0.5], [-0.3, 0.1, 0.34, 0.38], [0.3, 0.1, 0.34, 0.38]];
@@ -1466,7 +1533,7 @@ function drawHUD() {
   ctx.font = font(22);
   outlineText(Math.max(G.hiScore, Math.floor(G.score)).toLocaleString(), W - 122, 40, '#ffd36e', 'rgba(0,0,0,0.6)', 4);
   ctx.font = font(13, 800);
-  outlineText(`PASS ${G.passes}   CP ${G.checkpoints}`, W - 122, 64, '#fff', 'rgba(0,0,0,0.6)', 4);
+  outlineText(`PASS ${G.passes}   CP ${G.checkpoints}   ★ ${G.coins}`, W - 122, 64, '#fff', 'rgba(0,0,0,0.6)', 4);
   if (G.autoAccel) {
     ctx.font = font(11, 700); ctx.fillStyle = '#7dff6e';
     ctx.fillText('AUTO ACCEL', W - 122, 84);
@@ -1500,7 +1567,9 @@ function drawTitle() {
   ctx.shadowBlur = 0;
   ctx.restore();
   ctx.font = font(15, 700); ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillText('制限時間内にどこまで走れる? チェックポイントで +20秒 / 追い抜きでスコア&ニトロ', W / 2, 212);
+  ctx.fillText('制限時間内にどこまで走れる? チェックポイントで +20秒 / 追い抜きでスコア&ニトロ', W / 2, 206);
+  ctx.font = font(13, 700); ctx.fillStyle = '#ffd36e';
+  ctx.fillText('道の上の ★コイン +150 ／ 時計 +3 秒 ／ ニトロ缶 +40 を取れ！ ニアミス 3 連続でボーナス', W / 2, 226);
 
   // 操作説明 3カラム
   const cols = [
