@@ -15,7 +15,7 @@
 <canvas id="game"></canvas>
 <script>
 'use strict';
-FES.init({ id: 'hockey', title: 'ネオンエアホッケー', ranking: false });
+FES.init({ id: 'hockey', title: 'ネオンエアホッケー', ranking: false, portraitOk: true });
 
 /* =====================================================================
    定数
@@ -33,6 +33,8 @@ const TAU = Math.PI * 2;
 const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
 
 const P1C = [0, 229, 255], P2C = [255, 63, 164], FIREC = [255, 138, 61], WHITE = [255, 255, 255];
+const ICEC = [140, 220, 255], MULTIC = [255, 240, 120];
+const BUMPER_AT = 30;                                 // 残り 30 秒でバンパー登場
 const GOLD = [255, 211, 110], GREEN = [80, 255, 160], PURPLE = [190, 120, 255];
 const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 const clamp = FES.clamp, lerp = FES.lerp, rand = FES.rand;
@@ -52,6 +54,9 @@ const PTYPES = [
   { id: 'shrink', label: '小', color: PURPLE, note: '相手のマレットが ちいさく！' },
   { id: 'big',    label: '大', color: GREEN,  note: 'マレットが おおきく！' },
   { id: 'boost',  label: '速', color: FIREC,  note: '次のショットが パワーアップ！' },
+  { id: 'freeze', label: '氷', color: ICEC,   note: '相手を 2.5 秒 こおらせた！' },
+  { id: 'wall',   label: '守', color: GOLD,   note: '自分のゴールが せまくなる（6 秒）' },
+  { id: 'multi',  label: '分', color: MULTIC, note: 'パックが 3 つに！（8 秒）' },
 ];
 const P1KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
 const P2KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -62,7 +67,27 @@ const PREVENT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Spa
    ===================================================================== */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const view = FES.fitCanvas(canvas, W, H);
+/* 横長: ワールド = 画面。縦長: ワールド（960×540）を 90° 回してテーブルを縦にし、P1 が手前（下）・P2 が奥（上）。
+   HUD・メッセージ・タイトルは画面座標（SW×SH）で描く。 */
+let SW = W, SH = H, SCX = W / 2, SCY = H / 2, PORTRAIT = false, WS = 1, WOX = 0, WOY = 0;
+const view = { scale: 1, offsetX: 0, offsetY: 0, toGame(cx, cy) { return { x: (cx - view.offsetX) / view.scale, y: (cy - view.offsetY) / view.scale }; } };
+function toWorld(q) { return PORTRAIT ? { x: W - (q.y - WOY) / WS, y: (q.x - WOX) / WS } : q; }
+function worldBegin() { ctx.save(); if (PORTRAIT) { ctx.translate(WOX, WOY); ctx.scale(WS, WS); ctx.translate(0, W); ctx.rotate(-Math.PI / 2); } }
+function worldEnd() { ctx.restore(); }
+function fit() {
+  const vw = innerWidth, vh = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  PORTRAIT = vh > vw * 1.05;
+  SW = PORTRAIT ? 540 : 960; SH = PORTRAIT ? 960 : 540; SCX = SW / 2; SCY = SH / 2;
+  const sc = Math.min(vw / SW, vh / SH);
+  view.scale = sc; view.offsetX = (vw - SW * sc) / 2; view.offsetY = (vh - SH * sc) / 2;
+  canvas.width = Math.round(SW * sc * dpr); canvas.height = Math.round(SH * sc * dpr);
+  canvas.style.position = 'absolute';
+  canvas.style.width = (SW * sc) + 'px'; canvas.style.height = (SH * sc) + 'px'; canvas.style.left = view.offsetX + 'px'; canvas.style.top = view.offsetY + 'px';
+  ctx.setTransform(sc * dpr, 0, 0, sc * dpr, 0, 0);
+  if (PORTRAIT) { WS = 0.9; WOX = (SW - H * WS) / 2; WOY = (SH - W * WS) / 2; } else { WS = 1; WOX = 0; WOY = 0; }
+}
+addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 60));
+fit();
 
 /* =====================================================================
    ゲーム状態
@@ -72,12 +97,12 @@ const G = {
   mode: '2p', cpuLevel: 1, sel: 2,
   score: [0, 0], scorePop: [0, 0], goalGlow: [0, 0],
   time: MATCH_TIME, sudden: false,
-  puck: null, puckHidden: false, mallets: [],
-  particles: [], trail: [], flashes: [], powerups: [], powerTimer: 0,
+  puck: null, puckHidden: false, mallets: [], extra: [], bumpers: [], bumpersShown: false, streak: [0, 0],
+  particles: [], flashes: [], powerups: [], powerTimer: 0,
   shake: 0, flash: 0, hitstop: 0, msg: null, note: null,
   cd: 0, cdLast: 0, goalT: 0, serveT: 0, serveSide: 0, timeupT: 0, timeupWinner: -1,
   lastHitter: -1, stallT: 0, lastTick: -1, lastBounceSfx: 0,
-  stats: { maxSpeed: 0, hits: [0, 0], fire: 0 },
+  stats: { maxSpeed: 0, hits: [0, 0], fire: 0, fireGoals: 0, powers: 0, maxStreak: 0 },
   titlePucks: [],
 };
 const keys = new Set();
@@ -89,7 +114,7 @@ function makeMallet(idx) {
   return {
     idx, x: h.x, y: h.y, px: h.x, py: h.y, nx: h.x, ny: h.y, vx: 0, vy: 0, kvx: 0, kvy: 0,
     r: MALLET_R, ctrl: 'key', tx: h.x, ty: h.y, pointerId: null,
-    shrinkT: 0, bigT: 0, boost: false, cpuT: 0, hitFlash: 0,
+    shrinkT: 0, bigT: 0, freezeT: 0, wallT: 0, boost: false, cpuT: 0, hitFlash: 0,
     color: idx === 0 ? P1C : P2C,
   };
 }
@@ -99,6 +124,14 @@ function malletBounds(m) {
     : { x0: CX + m.r, x1: TR - m.r, y0: TY + m.r, y1: TB - m.r };
 }
 function playerName(idx) { return (G.mode === 'cpu' && idx === 1) ? 'CPU' : 'P' + (idx + 1); }
+function makePuck(x, y) { return { x, y, vx: 0, vy: 0, r: PUCK_R, fire: false, trail: [], life: -1 }; }
+function allPucks() { return G.extra.length ? [G.puck].concat(G.extra) : [G.puck]; }
+// 「守」のパワーアップ中はそのゴールが半分の高さになる
+function goalBand(idx) {
+  const m = G.mallets[idx];
+  if (m && m.wallT > 0) { const h = GOAL_H * 0.5; return { t: CY - h / 2, b: CY + h / 2 }; }
+  return { t: GT, b: GB };
+}
 function inGame() { return G.state === 'countdown' || G.state === 'play' || G.state === 'goal' || G.state === 'serve' || G.state === 'timeup'; }
 
 /* =====================================================================
@@ -204,18 +237,19 @@ function wallHit(x, y, orient) {
    試合の開始・進行
    ===================================================================== */
 function startMatch(mode, lvl) {
-  FES.howto(['🏒 WASD / 矢印 / タッチ でパドルを動かす', '🥅 相手のゴールにパックを入れる', '7 点先取で勝ち']);
+  FES.howto(['🏒 WASD / 矢印 / タッチ でパドルを動かす', '🥅 相手のゴールにパックを入れる', '🔥 FIRE SHOT で入れると 2 点！ 7 点先取で勝ち']);
   FES.hideResult(); FES.pause(false);
   G.mode = mode; G.cpuLevel = lvl;
   G.score = [0, 0]; G.scorePop = [0, 0]; G.goalGlow = [0, 0];
   G.time = MATCH_TIME; G.sudden = false; G.paused = false;
-  G.particles = []; G.trail = []; G.flashes = []; G.powerups = []; G.powerTimer = 7;
+  G.particles = []; G.flashes = []; G.powerups = []; G.powerTimer = 7;
+  G.extra = []; G.bumpers = []; G.bumpersShown = false; G.streak = [0, 0];
   G.shake = 0; G.flash = 0; G.hitstop = 0; G.msg = null; G.note = null;
   G.lastHitter = -1; G.stallT = 0; G.lastTick = -1; G.lastBounceSfx = 0;
-  G.stats = { maxSpeed: 0, hits: [0, 0], fire: 0 };
+  G.stats = { maxSpeed: 0, hits: [0, 0], fire: 0, fireGoals: 0, powers: 0, maxStreak: 0 };
   G.mallets = [makeMallet(0), makeMallet(1)];
   if (mode === 'cpu') G.mallets[1].ctrl = 'cpu';
-  G.puck = { x: CX, y: CY, vx: 0, vy: 0, r: PUCK_R, fire: false };
+  G.puck = makePuck(CX, CY);
   G.puckHidden = false;
   G.state = 'countdown'; G.cd = 3.0; G.cdLast = 4;
   FES.sfx('start');
@@ -228,7 +262,7 @@ function startFromTitle() {
 function resetForServe(loser) {
   const p = G.puck;
   p.x = loser === 0 ? CX - 160 : CX + 160; p.y = CY; p.vx = 0; p.vy = 0; p.fire = false;
-  G.trail = []; G.puckHidden = false; G.stallT = 0; G.lastHitter = -1;
+  p.trail = []; G.extra = []; G.puckHidden = false; G.stallT = 0; G.lastHitter = -1;
   for (const m of G.mallets) {
     if (m.ctrl === 'pointer') continue;               // 指/マウスの位置に追従させる
     const h = homePos(m.idx);
@@ -241,9 +275,13 @@ function beginServe() {
   G.msg = { text: playerName(G.serveSide) + ' サーブ', t: 0, dur: 1.1, size: 46, color: G.serveSide === 0 ? P1C : P2C, kind: 'plain' };
   FES.sfx('select');
 }
-function scoreGoal(scorer) {
-  const p = G.puck;
-  G.score[scorer]++; G.scorePop[scorer] = 1;
+function scoreGoal(scorer, pk) {
+  const p = pk || G.puck;
+  const fire = p.fire, pts = fire ? 2 : 1;
+  G.score[scorer] += pts; G.scorePop[scorer] = 1;
+  G.streak[scorer]++; G.streak[1 - scorer] = 0;
+  if (fire) G.stats.fireGoals++;
+  if (G.streak[scorer] > G.stats.maxStreak) G.stats.maxStreak = G.streak[scorer];
   G.goalGlow[1 - scorer] = 1;
   G.state = 'goal'; G.goalT = 1.9; G.serveSide = 1 - scorer;
   G.shake = 24; G.flash = 0.75; G.hitstop = 0;
@@ -252,10 +290,18 @@ function scoreGoal(scorer) {
   burst(gx, p.y, 70, col, 950, { drag: 1.5 });
   burst(gx, p.y, 40, WHITE, 600, { drag: 1.5, grav: 300 });
   burst(gx, p.y, 40, GOLD, 800, { spark: true, drag: 2 });
-  G.msg = { text: 'GOAL!', t: 0, dur: 1.9, size: 150, color: col, kind: 'goal', sub: playerName(scorer) + ' が とくてん！' };
-  G.note = null;
+  if (fire) {
+    G.msg = { text: 'FIRE GOAL!!', t: 0, dur: 2.1, size: 128, color: FIREC, kind: 'goal', sub: playerName(scorer) + ' が 2 点 ゲット！' };
+    burst(gx, p.y, 50, FIREC, 1100, { drag: 1.5 });
+    G.shake = 34; G.flash = 0.9;
+    FES.noise({ dur: 0.5, freq: 1200, slide: -800, vol: 0.3, filter: 'lowpass' });
+  } else {
+    G.msg = { text: 'GOAL!', t: 0, dur: 1.9, size: 150, color: col, kind: 'goal', sub: playerName(scorer) + ' が とくてん！' };
+  }
+  G.note = G.streak[scorer] >= 3 ? { text: G.streak[scorer] + ' 連続ゴール！', t: 0, dur: 2.0, color: GOLD } : null;
   FES.sfx('fanfare'); FES.sfx('explode');
-  p.vx = 0; p.vy = 0; p.fire = false; G.puckHidden = true;
+  for (const q of allPucks()) { q.vx = 0; q.vy = 0; q.fire = false; }
+  G.extra = []; G.puckHidden = true;
 }
 function finishMatch(winner) {
   BGM.stop();
@@ -267,6 +313,8 @@ function finishMatch(winner) {
     { label: playerName(0) + ' ヒット', value: G.stats.hits[0] },
     { label: playerName(1) + ' ヒット', value: G.stats.hits[1] },
     { label: 'FIRE SHOT', value: G.stats.fire },
+    { label: 'FIRE GOAL', value: G.stats.fireGoals },
+    { label: 'パワーアップ', value: G.stats.powers },
   ];
   const retry = () => startMatch(G.mode, G.cpuLevel);
   if (winner < 0) {
@@ -274,7 +322,7 @@ function finishMatch(winner) {
   } else if (G.mode === 'cpu') {
     const lv = CPU_LEVELS[G.cpuLevel];
     if (winner === 0) {
-      const rs = (a - b) * lv.base + Math.round(G.time) * (G.cpuLevel + 1) * 4;
+      const rs = (a - b) * lv.base + Math.round(G.time) * (G.cpuLevel + 1) * 4 + G.stats.fireGoals * 150 * (G.cpuLevel + 1);
       FES.showResult({ title: 'あなたの勝ち！', score: rs, scoreLabel: 'pt', subtitle: sub + '　vs CPU ' + lv.name, stats, ranking: true, rank: { S: 4500, A: 3000, B: 1500, C: 500 }, titles: { S: 'ホッケーの神', A: 'エースストライカー', B: 'ナイスゲーム！', C: 'まずは1勝！', D: '勝ったぞ！' } }, retry);
     } else {
       FES.showResult({ title: 'CPU の勝ち…', score: b, subtitle: sub + '　vs CPU ' + lv.name, stats, ranking: false }, retry);
@@ -366,6 +414,14 @@ function updatePlay(dt) {
   const secs = Math.ceil(G.time);
   if (secs <= 10 && secs > 0 && secs !== G.lastTick) { G.lastTick = secs; FES.sfx('tick'); }
   if (G.time <= 0) { G.time = 0; onTimeUp(); return; }
+  // 残り 30 秒: センターにバンパーが 2 つ登場（当たると はね返って加速）
+  if (!G.bumpersShown && !G.sudden && G.time <= BUMPER_AT) {
+    G.bumpersShown = true;
+    G.bumpers = [{ x: CX, y: CY - 120, r: 20, hit: 0 }, { x: CX, y: CY + 120, r: 20, hit: 0 }];
+    for (const b of G.bumpers) burst(b.x, b.y, 30, GOLD, 500, { drag: 2 });
+    G.note = { text: 'ラスト 30 秒！ バンパー登場', t: 0, dur: 2.0, color: GOLD };
+    G.shake = Math.max(G.shake, 8); FES.sfx('powerup');
+  }
   // 停滞したら中央へ小突く
   const p = G.puck;
   const sp = Math.hypot(p.vx, p.vy);
@@ -390,12 +446,14 @@ function updateMallets(dt) {
   for (const m of G.mallets) {
     m.px = m.x; m.py = m.y;
     m.shrinkT = Math.max(0, m.shrinkT - dt); m.bigT = Math.max(0, m.bigT - dt);
+    m.freezeT = Math.max(0, m.freezeT - dt); m.wallT = Math.max(0, m.wallT - dt);
+    const slow = m.freezeT > 0 ? 0.25 : 1;
     const rt = MALLET_R * (m.bigT > 0 ? 1.4 : 1) * (m.shrinkT > 0 ? 0.55 : 1);
     m.r += (rt - m.r) * Math.min(1, dt * 10);
     let nx = m.x, ny = m.y;
     if (m.ctrl === 'cpu') {
       cpuThink(m, dt);
-      const spd = CPU_LEVELS[G.cpuLevel].speed;
+      const spd = CPU_LEVELS[G.cpuLevel].speed * slow;
       const dx = m.tx - m.x, dy = m.ty - m.y, d = Math.hypot(dx, dy);
       let tvx = 0, tvy = 0;
       if (d > 1) { const v = Math.min(spd, d / dt); tvx = dx / d * v; tvy = dy / d * v; }
@@ -405,13 +463,18 @@ function updateMallets(dt) {
     } else if (m.ctrl === 'key') {
       const d = keyDir(m.idx);
       const k = 1 - Math.exp(-24 * dt);
-      m.kvx += (d.x * KEY_SPEED - m.kvx) * k; m.kvy += (d.y * KEY_SPEED - m.kvy) * k;
+      m.kvx += (d.x * KEY_SPEED * slow - m.kvx) * k; m.kvy += (d.y * KEY_SPEED * slow - m.kvy) * k;
       nx = m.x + m.kvx * dt; ny = m.y + m.kvy * dt;
     } else {
-      const dx = m.tx - m.x, dy = m.ty - m.y, d = Math.hypot(dx, dy), step = POINTER_SPEED * dt;
+      const dx = m.tx - m.x, dy = m.ty - m.y, d = Math.hypot(dx, dy), step = POINTER_SPEED * slow * dt;
       if (d <= step) { nx = m.tx; ny = m.ty; } else { nx = m.x + dx / d * step; ny = m.y + dy / d * step; }
     }
     const b = malletBounds(m);
+    nx = clamp(nx, b.x0, b.x1); ny = clamp(ny, b.y0, b.y1);
+    for (const bp of G.bumpers) {                      // バンパーには入れない
+      const dx = nx - bp.x, dy = ny - bp.y, rr = m.r + bp.r, d = Math.hypot(dx, dy);
+      if (d < rr) { if (d > 0.001) { nx = bp.x + dx / d * rr; ny = bp.y + dy / d * rr; } else nx = bp.x + (m.idx === 0 ? -rr : rr); }
+    }
     nx = clamp(nx, b.x0, b.x1); ny = clamp(ny, b.y0, b.y1);
     m.nx = nx; m.ny = ny;
     let vx = (nx - m.x) / dt, vy = (ny - m.y) / dt;
@@ -432,8 +495,17 @@ function predictY(p, x) {
   if (y > span) y = 2 * span - y;
   return y + lo;
 }
+function cpuPuck() {
+  const ps = allPucks(); if (ps.length === 1) return ps[0];
+  let best = ps[0], bt = Infinity;
+  for (const p of ps) {
+    const t = p.vx > 40 ? (TR - 80 - p.x) / p.vx : (p.x > CX ? 0.3 : 5 + (CX - p.x) / 300);
+    if (t < bt) { bt = t; best = p; }
+  }
+  return best;
+}
 function cpuThink(m, dt) {
-  const lv = CPU_LEVELS[G.cpuLevel], p = G.puck;
+  const lv = CPU_LEVELS[G.cpuLevel], p = cpuPuck();
   m.cpuT -= dt;
   if (m.cpuT > 0) return;
   m.cpuT = lv.react;
@@ -472,36 +544,79 @@ function clampPuckSpeed(p) {
   if (sp > PUCK_MAX) { p.vx *= PUCK_MAX / sp; p.vy *= PUCK_MAX / sp; }
 }
 function stepPhysics(dt) {
-  const p = G.puck;
-  let maxV = Math.hypot(p.vx, p.vy);
+  const pucks = allPucks();
+  let maxV = 0;
+  for (const p of pucks) maxV = Math.max(maxV, Math.hypot(p.vx, p.vy));
   for (const m of G.mallets) maxV = Math.max(maxV, Math.hypot(m.nx - m.px, m.ny - m.py) / dt);
   const n = clamp(Math.ceil(maxV * dt / (PUCK_R * 0.5)), 1, 24);
   const h = dt / n;
   let goal = false;
   for (let i = 1; i <= n && !goal; i++) {
     const s = i / n;
-    p.x += p.vx * h; p.y += p.vy * h;
-    for (const m of G.mallets) {
-      const mx = m.px + (m.nx - m.px) * s, my = m.py + (m.ny - m.py) * s;
-      collidePuckMallet(p, m, mx, my);
+    for (const p of pucks) {
+      p.x += p.vx * h; p.y += p.vy * h;
+      for (const m of G.mallets) {
+        const mx = m.px + (m.nx - m.px) * s, my = m.py + (m.ny - m.py) * s;
+        collidePuckMallet(p, m, mx, my);
+      }
+      for (const b of G.bumpers) collidePuckBumper(p, b);
+      if (collideWalls(p)) { goal = true; break; }
     }
-    goal = collideWalls(p);
+    if (!goal && pucks.length > 1) collidePucks(pucks);
   }
   commitMallets();
   if (goal) return;
-  const f = Math.exp(-0.18 * dt); p.vx *= f; p.vy *= f;
-  const sp = Math.hypot(p.vx, p.vy);
-  if (p.fire && sp < 650) p.fire = false;
-  if (sp > G.stats.maxSpeed) G.stats.maxSpeed = sp;
-  G.trail.push({ x: p.x, y: p.y, fire: p.fire });
-  if (G.trail.length > 18) G.trail.shift();
-  if (p.fire) {
-    const ux = p.vx / sp, uy = p.vy / sp;
-    for (let i = 0; i < 3; i++) {
-      const col = Math.random() < 0.5 ? FIREC : GOLD;
-      spawnParticle(p.x - ux * p.r + rand(-6, 6), p.y - uy * p.r + rand(-6, 6), -ux * sp * 0.12 + rand(-60, 60), -uy * sp * 0.12 + rand(-60, 60), rand(0.2, 0.4), rand(4, 8), col, { drag: 3 });
+  for (const p of pucks) {
+    const f = Math.exp(-0.18 * dt); p.vx *= f; p.vy *= f;
+    const sp = Math.hypot(p.vx, p.vy);
+    if (p.fire && sp < 650) p.fire = false;
+    if (sp > G.stats.maxSpeed) G.stats.maxSpeed = sp;
+    p.trail.push({ x: p.x, y: p.y, fire: p.fire });
+    if (p.trail.length > 18) p.trail.shift();
+    if (p.fire) {
+      const ux = p.vx / sp, uy = p.vy / sp;
+      for (let i = 0; i < 3; i++) {
+        const col = Math.random() < 0.5 ? FIREC : GOLD;
+        spawnParticle(p.x - ux * p.r + rand(-6, 6), p.y - uy * p.r + rand(-6, 6), -ux * sp * 0.12 + rand(-60, 60), -uy * sp * 0.12 + rand(-60, 60), rand(0.2, 0.4), rand(4, 8), col, { drag: 3 });
+      }
     }
   }
+  // 「分」で増えたパックは時間がきたら消える
+  for (let i = G.extra.length - 1; i >= 0; i--) {
+    const e = G.extra[i]; e.life -= dt;
+    if (e.life <= 0) { G.extra.splice(i, 1); burst(e.x, e.y, 16, MULTIC, 300, { drag: 2 }); FES.sfx('bounce'); }
+  }
+  for (const b of G.bumpers) b.hit = Math.max(0, b.hit - dt * 4);
+}
+function collidePucks(ps) {
+  for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
+    const a = ps[i], b = ps[j];
+    const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy, rr = a.r + b.r;
+    if (d2 >= rr * rr || d2 === 0) continue;
+    const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, ov = (rr - d) / 2 + 0.3;
+    a.x -= nx * ov; a.y -= ny * ov; b.x += nx * ov; b.y += ny * ov;
+    const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+    if (vn >= 0) continue;
+    const jj = -vn * 0.95;
+    a.vx -= jj * nx; a.vy -= jj * ny; b.vx += jj * nx; b.vy += jj * ny;
+    sparks((a.x + b.x) / 2, (a.y + b.y) / 2, nx, ny, 6, MULTIC, 250);
+    if (G.t - G.lastBounceSfx > 0.04) { G.lastBounceSfx = G.t; FES.sfx('bounce'); }
+  }
+}
+function collidePuckBumper(p, b) {
+  const dx = p.x - b.x, dy = p.y - b.y, rr = p.r + b.r, d2 = dx * dx + dy * dy;
+  if (d2 >= rr * rr) return;
+  const d = Math.sqrt(d2) || 0.001, nx = dx / d, ny = dy / d;
+  p.x = b.x + nx * (rr + 0.5); p.y = b.y + ny * (rr + 0.5);
+  const vn = p.vx * nx + p.vy * ny;
+  if (vn >= 0) return;
+  p.vx -= 2 * vn * nx; p.vy -= 2 * vn * ny;
+  const sp = Math.hypot(p.vx, p.vy), k = Math.min(PUCK_MAX, Math.max(sp * 1.08, 420)) / Math.max(sp, 1);
+  p.vx *= k; p.vy *= k;
+  b.hit = 1;
+  sparks(p.x - nx * p.r, p.y - ny * p.r, nx, ny, 10, GOLD, 320);
+  FES.tone({ freq: 880, slide: -300, dur: 0.08, type: 'square', vol: 0.18 });
+  G.shake = Math.max(G.shake, 3);
 }
 function collidePuckMallet(p, m, mx, my) {
   const dx = p.x - mx, dy = p.y - my, rr = p.r + m.r, d2 = dx * dx + dy * dy;
@@ -563,10 +678,12 @@ function collideWalls(p) {
   if (p.y - p.r < TY) { p.y = TY + p.r; if (p.vy < 0) { p.vy = -p.vy * WALL_E; wallHit(p.x, TY, 'h'); } }
   else if (p.y + p.r > TB) { p.y = TB - p.r; if (p.vy > 0) { p.vy = -p.vy * WALL_E; wallHit(p.x, TB, 'h'); } }
   if (p.x - p.r < TX) {
-    if (p.y - p.r > GT && p.y + p.r < GB) { if (p.x + p.r < TX) { scoreGoal(1); return true; } }
+    const gb = goalBand(0);
+    if (p.y - p.r > gb.t && p.y + p.r < gb.b) { if (p.x + p.r < TX) { scoreGoal(1, p); return true; } }
     else { p.x = TX + p.r; if (p.vx < 0) { p.vx = -p.vx * WALL_E; wallHit(TX, p.y, 'v'); } }
   } else if (p.x + p.r > TR) {
-    if (p.y - p.r > GT && p.y + p.r < GB) { if (p.x - p.r > TR) { scoreGoal(0); return true; } }
+    const gb = goalBand(1);
+    if (p.y - p.r > gb.t && p.y + p.r < gb.b) { if (p.x - p.r > TR) { scoreGoal(0, p); return true; } }
     else { p.x = TR - p.r; if (p.vx > 0) { p.vx = -p.vx * WALL_E; wallHit(TR, p.y, 'v'); } }
   }
   return false;
@@ -579,26 +696,43 @@ function updatePowerups(dt) {
     const type = FES.pick(PTYPES);
     const side = Math.random() < 0.5 ? -1 : 1;
     G.powerups.push({ type, x: CX + side * rand(120, 300), y: rand(TY + 70, TB - 70), r: 22, t: 0, life: 11 });
-    G.powerTimer = rand(10, 16);
+    G.powerTimer = rand(8, 13);
     FES.sfx('coin');
   }
-  const p = G.puck;
+  const pucks = allPucks();
   for (let i = G.powerups.length - 1; i >= 0; i--) {
     const u = G.powerups[i];
     u.t += dt; u.life -= dt;
     if (u.life <= 0) { G.powerups.splice(i, 1); continue; }
-    if (Math.hypot(p.x - u.x, p.y - u.y) < u.r + p.r) {
+    const pk = pucks.find(p => Math.hypot(p.x - u.x, p.y - u.y) < u.r + p.r);
+    if (pk) {
       G.powerups.splice(i, 1);
       burst(u.x, u.y, 28, u.type.color, 420, { drag: 2 });
-      if (G.lastHitter >= 0) applyPower(u.type, G.lastHitter); else FES.sfx('bounce');
+      if (G.lastHitter >= 0) applyPower(u.type, G.lastHitter, pk); else FES.sfx('bounce');
     }
   }
 }
-function applyPower(type, idx) {
+function applyPower(type, idx, pk) {
   const me = G.mallets[idx], op = G.mallets[1 - idx];
+  G.stats.powers++;
   if (type.id === 'shrink') op.shrinkT = 7;
   else if (type.id === 'big') me.bigT = 7;
-  else me.boost = true;
+  else if (type.id === 'boost') me.boost = true;
+  else if (type.id === 'freeze') { op.freezeT = 2.5; burst(op.x, op.y, 24, ICEC, 300, { drag: 2 }); }
+  else if (type.id === 'wall') me.wallT = 6;
+  else {
+    // 分: パックが 3 つに（すでに増えていたら時間だけのばす）
+    if (G.extra.length) { for (const e of G.extra) e.life = 8; }
+    else {
+      const sp = Math.max(320, Math.hypot(pk.vx, pk.vy)), a0 = Math.atan2(pk.vy, pk.vx);
+      for (const da of [-0.7, 0.7]) {
+        const e = makePuck(pk.x + Math.cos(a0 + da) * PUCK_R * 2.3, pk.y + Math.sin(a0 + da) * PUCK_R * 2.3);
+        e.x = clamp(e.x, TX + PUCK_R, TR - PUCK_R); e.y = clamp(e.y, TY + PUCK_R, TB - PUCK_R);
+        e.vx = Math.cos(a0 + da) * sp; e.vy = Math.sin(a0 + da) * sp; e.life = 8;
+        G.extra.push(e);
+      }
+    }
+  }
   G.note = { text: playerName(idx) + ': ' + type.note, t: 0, dur: 1.6, color: type.color };
   FES.sfx('powerup');
 }
@@ -608,17 +742,18 @@ function updateTitle(dt) {
   if (!G.titlePucks.length) {
     for (let i = 0; i < 6; i++) {
       const a = rand(0, TAU);
-      G.titlePucks.push({ x: rand(100, W - 100), y: rand(100, H - 100), vx: Math.cos(a) * rand(120, 260), vy: Math.sin(a) * rand(120, 260), r: rand(8, 16), c: FES.pick([P1C, P2C, WHITE, GOLD]), trail: [] });
+      G.titlePucks.push({ x: rand(100, SW - 100), y: rand(100, SH - 100), vx: Math.cos(a) * rand(120, 260), vy: Math.sin(a) * rand(120, 260), r: rand(8, 16), c: FES.pick([P1C, P2C, WHITE, GOLD]), trail: [] });
     }
   }
   for (const p of G.titlePucks) {
     p.x += p.vx * dt; p.y += p.vy * dt;
-    if (p.x < p.r) { p.x = p.r; p.vx = Math.abs(p.vx); } if (p.x > W - p.r) { p.x = W - p.r; p.vx = -Math.abs(p.vx); }
-    if (p.y < p.r) { p.y = p.r; p.vy = Math.abs(p.vy); } if (p.y > H - p.r) { p.y = H - p.r; p.vy = -Math.abs(p.vy); }
+    if (p.x < p.r) { p.x = p.r; p.vx = Math.abs(p.vx); } if (p.x > SW - p.r) { p.x = SW - p.r; p.vx = -Math.abs(p.vx); }
+    if (p.y < p.r) { p.y = p.r; p.vy = Math.abs(p.vy); } if (p.y > SH - p.r) { p.y = SH - p.r; p.vy = -Math.abs(p.vy); }
     p.trail.push({ x: p.x, y: p.y }); if (p.trail.length > 12) p.trail.shift();
   }
 }
 function titleBtnRect(i) {
+  if (PORTRAIT) return { x: SCX - 130, y: 356 + i * 72, w: 260, h: 58 };
   const bw = 200, bh = 62, gap = 14;
   const x0 = (W - (bw * 4 + gap * 3)) / 2;
   return { x: x0 + i * (bw + gap), y: 300, w: bw, h: bh };
@@ -630,13 +765,14 @@ function titleBtnAt(x, y) {
   }
   return -1;
 }
-function pauseBtnRect() { return { x: CX + 82, y: 11, w: 40, h: 40 }; }
+function pauseBtnRect() { return { x: SCX + 82, y: 11, w: 40, h: 40 }; }
 function hitPauseBtn(x, y) { const r = pauseBtnRect(); return x >= r.x - 6 && x <= r.x + r.w + 6 && y >= r.y - 6 && y <= r.y + r.h + 6; }
 
 /* =====================================================================
    入力
    ===================================================================== */
-function toGame(e) { return view.toGame(e.clientX, e.clientY); }
+function toGame(e) { return view.toGame(e.clientX, e.clientY); }   // 画面座標
+function toW(e) { return toWorld(toGame(e)); }                       // ワールド座標（マレット用）
 function setPointerTarget(m, p) { const b = malletBounds(m); m.tx = clamp(p.x, b.x0, b.x1); m.ty = clamp(p.y, b.y0, b.y1); }
 function assignTouch(id, p) {
   let idx = 0;
@@ -659,8 +795,9 @@ canvas.addEventListener('pointerdown', e => {
   if (!inGame()) return;
   if (G.paused) return;
   if (hitPauseBtn(p.x, p.y)) { togglePause(); return; }
-  if (e.pointerType === 'touch') assignTouch(e.pointerId, p);
-  else { const m = G.mallets[0]; m.ctrl = 'pointer'; setPointerTarget(m, p); }
+  const wp = toW(e);
+  if (e.pointerType === 'touch') assignTouch(e.pointerId, wp);
+  else { const m = G.mallets[0]; m.ctrl = 'pointer'; setPointerTarget(m, wp); }
 });
 window.addEventListener('pointermove', e => {
   const p = toGame(e);
@@ -670,12 +807,13 @@ window.addEventListener('pointermove', e => {
     return;
   }
   if (!inGame() || G.paused) return;
+  const wp = toW(e);
   if (e.pointerType === 'touch') {
     const m = G.mallets.find(mm => mm.pointerId === e.pointerId);
-    if (m) setPointerTarget(m, p);
+    if (m) setPointerTarget(m, wp);
   } else {
     const m = G.mallets[0];
-    m.ctrl = 'pointer'; setPointerTarget(m, p);
+    m.ctrl = 'pointer'; setPointerTarget(m, wp);
   }
 });
 const releasePointer = e => {
@@ -733,23 +871,26 @@ function fmtTime(t) { const s = Math.max(0, Math.ceil(t)); return Math.floor(s /
    ===================================================================== */
 function draw() {
   ctx.save();
-  ctx.fillStyle = '#07071a'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#07071a'; ctx.fillRect(0, 0, SW, SH);
   if (G.shake > 0) ctx.translate((Math.random() - 0.5) * G.shake, (Math.random() - 0.5) * G.shake);
   drawBackground();
-  if (G.state === 'title') { drawTitle(); ctx.restore(); return; }
+  if (G.state === 'title') { if (PORTRAIT) drawTitlePortrait(); else drawTitle(); ctx.restore(); return; }
+  worldBegin();
   drawTable();
   drawScore();
   drawPowerups();
+  drawBumpers();
   drawTrail();
-  if (!G.puckHidden) drawPuck();
+  if (!G.puckHidden) for (const p of allPucks()) drawPuck(p);
   drawMallets();
   drawParticles();
   drawWallFlashes();
   drawFrame();
+  worldEnd();
   drawHUD();
   drawMessages();
   ctx.restore();
-  if (G.flash > 0.01) { ctx.fillStyle = rgba(WHITE, G.flash * 0.8); ctx.fillRect(0, 0, W, H); }
+  if (G.flash > 0.01) { ctx.fillStyle = rgba(WHITE, G.flash * 0.8); ctx.fillRect(0, 0, SW, SH); }
 }
 
 function drawBackground() {
@@ -758,12 +899,12 @@ function drawBackground() {
   ctx.strokeStyle = 'rgba(120,110,255,0.07)'; ctx.lineWidth = 1;
   const off = (t * 25) % 48;
   ctx.beginPath();
-  for (let x = -48 + off; x < W + 48; x += 48) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
-  for (let y = -48 + off; y < H + 48; y += 48) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  for (let x = -48 + off; x < SW + 48; x += 48) { ctx.moveTo(x, 0); ctx.lineTo(x, SH); }
+  for (let y = -48 + off; y < SH + 48; y += 48) { ctx.moveTo(0, y); ctx.lineTo(SW, y); }
   ctx.stroke();
-  // 左右のカラーグロー
-  glow(80, CY, 420, P1C, 0.10 + 0.03 * Math.sin(t * 1.3));
-  glow(W - 80, CY, 420, P2C, 0.10 + 0.03 * Math.sin(t * 1.3 + 2));
+  // 左右（縦長なら下上）のカラーグロー
+  if (PORTRAIT) { glow(SCX, SH - 80, 400, P1C, 0.10 + 0.03 * Math.sin(t * 1.3)); glow(SCX, 80, 400, P2C, 0.10 + 0.03 * Math.sin(t * 1.3 + 2)); }
+  else { glow(80, CY, 420, P1C, 0.10 + 0.03 * Math.sin(t * 1.3)); glow(W - 80, CY, 420, P2C, 0.10 + 0.03 * Math.sin(t * 1.3 + 2)); }
 }
 
 function drawTable() {
@@ -814,6 +955,18 @@ function drawTable() {
     ctx.fillStyle = rgba(col, 0.9);
     ctx.beginPath(); ctx.arc(gx, GT, 7, 0, TAU); ctx.fill();
     ctx.beginPath(); ctx.arc(gx, GB, 7, 0, TAU); ctx.fill();
+    // 「守」: ゴールの上下をふさぐ金のバー
+    const m = G.mallets[i];
+    if (m && m.wallT > 0) {
+      const gb = goalBand(i), a = (m.wallT < 1.5 && Math.floor(m.wallT * 6) % 2 === 0) ? 0.35 : 0.75 + 0.2 * Math.sin(t * 10);
+      glow(gx, (GT + gb.t) / 2, 46, GOLD, 0.4); glow(gx, (gb.b + GB) / 2, 46, GOLD, 0.4);
+      ctx.fillStyle = rgba(GOLD, a);
+      rrect(gx - 6, GT, 12, gb.t - GT, 4); ctx.fill();
+      rrect(gx - 6, gb.b, 12, GB - gb.b, 4); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
+      rrect(gx - 6, GT, 12, gb.t - GT, 4); ctx.stroke();
+      rrect(gx - 6, gb.b, 12, GB - gb.b, 4); ctx.stroke();
+    }
   }
 }
 
@@ -822,7 +975,7 @@ function drawScore() {
     const x = i === 0 ? CX - 190 : CX + 190;
     const pop = G.scorePop[i];
     const s = 1 + easeOutBack(1 - pop) * 0 + pop * 0.45;
-    ctx.save(); ctx.translate(x, CY); ctx.scale(s, s);
+    ctx.save(); ctx.translate(x, CY); if (PORTRAIT) ctx.rotate(Math.PI / 2); ctx.scale(s, s);
     text(String(G.score[i]), 0, 8, 190, rgba(i === 0 ? P1C : P2C, 0.16 + pop * 0.5), 'center', '900');
     ctx.restore();
   }
@@ -834,33 +987,55 @@ function drawPowerups() {
     if (blink) continue;
     const s = 1 + 0.08 * Math.sin(u.t * 6);
     glow(u.x, u.y, u.r * 2.6 * s, u.type.color, 0.5);
-    ctx.save(); ctx.translate(u.x, u.y); ctx.rotate(Math.sin(u.t * 3) * 0.12); ctx.scale(s, s);
+    ctx.save(); ctx.translate(u.x, u.y); if (PORTRAIT) ctx.rotate(Math.PI / 2); ctx.rotate(Math.sin(u.t * 3) * 0.12); ctx.scale(s, s);
     ctx.fillStyle = '#0a0b28'; ctx.beginPath(); ctx.arc(0, 0, u.r, 0, TAU); ctx.fill();
     ctx.strokeStyle = rgba(u.type.color, 1); ctx.lineWidth = 3; ctx.stroke();
     text(u.type.label, 0, 2, 26, rgba(u.type.color, 1), 'center', '900');
     ctx.restore();
   }
 }
-
-function drawTrail() {
-  const n = G.trail.length;
-  for (let i = 0; i < n; i++) {
-    const tr = G.trail[i], k = (i + 1) / n;
-    const col = tr.fire ? FIREC : WHITE;
-    ctx.fillStyle = rgba(col, k * (tr.fire ? 0.5 : 0.3));
-    ctx.beginPath(); ctx.arc(tr.x, tr.y, PUCK_R * (0.3 + 0.7 * k), 0, TAU); ctx.fill();
+function drawBumpers() {
+  for (const b of G.bumpers) {
+    const pulse = 0.5 + 0.2 * Math.sin(G.t * 5) + b.hit * 0.6;
+    glow(b.x, b.y, b.r * 3 + b.hit * 30, GOLD, pulse * 0.5);
+    ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(G.t * 0.8);
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU, r = b.r + 2 + b.hit * 5; if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+    ctx.closePath();
+    const g = ctx.createRadialGradient(0, 0, 2, 0, 0, b.r + 2);
+    g.addColorStop(0, '#fff6d0'); g.addColorStop(0.6, rgba(GOLD, 0.9)); g.addColorStop(1, 'rgba(120,80,10,1)');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = b.hit > 0 ? '#fff' : rgba(GOLD, 1); ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = 'rgba(40,20,0,0.5)'; ctx.beginPath(); ctx.arc(0, 0, b.r * 0.35, 0, TAU); ctx.fill();
+    ctx.restore();
+    if (b.hit > 0) { ctx.strokeStyle = rgba(WHITE, b.hit); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + (1 - b.hit) * 36, 0, TAU); ctx.stroke(); }
   }
 }
-function drawPuck() {
-  const p = G.puck;
+
+function drawTrail() {
+  for (const p of allPucks()) {
+    const n = p.trail.length;
+    for (let i = 0; i < n; i++) {
+      const tr = p.trail[i], k = (i + 1) / n;
+      const col = tr.fire ? FIREC : (p.life >= 0 ? MULTIC : WHITE);
+      ctx.fillStyle = rgba(col, k * (tr.fire ? 0.5 : 0.3));
+      ctx.beginPath(); ctx.arc(tr.x, tr.y, PUCK_R * (0.3 + 0.7 * k), 0, TAU); ctx.fill();
+    }
+  }
+}
+function drawPuck(p) {
+  const extra = p.life >= 0;
+  ctx.save();
+  if (extra && p.life < 2 && Math.floor(p.life * 8) % 2 === 0) ctx.globalAlpha = 0.45;
   if (p.fire) glow(p.x, p.y, 60, FIREC, 0.7 + 0.2 * Math.sin(G.t * 40));
-  else glow(p.x, p.y, 40, WHITE, 0.35);
+  else glow(p.x, p.y, 40, extra ? MULTIC : WHITE, 0.35);
   const g = ctx.createRadialGradient(p.x - 4, p.y - 5, 2, p.x, p.y, p.r);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, p.fire ? '#ffd8a0' : '#d8e8ff'); g.addColorStop(1, p.fire ? '#ff8a3d' : '#7aa8ff');
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, p.fire ? '#ffd8a0' : extra ? '#fff4b0' : '#d8e8ff'); g.addColorStop(1, p.fire ? '#ff8a3d' : extra ? '#e0b830' : '#7aa8ff');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
-  ctx.strokeStyle = p.fire ? rgba(FIREC, 1) : 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2;
+  ctx.strokeStyle = p.fire ? rgba(FIREC, 1) : extra ? rgba(MULTIC, 1) : 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.stroke();
   ctx.fillStyle = 'rgba(0,20,60,0.35)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.45, 0, TAU); ctx.fill();
+  ctx.restore();
 }
 function drawMallets() {
   for (const m of G.mallets) {
@@ -882,6 +1057,14 @@ function drawMallets() {
       ctx.strokeStyle = rgba(FIREC, 0.6 + 0.4 * Math.sin(G.t * 12)); ctx.lineWidth = 3;
       ctx.setLineDash([8, 6]); ctx.lineDashOffset = -G.t * 60;
       ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 8, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (m.freezeT > 0) {
+      glow(m.x, m.y, m.r * 2.4, ICEC, 0.5);
+      ctx.fillStyle = rgba(ICEC, 0.45); ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 5, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.save(); ctx.translate(m.x, m.y); if (PORTRAIT) ctx.rotate(Math.PI / 2);
+      text('❄', 0, 2, m.r * 1.1, '#fff', 'center', '900');
+      ctx.restore();
     }
   }
 }
@@ -926,9 +1109,9 @@ function drawHUD() {
   const urgent = G.sudden || (G.time <= 10 && G.state === 'play');
   const pulse = urgent ? 0.5 + 0.5 * Math.sin(G.t * 10) : 0;
   ctx.fillStyle = urgent ? `rgba(120,20,40,${0.7 + pulse * 0.2})` : 'rgba(0,0,0,0.55)';
-  rrect(CX - 66, 10, 132, 42, 14); ctx.fill();
+  rrect(SCX - 66, 10, 132, 42, 14); ctx.fill();
   ctx.strokeStyle = urgent ? rgba([255, 90, 90], 0.9) : 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5; ctx.stroke();
-  text((G.sudden ? 'SD ' : '') + fmtTime(G.time), CX, 32, G.sudden ? 24 : 28, urgent ? '#ffb0b0' : '#fff', 'center', '900');
+  text((G.sudden ? 'SD ' : '') + fmtTime(G.time), SCX, 32, G.sudden ? 24 : 28, urgent ? '#ffb0b0' : '#fff', 'center', '900');
   // ポーズボタン
   const pb = pauseBtnRect();
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; rrect(pb.x, pb.y, pb.w, pb.h, 12); ctx.fill();
@@ -942,31 +1125,37 @@ function drawHUD() {
     const col = i === 0 ? P1C : P2C;
     let name = playerName(i);
     if (G.mode === 'cpu') name = i === 0 ? 'あなた' : 'CPU ' + CPU_LEVELS[G.cpuLevel].name;
-    const x = i === 0 ? CX - 100 : CX + 148;
-    const align = i === 0 ? 'right' : 'left';
-    text(name, x, 32, 24, rgba(col, 1), align, '900');
+    const align = PORTRAIT ? (i === 0 ? 'left' : 'right') : (i === 0 ? 'right' : 'left');
+    const x = PORTRAIT ? (i === 0 ? 22 : SW - 22) : (i === 0 ? CX - 100 : CX + 148);
+    const y = PORTRAIT ? SH - 50 : 32;
+    const dir = align === 'left' ? 1 : -1;        // バッジを置く向き
+    text(name, x, y, 24, rgba(col, 1), align, '900');
     // 効果バッジ
     const badges = [];
-    if (m.bigT > 0) badges.push({ l: '大', c: GREEN, t: m.bigT });
-    if (m.shrinkT > 0) badges.push({ l: '小', c: PURPLE, t: m.shrinkT });
-    if (m.boost) badges.push({ l: '速', c: FIREC, t: 0 });
+    if (m.bigT > 0) badges.push({ l: '大', c: GREEN, t: m.bigT, max: 7 });
+    if (m.shrinkT > 0) badges.push({ l: '小', c: PURPLE, t: m.shrinkT, max: 7 });
+    if (m.boost) badges.push({ l: '速', c: FIREC, t: 0, max: 1 });
+    if (m.freezeT > 0) badges.push({ l: '氷', c: ICEC, t: m.freezeT, max: 2.5 });
+    if (m.wallT > 0) badges.push({ l: '守', c: GOLD, t: m.wallT, max: 6 });
     ctx.font = 'bold 24px ' + FONT;
     const nw = ctx.measureText(name).width;
-    let bx = i === 0 ? x - nw - 14 : x + nw + 14;
+    let bx = x + dir * (nw + 14);
     for (const b of badges) {
-      const cx2 = i === 0 ? bx - 16 : bx + 16;
-      ctx.fillStyle = rgba(b.c, 0.25); ctx.beginPath(); ctx.arc(cx2, 31, 16, 0, TAU); ctx.fill();
+      const cx2 = bx + dir * 16;
+      ctx.fillStyle = rgba(b.c, 0.25); ctx.beginPath(); ctx.arc(cx2, y - 1, 16, 0, TAU); ctx.fill();
       ctx.strokeStyle = rgba(b.c, 1); ctx.lineWidth = 2; ctx.stroke();
-      if (b.t > 0) { ctx.strokeStyle = rgba(b.c, 0.9); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx2, 31, 16, -Math.PI / 2, -Math.PI / 2 + TAU * (b.t / 7)); ctx.stroke(); }
-      text(b.l, cx2, 32, 16, '#fff', 'center', '900');
-      bx += i === 0 ? -36 : 36;
+      if (b.t > 0) { ctx.strokeStyle = rgba(b.c, 0.9); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx2, y - 1, 16, -Math.PI / 2, -Math.PI / 2 + TAU * (b.t / b.max)); ctx.stroke(); }
+      text(b.l, cx2, y, 16, '#fff', 'center', '900');
+      bx += dir * 36;
     }
   }
   // 下部ヒント
-  const hint = G.mode === 'cpu'
+  let hint;
+  if (PORTRAIT) hint = G.mode === 'cpu' ? 'タッチで パドルを動かす　／　■ でポーズ' : '下半分: P1　上半分: P2　／　■ でポーズ';
+  else hint = G.mode === 'cpu'
     ? 'あなた: W A S D ／ マウス ／ タッチ　　　Esc / P: ポーズ'
     : 'P1: W A S D ／ マウス ／ 左タッチ　　P2: ↑ ↓ ← → ／ 右タッチ　　Esc / P: ポーズ';
-  text(hint, CX, 523, 14, 'rgba(255,255,255,0.5)', 'center', '600');
+  text(hint, SCX, SH - 17, 14, 'rgba(255,255,255,0.5)', 'center', '600');
 }
 
 function drawMessages() {
@@ -975,17 +1164,19 @@ function drawMessages() {
     const n = Math.ceil(G.cd);
     const frac = G.cd - Math.floor(G.cd);
     const s = 1 + frac * 0.6;
-    ctx.save(); ctx.translate(CX, CY); ctx.scale(s, s);
+    ctx.save(); ctx.translate(SCX, SCY); ctx.scale(s, s);
     text(String(n), 0, 0, 140, rgba(GOLD, 0.35 + 0.65 * frac), 'center', '900');
     ctx.restore();
-    text('READY...', CX, CY - 110, 28, 'rgba(255,255,255,0.8)', 'center', '900');
+    text('READY...', SCX, SCY - 96, 28, 'rgba(255,255,255,0.8)', 'center', '900');
   }
   if (G.msg) {
     const m = G.msg;
     const p = m.t / m.dur;
     const a = p > 0.78 ? 1 - (p - 0.78) / 0.22 : 1;
     const pop = m.t < 0.32 ? easeOutBack(m.t / 0.32) : 1;
-    ctx.save(); ctx.globalAlpha = clamp(a, 0, 1); ctx.translate(CX, CY - 14); ctx.scale(pop, pop);
+    ctx.font = '900 ' + m.size + 'px ' + FONT;
+    const fitS = Math.min(1, (SW - 28) / Math.max(1, ctx.measureText(m.text).width));
+    ctx.save(); ctx.globalAlpha = clamp(a, 0, 1); ctx.translate(SCX, SCY); ctx.scale(pop * fitS, pop * fitS);
     if (m.kind === 'goal') {
       ctx.rotate(-0.035);
       ctx.font = '900 ' + m.size + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -995,7 +1186,7 @@ function drawMessages() {
       g.addColorStop(0, '#ffffff'); g.addColorStop(0.45, rgba(m.color, 1)); g.addColorStop(1, '#ffffff');
       ctx.fillStyle = g; ctx.fillText(m.text, 0, 0);
       ctx.strokeStyle = rgba(m.color, 0.6); ctx.lineWidth = 2; ctx.strokeText(m.text, 0, 0);
-      if (m.sub) text(m.sub, 0, m.size * 0.62, 32, '#fff', 'center', '900');
+      if (m.sub) text(m.sub, 0, m.size * 0.62, Math.min(32 / fitS, 40), '#fff', 'center', '900');   // 縦長で本文を縮めてもサブ文は読める大きさに
     } else {
       ctx.font = '900 ' + m.size + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.strokeStyle = 'rgba(5,5,25,0.9)'; ctx.lineWidth = 8; ctx.lineJoin = 'round'; ctx.strokeText(m.text, 0, 0);
@@ -1008,7 +1199,9 @@ function drawMessages() {
     const p = n.t / n.dur;
     const a = p > 0.7 ? 1 - (p - 0.7) / 0.3 : 1;
     const pop = n.t < 0.25 ? easeOutBack(n.t / 0.25) : 1;
-    ctx.save(); ctx.globalAlpha = clamp(a, 0, 1); ctx.translate(CX, 96); ctx.scale(pop, pop);
+    ctx.font = '900 30px ' + FONT;
+    const fitS = Math.min(1, (SW - 28) / Math.max(1, ctx.measureText(n.text).width));
+    ctx.save(); ctx.globalAlpha = clamp(a, 0, 1); ctx.translate(SCX, PORTRAIT ? SCY - 150 : 96); ctx.scale(pop * fitS, pop * fitS);
     ctx.font = '900 30px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(5,5,25,0.9)'; ctx.lineWidth = 7; ctx.strokeText(n.text, 0, 0);
     ctx.fillStyle = rgba(n.color, 1); ctx.fillText(n.text, 0, 0);
@@ -1016,15 +1209,66 @@ function drawMessages() {
   }
 }
 
-function drawTitle() {
-  const t = G.t;
-  // 背景パック
+function drawTitlePucks() {
   for (const p of G.titlePucks) {
     const n = p.trail.length;
     for (let i = 0; i < n; i++) { const tr = p.trail[i]; ctx.fillStyle = rgba(p.c, (i + 1) / n * 0.25); ctx.beginPath(); ctx.arc(tr.x, tr.y, p.r * (i + 1) / n, 0, TAU); ctx.fill(); }
     glow(p.x, p.y, p.r * 3, p.c, 0.5);
     ctx.fillStyle = rgba(p.c, 0.95); ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
   }
+}
+function drawTitleBtn(i, size) {
+  const t = G.t, r = titleBtnRect(i), sel = i === G.sel;
+  const b = TITLE_BTNS[i];
+  const col = b.mode === '2p' ? GOLD : [P1C, [140, 255, 200], P2C][b.lvl];
+  ctx.save();
+  ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
+  const s = sel ? 1.07 + 0.02 * Math.sin(t * 8) : 1;
+  ctx.scale(s, s);
+  if (sel) glow(0, 0, r.w * 0.75, col, 0.45);
+  const bg = ctx.createLinearGradient(0, -r.h / 2, 0, r.h / 2);
+  if (sel) { bg.addColorStop(0, rgba(col, 0.85)); bg.addColorStop(1, rgba(col, 0.45)); }
+  else { bg.addColorStop(0, 'rgba(40,40,90,0.9)'); bg.addColorStop(1, 'rgba(20,20,50,0.9)'); }
+  ctx.fillStyle = bg; rrect(-r.w / 2, -r.h / 2, r.w, r.h, 16); ctx.fill();
+  ctx.strokeStyle = sel ? '#fff' : rgba(col, 0.7); ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+  text(b.label, 0, 1, size || 26, sel ? '#0a0a20' : '#fff', 'center', '900');
+  ctx.restore();
+}
+function drawTitlePortrait() {
+  const t = G.t;
+  drawTitlePucks();
+  text('N E O N   A I R   H O C K E Y', SCX, 150, 15, 'rgba(255,255,255,0.6)', 'center', '700');
+  ctx.save();
+  ctx.translate(SCX, 212);
+  const sc = 1 + 0.02 * Math.sin(t * 2.2);
+  ctx.scale(sc, sc);
+  ctx.font = '900 54px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  ctx.shadowColor = rgba(P1C, 0.8); ctx.shadowBlur = 28;
+  ctx.strokeStyle = 'rgba(5,5,25,0.9)'; ctx.lineWidth = 10; ctx.strokeText('ネオンエアホッケー', 0, 0);
+  ctx.shadowBlur = 0;
+  const g = ctx.createLinearGradient(-240, 0, 240, 0);
+  g.addColorStop(0, rgba(P1C, 1)); g.addColorStop(0.5, '#ffffff'); g.addColorStop(1, rgba(P2C, 1));
+  ctx.fillStyle = g; ctx.fillText('ネオンエアホッケー', 0, 0);
+  ctx.restore();
+  text('先に 7 点 とるか、90 秒で終了！', SCX, 272, 20, rgba(GOLD, 1), 'center', '900');
+  text('🔥 FIRE SHOT で入れると 2 点', SCX, 302, 17, rgba(FIREC, 1), 'center', '900');
+  for (let i = 0; i < TITLE_BTNS.length; i++) drawTitleBtn(i, 24);
+  text('タップでスタート', SCX, 662, 16, 'rgba(255,255,255,0.75)', 'center', '700');
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; rrect(30, 690, 480, 136, 14); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1; ctx.stroke();
+  text('P1（下）', 90, 716, 17, rgba(P1C, 1), 'center', '900');
+  text('画面の下半分をタッチして動かす', 310, 716, 16, '#fff', 'center', '700');
+  text('P2（上）', 90, 746, 17, rgba(P2C, 1), 'center', '900');
+  text('画面の上半分をタッチ（CPU戦は自動）', 310, 746, 16, '#fff', 'center', '700');
+  text('パワーアップ 6 種 ／ ラスト 30 秒はバンパー登場', SCX, 782, 14, 'rgba(255,255,255,0.75)', 'center', '700');
+  text('横向きにすると キーボードでも遊べる', SCX, 806, 13, 'rgba(255,255,255,0.5)', 'center', '600');
+  const hi = FES.getHiScore();
+  text('CPU戦 HI-SCORE: ' + hi.toLocaleString() + ' pt', SCX, 870, 17, rgba(GOLD, 0.9), 'center', '900');
+}
+
+function drawTitle() {
+  const t = G.t;
+  drawTitlePucks();
   // タイトル
   text('N E O N   A I R   H O C K E Y', CX, 96, 18, 'rgba(255,255,255,0.6)', 'center', '700');
   ctx.save();
@@ -1039,25 +1283,10 @@ function drawTitle() {
   g.addColorStop(0, rgba(P1C, 1)); g.addColorStop(0.5, '#ffffff'); g.addColorStop(1, rgba(P2C, 1));
   ctx.fillStyle = g; ctx.fillText('ネオンエアホッケー', 0, 0);
   ctx.restore();
-  text('先に 7 点 とるか、90 秒で終了！', CX, 246, 22, rgba(GOLD, 1), 'center', '900');
+  text('先に 7 点 とるか、90 秒で終了！　🔥 FIRE SHOT で入れると 2 点', CX, 240, 20, rgba(GOLD, 1), 'center', '900');
+  text('パワーアップ 6 種（大・小・速・氷・守・分）　／　ラスト 30 秒は バンパー登場', CX, 268, 15, 'rgba(255,255,255,0.7)', 'center', '700');
   // モードボタン
-  for (let i = 0; i < TITLE_BTNS.length; i++) {
-    const r = titleBtnRect(i), sel = i === G.sel;
-    const b = TITLE_BTNS[i];
-    const col = b.mode === '2p' ? GOLD : [P1C, [140, 255, 200], P2C][b.lvl];
-    ctx.save();
-    ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
-    const s = sel ? 1.07 + 0.02 * Math.sin(t * 8) : 1;
-    ctx.scale(s, s);
-    if (sel) glow(0, 0, r.w * 0.75, col, 0.45);
-    const bg = ctx.createLinearGradient(0, -r.h / 2, 0, r.h / 2);
-    if (sel) { bg.addColorStop(0, rgba(col, 0.85)); bg.addColorStop(1, rgba(col, 0.45)); }
-    else { bg.addColorStop(0, 'rgba(40,40,90,0.9)'); bg.addColorStop(1, 'rgba(20,20,50,0.9)'); }
-    ctx.fillStyle = bg; rrect(-r.w / 2, -r.h / 2, r.w, r.h, 16); ctx.fill();
-    ctx.strokeStyle = sel ? '#fff' : rgba(col, 0.7); ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
-    text(b.label, 0, 1, 26, sel ? '#0a0a20' : '#fff', 'center', '900');
-    ctx.restore();
-  }
+  for (let i = 0; i < TITLE_BTNS.length; i++) drawTitleBtn(i, 26);
   text('← → で選択　／　クリック・タップ・Enter・Space でスタート', CX, 392, 17, 'rgba(255,255,255,0.75)', 'center', '700');
   // 操作説明
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; rrect(150, 418, 660, 74, 14); ctx.fill();
