@@ -406,7 +406,7 @@ function newRun() {
     coins: 0, coinPts: 0, score: 0, dispScore: 0, combo: 0, comboT: 0, comboMax: 0, destroyed: 0,
     obstacles: [], coinList: [], items: [], particles: [], popups: [], trail: [], trailT: 0,
     spawnAt: world.x + W + 320, nextPower: world.x + 4200, lastKind: '', nextMile: 500,
-    magnet: 0, star: 0, x2: 0, shake: 0, flash: 0, slow: 0, deadT: 0,
+    magnet: 0, star: 0, x2: 0, shield: 0, inv: 0, close: 0, bonusPts: 0, bonusUntil: -1, shake: 0, flash: 0, slow: 0, deadT: 0,
     player: { y: GROUND_Y, vy: 0, onGround: true, jumps: 0, holdT: 0, sliding: false, slideT: 0, spin: 0, falling: false, fastFall: false, dead: false, cause: '', rot: 0, dx: 0, landT: 0, bounces: 0 }
   };
 }
@@ -514,6 +514,15 @@ function makeShuriken(x, high) {
   return 44;
 }
 function makePit(x, w) { addObs({ type: 'pit', x, w }); return w; }
+function makeCrow(x) {   // カラス: 上下にうねりながら向かってくる。ジャンプかスライドでかわす
+  const baseY = GROUND_Y - 110;
+  addObs({ type: 'crow', x, w: 56, y: baseY, baseY, hx: 10, hy: baseY - 14, hw: 36, hh: 28, phase: rand(0, TAU), flap: 0, vx: -(140 + Math.min(160, G.dist * 0.05)) });
+  return 56;
+}
+function makeBarrel(x) {   // 転がる樽: 地面を速く転がってくる。ジャンプ
+  addObs({ type: 'barrel', x, w: 48, h: 48, hx: 6, hy: GROUND_Y - 44, hw: 36, hh: 42, spin: 0, vx: -(220 + Math.min(220, G.dist * 0.06)) });
+  return 48;
+}
 function addCoin(x, y) { G.coinList.push({ x, y, phase: rand(0, TAU), pull: false }); }
 function coinLine(x, y, n, dx) { for (let i = 0; i < n; i++) addCoin(x + i * dx, y); }
 function coinArch(x0, x1, peak) {
@@ -533,10 +542,18 @@ function coinPattern(pat, x, avail) {
 }
 function spawnChunk() {
   const x = G.spawnAt, d = G.dist, sp = G.speed;
+  if (x < G.bonusUntil) {   // 小判タイム: 障害物なしで小判がぎっしり
+    coinPattern(pick(['wave', 'arrow', 'zig', 'double', 'high', 'line']), x, 300);
+    G.spawnAt = x + 360;
+    return;
+  }
   const pool = ['rock', 'rock', 'spike', 'spike', 'coinsOnly'];
   if (d > 120) pool.push('torii', 'sign', 'torii');
   if (d > 300) pool.push('shHigh', 'shLow', 'shHigh');
+  if (d > 400) pool.push('barrel');
   if (d > 500) pool.push('pit', 'pit');
+  if (d > 700) pool.push('crow', 'crow');
+  if (d > 1500) pool.push('barrelPair');
   if (d > 800) pool.push('rockPair', 'rockSh', 'spikeWide', 'bigRock');
   if (d > 1300) pool.push('toriiSh', 'pitRock', 'signSpike');
   if (d > 2000) pool.push('gauntlet', 'pitPit');
@@ -554,6 +571,9 @@ function spawnChunk() {
     case 'torii': len = makeTorii(x); low(x, len); break;
     case 'sign': len = makeSign(x); low(x - 20, len + 40); break;
     case 'shHigh': len = makeShuriken(x, true); break;
+    case 'crow': len = makeCrow(x); if (Math.random() < 0.5) low(x - 40, 160); break;
+    case 'barrel': len = makeBarrel(x); coinArch(x - 60, x + len + 60, 150); break;
+    case 'barrelPair': { const w1 = makeBarrel(x); makeBarrel(x + w1 + 170 + sp * 0.3); len = w1 + 170 + sp * 0.3 + 48; break; }
     case 'shLow': len = makeShuriken(x, false); break;
     case 'pit': len = makePit(x, rand(130, 170 + Math.min(70, d * 0.03))); coinArch(x - 40, x + len + 40, 140); break;
     case 'pitPit': { const w1 = rand(120, 160), g = 200 + sp * 0.25; makePit(x, w1); makePit(x + w1 + g, w1); len = w1 + g + w1; coinArch(x - 40, x + w1 + 40, 130); coinArch(x + w1 + g - 40, x + len + 40, 130); break; }
@@ -568,7 +588,7 @@ function spawnChunk() {
   const cx0 = x + len + 90, avail = gap - 200;
   if (avail > 120 && (kind === 'coinsOnly' || Math.random() < 0.55)) coinPattern(pick(['line', 'wave', 'arrow', 'zig', 'double', 'high']), cx0, avail);
   if (x > G.nextPower && avail > 80) {
-    G.items.push({ type: pick(['magnet', 'star', 'x2']), x: cx0 + avail / 2, y: GROUND_Y - rand(70, 130), phase: rand(0, TAU) });
+    G.items.push({ type: pick(G.shield > 0 ? ['magnet', 'star', 'x2'] : ['magnet', 'star', 'x2', 'shield', 'shield']), x: cx0 + avail / 2, y: GROUND_Y - rand(70, 130), phase: rand(0, TAU) });
     G.nextPower = x + rand(6500, 10500);
   }
   G.spawnAt = x + len + gap;
@@ -645,11 +665,27 @@ function updateObstacles(dt) {
   for (let i = G.obstacles.length - 1; i >= 0; i--) {
     const o = G.obstacles[i];
     if (o.type === 'shuriken') { o.x += o.vx * dt; o.spin += dt * 16; o.y = o.baseY + Math.sin(world.time * 5 + o.phase) * 6; o.hy = o.y - 14; }
+    else if (o.type === 'crow') { o.x += o.vx * dt; o.flap += dt * 14; o.y = o.baseY + Math.sin(world.time * 2.6 + o.phase) * 42; o.hy = o.y - 14; }
+    else if (o.type === 'barrel') { o.x += o.vx * dt; o.spin -= dt * 9; }
     const sx = o.x - world.x;
     if (sx + o.w < -160) { G.obstacles.splice(i, 1); continue; }
     if (o.type === 'pit' || sx > W + 60) continue;
-    if (overlap({ x: sx + o.hx, y: o.hy, w: o.hw, h: o.hh }, pb)) {
-      if (G.star > 0) destroyObstacle(o, i); else { die(o.type); return; }
+    const hb = { x: sx + o.hx, y: o.hy, w: o.hw, h: o.hh };
+    if (G.inv <= 0 && overlap(hb, pb)) {
+      if (G.star > 0) destroyObstacle(o, i);
+      else if (G.shield > 0) { G.shield = 0; G.inv = 1.2; destroyObstacle(o, i); bigPop('おまもり発動！', '#7ee8a0'); FES.sfx('powerup'); G.shake = Math.max(G.shake, 10); G.flash = Math.max(G.flash, 0.4); }
+      else { die(o.type); return; }
+      continue;
+    }
+    // ギリギリ: 障害物を通りすぎた瞬間、すきまが 18px 未満なら ボーナス
+    if (!o.passed && hb.x + hb.w < pb.x) {
+      o.passed = true;
+      const gap = pb.y + pb.h <= hb.y ? hb.y - (pb.y + pb.h) : pb.y >= hb.y + hb.h ? pb.y - (hb.y + hb.h) : -1;
+      if (gap >= 0 && gap < 18) {
+        G.close++; G.bonusPts += 50; G.combo++; G.comboT = 1.0; G.comboMax = Math.max(G.comboMax, G.combo);
+        popup('ギリギリ！ +50', PLAYER_X + 10, pb.y - 24, { size: 22, color: '#8fd3ff', max: 0.8 });
+        FES.tone({ freq: 1500, slide: 2200, dur: 0.1, type: 'sine', vol: 0.12 }); sparkle(PLAYER_X, pb.y + pb.h / 2, 6, '#8fd3ff');
+      }
     }
   }
 }
@@ -679,8 +715,8 @@ function updateCoins(dt) {
     }
   }
 }
-const ITEM_COL = { magnet: [255, 95, 126], star: [255, 210, 63], x2: [170, 110, 255] };
-const ITEM_NAME = { magnet: 'マグネット！', star: 'むてき！', x2: 'スコア2倍！' };
+const ITEM_COL = { magnet: [255, 95, 126], star: [255, 210, 63], x2: [170, 110, 255], shield: [126, 232, 160] };
+const ITEM_NAME = { magnet: 'マグネット！', star: 'むてき！', x2: 'スコア2倍！', shield: 'おまもり！ 1 回まもる' };
 function updateItems(dt) {
   const pcx = PLAYER_X, pcy = G.player.y - 30;
   for (let i = G.items.length - 1; i >= 0; i--) {
@@ -689,7 +725,7 @@ function updateItems(dt) {
     const y = it.y + Math.sin(world.time * 3 + it.phase) * 6;
     if ((sx - pcx) ** 2 + (y - pcy) ** 2 < 40 * 40) {
       G.items.splice(i, 1);
-      if (it.type === 'magnet') G.magnet = 9; else if (it.type === 'star') G.star = 7; else G.x2 = 12;
+      if (it.type === 'magnet') G.magnet = 9; else if (it.type === 'star') G.star = 7; else if (it.type === 'shield') G.shield = 1; else G.x2 = 12;
       FES.sfx('powerup'); G.shake = Math.max(G.shake, 4);
       sparkle(sx, y, 16, rgb(ITEM_COL[it.type]));
       spawnParticle({ x: sx, y, shape: 'ring', color: rgba(ITEM_COL[it.type], 0.9), size: 80, max: 0.45, follow: 0.5 });
@@ -739,13 +775,13 @@ function updateDying(rdt) {
 }
 function showResultScreen() {
   mode = 'result'; BGM.stop();
-  const causeText = { rock: '岩にぶつかった！', spike: 'とげに刺さった！', torii: '鳥居に頭をぶつけた！', sign: '看板に激突！', shuriken: '手裏剣が命中！', pit: '穴に落ちた！' }[G.player.cause] || 'やられた！';
+  const causeText = { rock: '岩にぶつかった！', spike: 'とげに刺さった！', torii: '鳥居に頭をぶつけた！', sign: '看板に激突！', shuriken: '手裏剣が命中！', pit: '穴に落ちた！', crow: 'カラスにつつかれた！', barrel: '樽にひかれた！' }[G.player.cause] || 'やられた！';
   const kmh = Math.round(G.maxSpeed / PX_PER_M * 3.6);
   FES.showResult({
     score: G.score, scoreLabel: 'pt', title: 'GAME OVER',
     rank: { S: 5000, A: 3500, B: 2000, C: 800 }, titles: { S: '伝説の忍者', A: '上忍', B: '中忍', C: '下忍', D: '見習い忍者' },
     subtitle: `${Math.floor(G.dist)} m 走破 — ${causeText}`,
-    stats: [{ label: '距離', value: Math.floor(G.dist) + ' m' }, { label: '小判', value: G.coins }, { label: '最高速度', value: kmh + ' km/h' }, { label: 'MAX COMBO', value: G.comboMax }],
+    stats: [{ label: '距離', value: Math.floor(G.dist) + ' m' }, { label: '小判', value: G.coins }, { label: 'ギリギリ', value: G.close }, { label: '最高速度', value: kmh + ' km/h' }, { label: 'MAX COMBO', value: G.comboMax }, { label: '到達ステージ', value: STAGE_NAMES[world.stage] }],
   }, () => startGame());
 }
 function updatePlay(dt) {
@@ -760,6 +796,7 @@ function updatePlay(dt) {
   updateObstacles(dt); if (mode !== 'play') return;
   updateCoins(dt); updateItems(dt); updateParticles(dt);
   for (const k of ['magnet', 'star', 'x2']) if (G[k] > 0) { G[k] -= dt; if (G[k] <= 0) { G[k] = 0; FES.sfx('tick'); } }
+  if (G.inv > 0) G.inv -= dt;
   if (G.combo > 0) { G.comboT -= dt; if (G.comboT <= 0) { G.combo = 0; FES.fever(false); } }
   if (G.dist >= G.nextMile) {
     const big = G.nextMile % 1000 === 0;
@@ -768,8 +805,8 @@ function updatePlay(dt) {
     G.nextMile += 500;
   }
   const st = Math.floor(G.dist / STAGE_LEN) % 4;
-  if (st !== world.stage) { setStage(st); popup(STAGE_NAMES[st], W / 2, 260, { size: 34, color: '#fff', max: 1.6, vy: -12 }); }
-  G.score = Math.floor(G.dist) + G.coinPts * 10;
+  if (st !== world.stage) { setStage(st); popup(STAGE_NAMES[st], W / 2, 260, { size: 34, color: '#fff', max: 1.6, vy: -12 }); G.bonusUntil = G.spawnAt + 2400; popup('小判タイム！', W / 2, 300, { size: 26, color: '#ffe36e', max: 1.6, vy: -10 }); FES.sfx('coin'); }
+  G.score = Math.floor(G.dist) + G.coinPts * 10 + G.bonusPts;
   G.dispScore += (G.score - G.dispScore) * Math.min(1, dt * 9);
   // 残像
   const p = G.player;
@@ -895,6 +932,10 @@ function drawItem(sx, it) {
     ctx.strokeStyle = '#8ea1b8'; ctx.beginPath(); ctx.moveTo(-8, 5); ctx.lineTo(-8, 9); ctx.moveTo(8, 5); ctx.lineTo(8, 9); ctx.stroke();
   } else if (it.type === 'star') {
     drawStarShape(0, 1, 13, world.time * 2); ctx.fillStyle = '#ffd23f'; ctx.fill(); ctx.strokeStyle = '#e0a000'; ctx.lineWidth = 2; ctx.stroke();
+  } else if (it.type === 'shield') {
+    ctx.fillStyle = '#4fb86f'; roundRect(-9, -11, 18, 24, 4); ctx.fill(); ctx.fillStyle = '#7ee8a0'; roundRect(-7, -9, 14, 20, 3); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(0, -16); ctx.moveTo(-4, -16); ctx.lineTo(4, -16); ctx.stroke();
+    ctx.fillStyle = '#1f5a33'; ctx.font = `900 11px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('守', 0, 2);
   } else {
     ctx.fillStyle = '#8a4dff'; ctx.font = `900 20px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('×2', 0, 1);
   }
@@ -912,8 +953,39 @@ function drawWorldObjects(pal) {
       case 'torii': drawTorii(sx, o); break;
       case 'sign': drawSign(sx, o); break;
       case 'shuriken': drawShuriken(sx, o, 0.18, 26); drawShuriken(sx, o, 0.35, 13); drawShuriken(sx, o); break;
+      case 'crow': drawCrow(sx, o); break;
+      case 'barrel': drawBarrel(sx, o); break;
     }
   }
+}
+function drawCrow(sx, o) {
+  const cx = sx + o.w / 2, cy = o.y, wing = Math.sin(o.flap) * 16;
+  ctx.save(); ctx.translate(cx, cy);
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(0, GROUND_Y - cy + 3, 18, 5, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#1b1f2e'; ctx.strokeStyle = '#4a5068'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  // つばさ
+  ctx.beginPath(); ctx.moveTo(-6, -2); ctx.quadraticCurveTo(-22, -18 - wing, -34, -8 - wing); ctx.lineTo(-10, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(6, -2); ctx.quadraticCurveTo(22, -18 - wing, 34, -8 - wing); ctx.lineTo(10, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // 体と頭
+  ctx.beginPath(); ctx.ellipse(0, 0, 16, 11, 0, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-14, -6, 8, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#ffb347'; ctx.beginPath(); ctx.moveTo(-20, -6); ctx.lineTo(-30, -3); ctx.lineTo(-20, -1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ff4d6d'; ctx.beginPath(); ctx.arc(-16, -8, 2.5, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+function drawBarrel(sx, o) {
+  const cx = sx + o.w / 2, cy = GROUND_Y - 24;
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(cx, GROUND_Y + 2, 26, 6, 0, 0, TAU); ctx.fill();
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(o.spin);
+  const g = ctx.createRadialGradient(-8, -8, 4, 0, 0, 24); g.addColorStop(0, '#c98b4a'); g.addColorStop(1, '#6b3e1a');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 23, 0, TAU); ctx.fill();
+  ctx.strokeStyle = '#3a2210'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = '#8a8f99'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 17, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = 'rgba(58,34,16,.7)'; ctx.lineWidth = 2; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; ctx.beginPath(); ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6); ctx.lineTo(Math.cos(a) * 22, Math.sin(a) * 22); ctx.stroke(); }
+  ctx.fillStyle = '#3a2210'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, TAU); ctx.fill();
+  ctx.restore();
+  // 砂煙
+  if (Math.random() < 0.5) spawnParticle({ x: cx + 20, y: GROUND_Y - 2, vx: rand(20, 60), vy: rand(-40, -10), shape: 'circle', color: 'rgba(225,210,185,.5)', size: rand(3, 6), max: 0.35, grow: true, follow: 1 });
 }
 function drawTrail() {
   for (const g of G.trail) {
@@ -935,6 +1007,12 @@ function drawPlayer() {
     const rg = ctx.createRadialGradient(px, p.y - 30, 10, px, p.y - 30, 75);
     rg.addColorStop(0, `hsla(${hue},100%,70%,.55)`); rg.addColorStop(0.6, `hsla(${(hue + 120) % 360},100%,60%,.25)`); rg.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = rg; ctx.fillRect(px - 75, p.y - 105, 150, 150);
+  }
+  if (G.shield > 0 || G.inv > 0) {   // おまもりのオーラ（発動直後は点滅）
+    const a = G.inv > 0 ? 0.2 + 0.4 * Math.abs(Math.sin(world.time * 20)) : 0.25 + Math.sin(world.time * 5) * 0.1;
+    const rg2 = ctx.createRadialGradient(px, p.y - 30, 20, px, p.y - 30, 58); rg2.addColorStop(0, `rgba(126,232,160,${a.toFixed(3)})`); rg2.addColorStop(1, 'rgba(126,232,160,0)');
+    ctx.fillStyle = rg2; ctx.beginPath(); ctx.arc(px, p.y - 30, 58, 0, TAU); ctx.fill();
+    ctx.strokeStyle = `rgba(126,232,160,${(a + 0.3).toFixed(3)})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(px, p.y - 30, 50 + Math.sin(world.time * 5) * 3, 0, TAU); ctx.stroke();
   }
   if (G.magnet > 0) {
     const r = 60 + Math.sin(world.time * 8) * 6;
@@ -983,6 +1061,7 @@ function drawHUD() {
   ctx.font = `700 14px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText('m', px + 24 + ctx.measureText(dTxt).width * 2.05, py + 42);
   drawCoinIcon(px + 190, py + 31, 0.95);
   ctx.fillStyle = '#ffe36e'; ctx.font = `900 28px ${FONT}`; ctx.fillText(String(G.coins), px + 208, py + 33);
+  if (G.shield > 0) { ctx.fillStyle = '#4fb86f'; roundRect(px + 282, py + 18, 16, 22, 4); ctx.fill(); ctx.fillStyle = '#7ee8a0'; roundRect(px + 284, py + 20, 12, 18, 3); ctx.fill(); ctx.fillStyle = '#1f5a33'; ctx.font = `900 10px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('守', px + 290, py + 30); ctx.textAlign = 'left'; }
   ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `700 12px ${FONT}`; ctx.fillText('SCORE', px + pw - 20, py + 15);
   ctx.fillStyle = '#fff'; ctx.font = `900 28px ${FONT}`; ctx.fillText(Math.round(G.dispScore).toLocaleString(), px + pw - 20, py + 39);
   // パワーアップ
@@ -1067,7 +1146,8 @@ function drawTitle() {
   ctx.fillStyle = '#fff'; ctx.font = `900 26px ${FONT}`; ctx.fillText('スタート！', 0, -4);
   ctx.restore();
   ctx.font = `700 13px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillText('クリック / タップ / Enter / Space でスタート', W / 2, 428);
-  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText('スコア ＝ 距離(m) ＋ 小判 × 10　　一発アウト！むてき中だけ無敵', W / 2, 470);
+  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText('スコア ＝ 距離(m) ＋ 小判 × 10 ＋ ギリギリ 50　　一発アウト！ おまもり（守）で 1 回だけセーフ', W / 2, 470);
+  ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillText('障害物すれすれでかわすと「ギリギリ！」　ステージが変わると 小判タイム', W / 2, 492);
 }
 
 /* ------------------------------------------------------------ メイン描画 */
