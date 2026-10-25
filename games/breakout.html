@@ -807,8 +807,10 @@ function startGame() {
   if (resultTimer) { clearTimeout(resultTimer); resultTimer = null; }
   FES.hideResult(); FES.pause(false);
   G = newGame();
-  G.stage = 0;
-  buildStage(0);
+  // 発表・テスト用: URL に ?stage=9 とつけると、そのステージから始まる（ふだんは 1 から）
+  const want = parseInt(new URLSearchParams(location.search).get('stage'), 10);
+  G.stage = want >= 1 && want <= TOTAL_STAGES ? want - 1 : 0;
+  buildStage(G.stage);
   G.state = 'countdown'; G.stateT = 0; G.countdownStep = -1;
   FES.sfx('start');
 }
@@ -1451,7 +1453,7 @@ function drawOverlays() {
     }
     if (t < 3) {
       const a = 0.7 + 0.3 * Math.sin(t * 6);
-      text(`STAGE 1  「${STAGES[0].name}」`, W / 2, 760, 26, `rgba(255,255,255,${a})`);
+      text(`STAGE ${G.stage + 1}  「${stageDef().name}」`, W / 2, 760, 26, `rgba(255,255,255,${a})`);
     }
   } else if (st === 'stageintro') {
     const a = t < 0.3 ? t / 0.3 : t > G.introDur - 0.5 ? Math.max(0, (G.introDur - t) / 0.5) : 1;
