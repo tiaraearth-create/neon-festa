@@ -37,7 +37,12 @@ const TYPES = {
   bomb:   { score: -300, dwell: 1.30, rise: 0.20, hp: 1 },
   flower: { score: -100, dwell: 1.50, rise: 0.25, hp: 1 },
   bonus:  { score: 0,    dwell: 0.90, rise: 0.15, hp: 1 },
+  speedy: { score: 200,  dwell: 0.42, rise: 0.09, hp: 1 },   // はやもぐら: すぐ引っこむ
+  ghost:  { score: 400,  dwell: 1.45, rise: 0.20, hp: 1 },   // おばけもぐら: 見えているときだけ当たる
+  king:   { score: 1000, dwell: 9.0,  rise: 0.30, hp: 5 },   // キング: 44 秒に 1 回だけ。穴から穴へ逃げる
 };
+const KING_AT = 44;
+const ghostAlpha = m => 0.12 + 0.88 * (0.5 + 0.5 * Math.sin(m.t * 5.5 + m.seed));
 
 // キーボード → [col,row]
 const KEYMAP = {
@@ -110,7 +115,7 @@ const G = {
   elapsed: 0, timeLeft: TIME_LIMIT,
   score: 0, dispScore: 0,
   combo: 0, maxCombo: 0,
-  hits: 0, golds: 0, swings: 0, goodSwings: 0, bad: 0,
+  hits: 0, golds: 0, swings: 0, goodSwings: 0, bad: 0, fastHits: 0, doubles: 0, kingSpawned: false, kingDown: false, lastTwin: null, twinSeq: 0,
   cols: 3,
   holes: [],
   spawnTimer: 0, bonusCd: 0,
@@ -183,6 +188,8 @@ function pickType() {
     normal: lerp(78, 46, p), gold: lerp(4, 10, p), helmet: lerp(5, 16, p),
     bomb: lerp(6, 14, p), flower: lerp(6, 12, p),
     bonus: (G.bonusCd <= 0 && G.elapsed > 6 && G.timeLeft > 7) ? 2.6 : 0,
+    speedy: p > 0.25 ? lerp(0, 14, p) : 0,
+    ghost: p > 0.45 ? 9 : 0,
   };
   let total = 0; for (const k in w) total += w[k];
   let r = Math.random() * total;
@@ -200,10 +207,12 @@ function spawnMole(hole, type, dwellBase) {
   };
   if (type === 'bonus') G.bonusCd = 16;
   burstDirt(hole.x, hole.y, 6);
+  return hole.mole;
 }
 function activeCount() { let n = 0; for (const h of G.holes) if (h.mole && h.mole.state !== 'hit') n++; return n; }
 function freeHoles() { return G.holes.filter(h => !h.mole && h.cd <= 0 && h.appear >= 1); }
 function hittable(m) {
+  if (m.type === 'ghost' && ghostAlpha(m) < 0.5) return false;
   return (m.state === 'rise' && m.rise > 0.35) || m.state === 'up' || m.state === 'stun';
 }
 function updateHoles(dt) {
@@ -224,6 +233,15 @@ function updateHoles(dt) {
       case 'up':
         m.rise = 1 + Math.sin(m.t * 12 + m.seed) * 0.012;
         if (m.type === 'gold') { m.sparkT -= dt; if (m.sparkT <= 0) { m.sparkT = 0.09; sparkle(h.x + rand(-40, 40), h.y - rand(10, 100)); } }
+        if (m.type === 'king') {
+          m.jumpT = (m.jumpT || 0) + dt; m.total = (m.total || 0) + dt;
+          if (m.jumpT >= 0.95) {   // 別の穴へワープ
+            const free = freeHoles().filter(x => x !== h);
+            if (free.length) { const nh = pick(free); h.mole = null; h.cd = 0.3; burstDirt(h.x, h.y, 8); nh.mole = m; m.state = 'rise'; m.t = 0; m.rise = 0; m.jumpT = 0; burstDirt(nh.x, nh.y, 8); FES.tone({ freq: 400, slide: 800, dur: 0.1, type: 'square', vol: 0.1 }); continue; }
+          }
+          if (m.total >= m.dwell) { m.state = 'hide'; m.t = 0; addText(h.x, h.y - 120, 'キング 逃げた…', { size: 24, color: '#ffd0a0', life: 1.2 }); }
+          break;
+        }
         if (m.t >= m.dwell) { m.state = 'hide'; m.t = 0; }
         break;
       case 'stun':
@@ -243,16 +261,30 @@ function updateHoles(dt) {
 }
 function trySpawn(dt) {
   const d = difficulty();
+  // キング登場（1 回だけ・フィーバー中は待つ）
+  if (!G.kingSpawned && G.elapsed >= KING_AT && G.fever <= 0 && G.timeLeft > 6) {
+    const free = freeHoles();
+    if (free.length) {
+      G.kingSpawned = true;
+      spawnMole(pick(free), 'king', 1);
+      addText(W / 2, 150, '👑 キングもぐら 登場！', { size: 46, color: '#ffd54a', life: 1.6, vy: 10, pop: true });
+      addText(W / 2, 196, '5 回たたけ！ 穴から穴へ逃げるぞ', { size: 20, color: '#fff', life: 1.6, vy: 10 });
+      FES.sfx('powerup'); G.shake = Math.max(G.shake, 8);
+    }
+  }
   G.spawnTimer -= dt;
   if (G.spawnTimer > 0) return;
   G.spawnTimer = d.interval * rand(0.75, 1.15);
   if (activeCount() >= d.maxUp) return;
   const free = freeHoles(); if (!free.length) return;
-  spawnMole(pick(free), pickType(), d.dwell);
-  // 終盤は同時出現も
+  const first = spawnMole(pick(free), pickType(), d.dwell);
+  // 終盤は同時出現も。ふつうのもぐら 2 匹なら「ふたご」（0.6 秒以内に両方たたくとダブルボーナス）
   if (G.fever > 0 || (progress() > 0.5 && Math.random() < 0.35)) {
     const free2 = freeHoles();
-    if (free2.length && activeCount() < d.maxUp) spawnMole(pick(free2), pickType(), d.dwell);
+    if (free2.length && activeCount() < d.maxUp) {
+      const second = spawnMole(pick(free2), pickType(), d.dwell);
+      if (first && second && first.type === 'normal' && second.type === 'normal') { const id = ++G.twinSeq; first.twin = id; second.twin = id; first.twinMark = true; second.twinMark = true; }
+    }
   }
 }
 function hideAllMoles(onlyBad) {
@@ -342,7 +374,30 @@ function hitMole(h, x, y) {
     G.shake = Math.max(G.shake, 3);
     return;
   }
-  // 通常ヒット（normal / gold / helmet 2発目）
+  if (m.type === 'king') {   // キング: 5 回たたくと撃破
+    m.hp--; G.goodSwings++; G.hits++; G.combo++; if (G.combo > G.maxCombo) G.maxCombo = G.combo;
+    const mu = mult();
+    if (m.hp > 0) {
+      const pts = Math.round(150 * mu); G.score += pts;
+      m.state = 'stun'; m.t = 0; m.jumpT = 0;
+      G.hitStop = 0.05; G.shake = Math.max(G.shake, 8);
+      FES.sfx('hit'); FES.noise({ dur: 0.1, freq: 500, slide: 120, vol: 0.3 });
+      starBurst(hx, hy - 20, 10, '#ffd54a');
+      addText(hx, hy - 70, `+${pts}`, { size: 30, color: '#ffd54a', life: 0.8 });
+      addText(hx, hy - 110, `あと ${m.hp} 回！`, { size: 22, color: '#fff', life: 0.8 });
+    } else {
+      const pts = Math.round(1000 * mu); G.score += pts; G.kingDown = true;
+      m.state = 'hit'; m.t = 0;
+      G.hitStop = 0.12; G.shake = Math.max(G.shake, 18); G.flash = 0.5; G.flashColor = '#fff2a0';
+      FES.sfx('fanfare'); FES.sfx('explode');
+      confetti(hx, hy, 40); starBurst(hx, hy, 20, '#ffd54a'); spiralStars(hx, hy - 40, 10);
+      addText(W / 2, 150, '👑 キング 撃破！！', { size: 56, color: '#ffd54a', life: 1.6, vy: 10, pop: true, rainbow: true });
+      addText(hx, hy - 70, `+${pts}`, { size: 44, color: '#ffd54a', life: 1.2 });
+    }
+    if (G.combo % 5 === 0) comboPop();
+    return;
+  }
+  // 通常ヒット（normal / gold / helmet 2発目 / speedy / ghost）
   G.hits++;
   if (m.type === 'gold') G.golds++;
   G.combo++;
@@ -350,6 +405,7 @@ function hitMole(h, x, y) {
   const mu = mult();
   const pts = Math.round(m.cfg.score * mu);
   G.score += pts;
+  m.prevState = m.state; m.prevT = m.t;
   m.state = 'hit'; m.t = 0;
   const gold = m.type === 'gold';
   G.hitStop = gold ? 0.07 : 0.04;
@@ -364,6 +420,13 @@ function hitMole(h, x, y) {
     size: gold ? 40 : 30, color: gold ? '#ffd54a' : '#ffffff', life: gold ? 1.0 : 0.8,
   });
   if (mu > 1) addText(hx + 40, hy - 25, 'x' + mu.toFixed(1), { size: 18, color: '#ffb3e6', life: 0.7 });
+  // はやい！: 出てきてすぐたたいた
+  if ((m.state === 'hit') && (m.prevState === 'rise' || m.prevT < 0.25)) { G.fastHits++; G.score += 50; addText(hx - 40, hy - 95, 'はやい！ +50', { size: 20, color: '#8ef0ff', life: 0.8 }); FES.tone({ freq: 1800, slide: 2600, dur: 0.08, type: 'sine', vol: 0.1 }); }
+  // ふたご: 0.6 秒以内に 2 匹とも → ダブル
+  if (m.twin) {
+    if (G.lastTwin && G.lastTwin.id === m.twin && G.elapsed - G.lastTwin.t < 0.6) { G.doubles++; G.score += 300; G.lastTwin = null; addText(W / 2, 170, 'ダブル！ +300', { size: 40, color: '#ff9de2', life: 1.0, pop: true }); FES.sfx('perfect'); confetti(W / 2, 170, 12); }
+    else G.lastTwin = { id: m.twin, t: G.elapsed };
+  }
   if (G.combo % 5 === 0) comboPop();
 }
 function comboPop() {
@@ -550,7 +613,7 @@ function resetGame() {
   G.elapsed = 0; G.timeLeft = TIME_LIMIT;
   G.score = 0; G.dispScore = 0;
   G.combo = 0; G.maxCombo = 0;
-  G.hits = 0; G.golds = 0; G.swings = 0; G.goodSwings = 0; G.bad = 0;
+  G.hits = 0; G.golds = 0; G.swings = 0; G.goodSwings = 0; G.bad = 0; G.fastHits = 0; G.doubles = 0; G.kingSpawned = false; G.kingDown = false; G.lastTwin = null; G.twinSeq = 0;
   G.spawnTimer = 0.6; G.bonusCd = 0;
   G.fever = 0; G.feverFlash = 0; FES.fever(false);
   G.shake = 0; G.hitStop = 0; G.flash = 0;
@@ -597,6 +660,8 @@ function showResult() {
       { label: '金もぐら', value: G.golds },
       { label: 'MAX COMBO', value: G.maxCombo },
       { label: '正確率', value: acc + '%' },
+      { label: 'はやい！', value: G.fastHits },
+      { label: 'キング', value: G.kingDown ? '撃破！' : G.kingSpawned ? '逃げられた' : '—' },
     ],
   }, () => { G.hiScore = FES.getHiScore(); startGame(); });
 }
@@ -816,12 +881,19 @@ function drawMole(h) {
   ctx.restore();
 }
 function drawMoleBody(m) {
-  const gold = m.type === 'gold';
+  const gold = m.type === 'gold', speedy = m.type === 'speedy', ghost = m.type === 'ghost', king = m.type === 'king';
   const hit = m.state === 'hit';
   const stun = m.state === 'stun';
+  if (ghost) ctx.globalAlpha = hit ? 1 : ghostAlpha(m);
+  if (king) { ctx.scale(1.3, 1.3); ctx.translate(0, 4); }
+  if (speedy && !hit) { ctx.strokeStyle = 'rgba(120,200,255,.5)'; ctx.lineWidth = 2; for (let i = 0; i < 3; i++) { const yy = -90 + i * 28, dx = 50 + i * 6; ctx.beginPath(); ctx.moveTo(-dx, yy); ctx.lineTo(-dx - 18, yy); ctx.moveTo(dx, yy); ctx.lineTo(dx + 18, yy); ctx.stroke(); } }
+  if (m.twinMark && !hit) { ctx.fillStyle = 'rgba(255,157,226,.9)'; ctx.font = `900 16px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('ふたご', 0, -118); }
   // 体
   const body = ctx.createLinearGradient(-40, -100, 30, 0);
   if (gold) { body.addColorStop(0, '#ffe66e'); body.addColorStop(0.6, '#f5b921'); body.addColorStop(1, '#c47f0a'); }
+  else if (speedy) { body.addColorStop(0, '#9ad8ff'); body.addColorStop(0.6, '#4a9be0'); body.addColorStop(1, '#1f5a9a'); }
+  else if (ghost) { body.addColorStop(0, '#ffffff'); body.addColorStop(0.6, '#d8ccff'); body.addColorStop(1, '#9a86d8'); }
+  else if (king) { body.addColorStop(0, '#b07a58'); body.addColorStop(0.6, '#8a4f2a'); body.addColorStop(1, '#4e2810'); }
   else { body.addColorStop(0, '#9a6a48'); body.addColorStop(0.6, '#7a4f33'); body.addColorStop(1, '#4e3020'); }
   ctx.fillStyle = body;
   ctx.beginPath(); ctx.ellipse(0, -50, 42, 54, 0, 0, TAU); ctx.fill();
@@ -895,6 +967,22 @@ function drawMoleBody(m) {
   if (m.type === 'helmet' && !m.helmetOff) drawHelmet(0, -88, 1);
   // 金のキラキラ輪郭
   if (gold) { ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, -50, 42, 54, 0, 0, TAU); ctx.stroke(); }
+  // はやもぐら: ゴーグル
+  if (speedy) {
+    ctx.fillStyle = '#1b2a44'; ctx.fillRect(-30, -74, 60, 6);
+    ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.strokeStyle = '#1b2a44'; ctx.lineWidth = 3;
+    for (const ex of [-14, 14]) { ctx.beginPath(); ctx.arc(ex, -66, 11, 0, TAU); ctx.fill(); ctx.stroke(); }
+  }
+  // キング: 王冠と赤いマント・体力
+  if (king) {
+    ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.moveTo(-44, -60); ctx.quadraticCurveTo(-60, -10, -46, 6); ctx.lineTo(-30, -20); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(44, -60); ctx.quadraticCurveTo(60, -10, 46, 6); ctx.lineTo(30, -20); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffd54a'; ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-26, -92); ctx.lineTo(-26, -118); ctx.lineTo(-13, -104); ctx.lineTo(0, -124); ctx.lineTo(13, -104); ctx.lineTo(26, -118); ctx.lineTo(26, -92); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff4d6d'; for (const cx of [-13, 0, 13]) { ctx.beginPath(); ctx.arc(cx, -96, 3, 0, TAU); ctx.fill(); }
+    for (let i = 0; i < TYPES.king.hp; i++) { ctx.fillStyle = i < m.hp ? '#ff4d6d' : 'rgba(255,255,255,.3)'; ctx.beginPath(); ctx.arc(-24 + i * 12, -134, 5, 0, TAU); ctx.fill(); }
+  }
+  ctx.globalAlpha = 1;
 }
 function drawHelmet(x, y, s) {
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
@@ -1105,7 +1193,7 @@ function drawTitle() {
   ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2; ctx.stroke();
   const lines = [
     ['#fff', '穴から出てくる もぐらを たたけ！  60秒勝負'],
-    ['#ffd54a', '金もぐら +500   ヘルメットは 2回たたく'],
+    ['#ffd54a', '金 +500 ・ はやもぐら 200 ・ おばけは見えるときだけ ・ 44秒で キング登場（5回たたく）'],
     ['#ff8a8a', 'ばくだん(-300) と 花(-100) は たたくな！'],
     ['#8ef0ff', '★ をたたくと 5秒間 フィーバータイム！'],
     ['#cfd8ff', 'クリック / タップ / キー: QWE ASD ZXC (+RFV)・テンキー'],
