@@ -7,7 +7,7 @@
 <style>
   html, body { margin: 0; height: 100%; background: #07071a; overflow: hidden;
     font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
-  #game { display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  #game { position: absolute; display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 </style>
 <script src="../common.js"></script>
 </head>
@@ -15,34 +15,48 @@
 <canvas id="game"></canvas>
 <script>
 'use strict';
-FES.init({ id: 'duel', title: 'ネオンデュエル', ranking: false });
+/* =====================================================================
+   ネオンデュエル — 1 台で 2 人対戦。P1 = 左（A キー / 画面左半分タップ）、P2 = 右（L キー / 画面右半分タップ）。
+   7 種類のミニ勝負をルーレットで選び、先に 3 勝した方が勝ち（最大 5 ラウンド）。
+   種目: 早押し（フェイントあり）／ 連打 ／ タイミング ／ 色よみ ／ リズム ／ ピッタリ 3 秒 ／ かぞえて
+   画面: 横長なら 960×540、スマホの縦なら 540×960（左右に分かれて遊ぶのは同じ）。
+   ===================================================================== */
+FES.init({ id: 'duel', title: 'ネオンデュエル', ranking: false, portraitOk: true });
 
-/* ================================================================ 基本定数 */
-// 1台の PC で 2 人対戦。P1 = 左（A キー / 画面左半分タップ）、P2 = 右（L キー / 画面右半分タップ）。
-// 4 種類のミニ勝負をランダムに出し、先に 3 勝した方が勝ち（最大 5 ラウンド）。
-const W = 960, H = 540;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const view = FES.fitCanvas(canvas, W, H);
 const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
 const { clamp, lerp, rand, randInt, pick } = FES;
 const TAU = Math.PI * 2;
 const WIN_NEED = 3;
 const P = [
-  { name: 'P1', key: 'A', color: '#ff4d8d', dark: '#5a1230', side: -1 },
-  { name: 'P2', key: 'L', color: '#5ee7ff', dark: '#0f4a5a', side: 1 },
+  { name: 'P1', key: 'A', color: '#ff4d8d', dark: '#5a1230', side: -1, face: '😼' },
+  { name: 'P2', key: 'L', color: '#5ee7ff', dark: '#0f4a5a', side: 1, face: '🐸' },
 ];
 const KEYS = { KeyA: 0, KeyZ: 0, KeyQ: 0, Digit1: 0, KeyL: 1, Slash: 1, Digit0: 1, Period: 1 };
 
-/* ================================================================ ユーティリティ */
+/* ------------------------------------------------------------ 画面（横長 960×540 ／ 縦長 540×960） */
+let W = 960, H = 540, PORTRAIT = false, S = 1, CY = 290, TOP = 24;
+const view = { scale: 1, offsetX: 0, offsetY: 0, toGame(cx, cy) { return { x: (cx - view.offsetX) / view.scale, y: (cy - view.offsetY) / view.scale }; } };
+function fit() {
+  const vw = innerWidth, vh = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  PORTRAIT = vh > vw * 1.05;
+  W = PORTRAIT ? 540 : 960; H = PORTRAIT ? 960 : 540; S = PORTRAIT ? 0.78 : 1;
+  const s = Math.min(vw / W, vh / H);
+  view.scale = s; view.offsetX = (vw - W * s) / 2; view.offsetY = (vh - H * s) / 2;
+  canvas.width = Math.round(W * s * dpr); canvas.height = Math.round(H * s * dpr);
+  canvas.style.width = (W * s) + 'px'; canvas.style.height = (H * s) + 'px'; canvas.style.left = view.offsetX + 'px'; canvas.style.top = view.offsetY + 'px';
+  ctx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
+  TOP = Math.max(PORTRAIT ? 14 : 24, Math.ceil(58 / s));
+  CY = PORTRAIT ? H * 0.5 : H / 2 + 20;
+}
+addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 60));
+const px = p => p === 0 ? W * 0.25 : W * 0.75;   // 各プレイヤーの中心 x
+
+/* ------------------------------------------------------------ ユーティリティ */
 const easeOutBack = t => { const c = 1.70158; const u = t - 1; return 1 + (c + 1) * u * u * u + c * u * u; };
 const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
-function rr(x, y, w, h, r) {
-  r = Math.min(r, w / 2, h / 2);
-  ctx.beginPath(); ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-}
+function rr(x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
 function text(s, x, y, size, color, align, opts) {
   opts = opts || {};
   ctx.font = `${opts.weight || 900} ${size}px ${FONT}`;
@@ -50,126 +64,161 @@ function text(s, x, y, size, color, align, opts) {
   if (opts.stroke !== false) { ctx.lineJoin = 'round'; ctx.lineWidth = opts.lineWidth || Math.max(3, size * 0.14); ctx.strokeStyle = opts.strokeColor || 'rgba(5,5,20,.8)'; ctx.strokeText(s, x, y); }
   ctx.fillStyle = color; ctx.fillText(s, x, y);
 }
-function glowText(s, x, y, size, color, glow, align) {
-  ctx.save(); ctx.shadowColor = glow || color; ctx.shadowBlur = size * .6; text(s, x, y, size, color, align); ctx.restore();
-}
+function glowText(s, x, y, size, color, glow, align) { ctx.save(); ctx.shadowColor = glow || color; ctx.shadowBlur = size * .6; text(s, x, y, size, color, align); ctx.restore(); }
 function seeded(seed) { let s = seed; return () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }; }
 
-/* ================================================================ 勝負の種類 */
+/* ------------------------------------------------------------ 勝負の種類 */
 const COLORS = [
   { name: 'あか', c: '#ff4d4d' }, { name: 'あお', c: '#4d8dff' }, { name: 'きいろ', c: '#ffd93d' },
   { name: 'みどり', c: '#5cff8d' }, { name: 'むらさき', c: '#c86bff' }, { name: 'しろ', c: '#ffffff' },
 ];
 const TYPES = {
-  flash:  { name: '早押し',     icon: '⚡', rule: '「GO!」が出たら押せ！ フライングは負け',       color: '#ffd36e' },
-  mash:   { name: '連打',       icon: '🔥', rule: '5秒間、ひたすら連打！ 多い方の勝ち',           color: '#ff6b3d' },
-  timing: { name: 'タイミング', icon: '🎯', rule: '動くバーを ど真ん中で止めろ！ 近い方の勝ち',     color: '#5cff8d' },
-  stroop: { name: '色よみ',     icon: '🎨', rule: '文字の「色」が お題と同じになったら押せ！ 間違えたら負け', color: '#c86bff' },
+  flash:   { name: '早押し',      icon: '⚡', rule: '「GO!」が出たら押せ！ フライングと フェイントは負け',   color: '#ffd36e' },
+  mash:    { name: '連打',        icon: '🔥', rule: '5 秒間、ひたすら連打！ 多い方の勝ち',                 color: '#ff6b3d' },
+  timing:  { name: 'タイミング',  icon: '🎯', rule: '動くバーを ど真ん中で止めろ！ 近い方の勝ち',           color: '#5cff8d' },
+  stroop:  { name: '色よみ',      icon: '🎨', rule: '文字の「色」が お題と同じになったら押せ！ 間違えたら負け', color: '#c86bff' },
+  rhythm:  { name: 'リズム',      icon: '🥁', rule: '4 回鳴ったあと、8 回目のタイミングで押せ！ 近い方の勝ち', color: '#ff9ee8' },
+  seconds: { name: 'ピッタリ3秒', icon: '⏱', rule: 'GO! から ちょうど 3 秒で押せ！ 時計は見えない',          color: '#5ee7ff' },
+  count:   { name: 'かぞえて',    icon: '⭐', rule: '★ をかぞえろ！ 出た数が合っていたら押せ。違うなら押すな', color: '#ffb347' },
 };
 const TYPE_KEYS = Object.keys(TYPES);
 
-/* ================================================================ ゲーム状態 */
+/* ------------------------------------------------------------ ゲーム状態 */
 const G = {
-  state: 'title',      // title | intro | play | roundend | matchend
-  paused: false,
-  t: 0, bgT: 0,
-  round: 0, wins: [0, 0], type: null, lastType: null,
-  st: 0,               // 状態内の経過秒
-  rt: 0,               // ラウンド結果表示の経過秒
-  shake: 0, flash: 0, flashColor: '#fff',
-  particles: [], texts: [],
-  press: [0, 0],       // ボタン押下の演出用（押した瞬間 1 → 減衰）
-  roundWinner: -1, roundMsg: '', roundSub: '',
-  fastest: [9, 9],     // 早押しの最速反応（秒）
-  mini: null,          // 進行中の勝負のデータ
-  history: [],
-  titleT: 0,
+  state: 'title', paused: false, t: 0,
+  round: 0, wins: [0, 0], type: null, lastTypes: [], st: 0, rt: 0,
+  shake: 0, flash: 0, flashColor: '#fff', particles: [], texts: [],
+  press: [0, 0], ready: [0, 0], roundWinner: -1, roundMsg: '', roundSub: '',
+  fastest: [9, 9], mini: null, history: [], titleT: 0, mood: [0, 0],   // mood: +1 よろこび / -1 がっかり（減衰）
+  roulette: [], beat: 0, beatQueue: [],
 };
 const stars = [];
-{ const R = seeded(777); for (let i = 0; i < 70; i++) stars.push({ x: R() * W, y: R() * H, r: .6 + R() * 1.6, k: R() * TAU, s: .3 + R() * .8 }); }
+{ const R = seeded(777); for (let i = 0; i < 80; i++) stars.push({ x: R(), y: R(), r: .6 + R() * 1.6, k: R() * TAU, s: .3 + R() * .8 }); }
 
-/* ================================================================ 演出 */
+/* ------------------------------------------------------------ 音 */
+const SND = {
+  hit: (p) => { FES.tone({ freq: p === 0 ? 520 : 780, slide: p === 0 ? 260 : 390, dur: 0.1, type: 'square', vol: 0.14 }); FES.noise({ dur: 0.06, freq: 2000, slide: 400, vol: 0.12 }); },
+  tick: () => FES.tone({ freq: 1800, dur: 0.03, type: 'square', vol: 0.05 }),
+  roulette: () => FES.tone({ freq: 900, slide: 1200, dur: 0.04, type: 'square', vol: 0.06 }),
+  lock: () => { [0, 0.08].forEach((d, k) => FES.tone({ freq: [880, 1320][k], dur: 0.15, type: 'triangle', vol: 0.14, delay: d })); FES.noise({ dur: 0.15, freq: 3000, slide: 8000, vol: 0.06, filter: 'highpass' }); },
+  drum: (i) => { FES.tone({ freq: 180, slide: 50, dur: 0.14, type: 'sine', vol: 0.3 }); FES.noise({ dur: 0.08, freq: 1800, vol: 0.12, filter: 'highpass' }); if (i === 3) FES.tone({ freq: 1200, dur: 0.1, type: 'triangle', vol: 0.12 }); },
+  go: () => { FES.tone({ freq: 660, slide: 1320, dur: 0.2, type: 'square', vol: 0.16 }); FES.noise({ dur: 0.25, freq: 2000, slide: 6000, vol: 0.12, filter: 'highpass' }); },
+  fake: () => FES.tone({ freq: 330, slide: 200, dur: 0.18, type: 'sawtooth', vol: 0.1 }),
+  foul: () => { FES.tone({ freq: 220, slide: 110, dur: 0.35, type: 'sawtooth', vol: 0.16 }); FES.tone({ freq: 165, slide: 80, dur: 0.4, type: 'square', vol: 0.08, delay: 0.05 }); },
+  win: (p) => { const b = p === 0 ? 523 : 659; [0, 0.1, 0.2, 0.32].forEach((d, k) => FES.tone({ freq: b * [1, 1.25, 1.5, 2][k], dur: k === 3 ? 0.45 : 0.18, type: 'triangle', vol: 0.16, delay: d })); },
+  draw: () => { FES.tone({ freq: 440, dur: 0.2, type: 'triangle', vol: 0.12 }); FES.tone({ freq: 440, dur: 0.3, type: 'triangle', vol: 0.12, delay: 0.25 }); },
+  star: () => FES.tone({ freq: 1400 + Math.random() * 600, dur: 0.08, type: 'sine', vol: 0.08 }),
+  heart: () => FES.tone({ freq: 500, slide: 400, dur: 0.08, type: 'triangle', vol: 0.07 }),
+  champion: () => { [0, 0.12, 0.24, 0.36, 0.6, 0.72].forEach((d, k) => FES.tone({ freq: [523, 659, 784, 1047, 784, 1047][k], dur: k >= 4 ? 0.5 : 0.2, type: 'triangle', vol: 0.16, delay: d })); FES.noise({ dur: 0.6, freq: 500, slide: 6000, vol: 0.15, filter: 'bandpass', delay: 0.6 }); },
+};
+/* BGM: 対戦中だけ、緊張感のある低いビート（小さめ） */
+const BGM = { on: false, next: 0, step: 0 };
+const NOTE = m => 440 * Math.pow(2, (m - 69) / 12);
+function bgmUpdate() {
+  if (!BGM.on) return;
+  const ac = FES.audioContext(); if (!ac) return;
+  const tense = G.wins[0] === WIN_NEED - 1 || G.wins[1] === WIN_NEED - 1;   // マッチポイントは速く
+  const st = 60 / (tense ? 150 : 132) / 4;
+  if (BGM.next < ac.currentTime - 0.3) BGM.next = ac.currentTime;
+  let guard = 0;
+  while (BGM.next < ac.currentTime + 0.22 && guard++ < 8) {
+    const d = Math.max(0, BGM.next - ac.currentTime), s = BGM.step, bar = (s >> 4) & 3, q = s & 15;
+    const root = [40, 40, 43, 38][bar];
+    if (q % 4 === 0) FES.tone({ freq: 140, slide: 40, dur: 0.12, delay: d, type: 'sine', vol: 0.18 });
+    if (q % 2 === 1) FES.noise({ dur: 0.025, freq: 7000, vol: 0.02, delay: d, filter: 'highpass' });
+    if (q === 4 || q === 12) FES.noise({ dur: 0.09, freq: 1500, vol: 0.06, delay: d, filter: 'highpass' });
+    if (q % 4 === 0 || q === 7 || q === 10 || (tense && q === 14)) FES.tone({ freq: NOTE(root), dur: st * 1.4, delay: d, type: 'sawtooth', vol: 0.05 });
+    if (tense && q % 8 === 0) FES.tone({ freq: NOTE(root + 24 + (bar % 2 ? 3 : 0)), dur: st * 3, delay: d, type: 'square', vol: 0.02 });
+    if (q % 4 === 0) G.beatQueue.push(ac.currentTime + d);
+    BGM.step = (s + 1) % 64; BGM.next += st;
+  }
+}
+function bgmStart() { const ac = FES.audioContext(); BGM.on = true; BGM.step = 0; BGM.next = ac ? ac.currentTime + 0.05 : 0; }
+function bgmStop() { BGM.on = false; }
+
+/* ------------------------------------------------------------ 演出 */
 function burst(x, y, color, n, speed) {
   for (let i = 0; i < (n || 30); i++) {
     const a = rand(0, TAU), v = rand(60, speed || 420);
     G.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, life: rand(.5, 1.1), t: 0, c: color, r: rand(3, 8), g: 500 });
   }
 }
-function popText(s, x, y, color, size) { G.texts.push({ s, x, y, c: color, size: size || 44, t: 0, life: 1.1 }); }
+function popText(s, x, y, color, size) { G.texts.push({ s, x, y, c: color, size: (size || 44) * S, t: 0, life: 1.1 }); }
 function hitFlash(color, a) { G.flash = a == null ? .5 : a; G.flashColor = color; }
 
-/* ================================================================ 入力 */
+/* ------------------------------------------------------------ 入力 */
 function pressed(p) {
   if (G.paused) return;
   G.press[p] = 1;
-  if (G.state === 'title') { startMatch(); return; }
+  if (G.state === 'title') {
+    G.ready[p] = 1; SND.hit(p); burst(px(p), PORTRAIT ? H * 0.72 : 420, P[p].color, 14, 260);
+    if (G.ready[0] && G.ready[1]) startMatch();
+    return;
+  }
   if (G.state === 'play' && G.mini) G.mini.onPress(p);
 }
 document.addEventListener('keydown', e => {
   if (e.repeat) return;
   if (e.code === 'Escape' || e.code === 'KeyP') { e.preventDefault(); if (G.state !== 'title') togglePause(); return; }
   if (e.code in KEYS) { e.preventDefault(); pressed(KEYS[e.code]); return; }
-  if ((e.code === 'Space' || e.code === 'Enter') && (G.state === 'title' || G.state === 'matchend')) { e.preventDefault(); if (G.state === 'title') startMatch(); }
+  if ((e.code === 'Space' || e.code === 'Enter') && G.state === 'title') { e.preventDefault(); startMatch(); }
 });
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   const g = view.toGame(e.clientX, e.clientY);
   if (G.paused) return;
-  // 上端中央のポーズボタン
-  if (G.state !== 'title' && Math.abs(g.x - W / 2) < 30 && g.y < 44) { togglePause(); return; }
+  if (G.state !== 'title' && Math.abs(g.x - (W / 2 + 64)) < 24 && g.y < TOP + 30) { togglePause(); return; }   // 上端中央右のポーズ
   pressed(g.x < W / 2 ? 0 : 1);
 });
 function togglePause() {
   G.paused = !G.paused;
   if (G.mini && G.mini.onPause) G.mini.onPause(G.paused);
-  if (G.paused) FES.pause(true, { hint: 'Esc か P でも再開できます（再開後すぐ勝負が続きます）', onResume: () => { if (G.paused) togglePause(); }, onRetry: () => { FES.pause(false); G.paused = false; startMatch(); } });
-  else { FES.pause(false); last = performance.now(); }
+  if (G.paused) { bgmStop(); FES.pause(true, { hint: 'Esc か P でも再開できます（再開後すぐ勝負が続きます）', onResume: () => { if (G.paused) togglePause(); }, onRetry: () => { FES.pause(false); G.paused = false; startMatch(); } }); }
+  else { FES.pause(false); last = performance.now(); if (G.state === 'play' || G.state === 'intro') bgmStart(); }
   FES.sfx(G.paused ? 'select' : 'go');
 }
 
-/* ================================================================ 進行 */
+/* ------------------------------------------------------------ 進行 */
 function startMatch() {
-  FES.howto(['🅰 左の人：A キー / 画面の左をタップ', '🅻 右の人：L キー / 画面の右をタップ', '🏆 先に 3 勝したほうの勝ち']);
-  FES.hideResult(); FES.pause(false); G.paused = false;
+  FES.howto(['🅰 左の人：A キー / 画面の左をタップ', '🅻 右の人：L キー / 画面の右をタップ', '🏆 先に 3 勝したほうの勝ち'], 3500);
+  FES.hideResult(); FES.pause(false); G.paused = false; G.ready = [0, 0];
   FES.sfx('start');
-  G.round = 0; G.wins = [0, 0]; G.lastType = null; G.history = []; G.fastest = [9, 9];
+  G.round = 0; G.wins = [0, 0]; G.lastTypes = []; G.history = []; G.fastest = [9, 9]; G.mood = [0, 0];
+  bgmStart();
   nextRound();
 }
 function nextRound() {
   G.round++;
-  let k; do { k = pick(TYPE_KEYS); } while (k === G.lastType && TYPE_KEYS.length > 1);
-  G.lastType = k; G.type = k;
+  // 最近 2 回と違う種目をルーレットで選ぶ
+  const cand = TYPE_KEYS.filter(k => !G.lastTypes.includes(k));
+  const k = pick(cand);
+  G.lastTypes.push(k); if (G.lastTypes.length > 2) G.lastTypes.shift();
+  G.type = k;
   G.state = 'intro'; G.st = 0; G.mini = null;
-  FES.sfx('countdown');
+  // ルーレット: 1.1 秒間アイコンが回って止まる
+  G.roulette = { items: TYPE_KEYS.slice().sort(() => Math.random() - 0.5), spin: 1.1, idx: 0, lastIdx: -1, locked: false };
+  const fi = G.roulette.items.indexOf(k); G.roulette.items.splice(fi, 1); G.roulette.items.push(k);   // 最後に止まるのが選ばれた種目
 }
-function beginPlay() {
-  G.state = 'play'; G.st = 0;
-  G.mini = MAKE[G.type]();
-  FES.sfx('go');
-}
+function beginPlay() { G.state = 'play'; G.st = 0; G.mini = MAKE[G.type](); }
 function endRound(winner, msg, sub) {
   if (G.state !== 'play') return;
-  G.state = 'roundend'; G.rt = 0; G.roundWinner = winner; G.roundMsg = msg || ''; G.roundSub = sub || '';   // G.st は勝負画面の表示用にそのまま進める
+  G.state = 'roundend'; G.rt = 0; G.roundWinner = winner; G.roundMsg = msg || ''; G.roundSub = sub || '';
   G.history.push({ type: G.type, winner });
   if (winner >= 0) {
-    G.wins[winner]++;
-    const px = winner === 0 ? W * .25 : W * .75;
-    burst(px, H * .5, P[winner].color, 70, 520); hitFlash(P[winner].color, .45); G.shake = 14;
-    FES.sfx('perfect');
-  } else { FES.sfx('miss'); G.shake = 6; }
+    G.wins[winner]++; G.mood[winner] = 1; G.mood[1 - winner] = -1;
+    burst(px(winner), CY, P[winner].color, 70, 520); hitFlash(P[winner].color, .45); G.shake = 14;
+    SND.win(winner);
+  } else { SND.draw(); G.shake = 6; }
 }
 function afterRound() {
   if (G.wins[0] >= WIN_NEED || G.wins[1] >= WIN_NEED || G.round >= WIN_NEED * 2 - 1) finishMatch();
   else nextRound();
 }
 function finishMatch() {
-  G.state = 'matchend'; G.st = 0;
+  G.state = 'matchend'; G.st = 0; bgmStop();
   const w = G.wins[0] === G.wins[1] ? -1 : (G.wins[0] > G.wins[1] ? 0 : 1);
-  if (w >= 0) { burst(w === 0 ? W * .25 : W * .75, H * .4, P[w].color, 140, 650); burst(W / 2, H * .3, '#ffd36e', 80, 500); }
-  const stats = [
-    { label: 'P1 勝利数', value: G.wins[0] }, { label: 'P2 勝利数', value: G.wins[1] },
-    { label: 'ラウンド数', value: G.round },
-  ];
+  if (w >= 0) { burst(px(w), H * .4, P[w].color, 140, 650); burst(W / 2, H * .3, '#ffd36e', 80, 500); SND.champion(); FES.confetti(2500); G.mood[w] = 2; G.mood[1 - w] = -1; }
+  const stats = [{ label: 'P1 勝利数', value: G.wins[0] }, { label: 'P2 勝利数', value: G.wins[1] }, { label: 'ラウンド数', value: G.round }];
   const f = Math.min(G.fastest[0], G.fastest[1]);
   if (f < 9) stats.push({ label: '最速反応', value: Math.round(f * 1000) + 'ms' });
   const sub = G.history.map(h => TYPES[h.type].icon + (h.winner < 0 ? '－' : P[h.winner].name)).join('  ');
@@ -177,59 +226,75 @@ function finishMatch() {
     if (G.state !== 'matchend') return;
     const diff = w < 0 ? 0 : G.wins[w] - G.wins[1 - w];
     FES.showResult({ title: w < 0 ? 'ひきわけ！' : `${P[w].name} の勝ち！`, score: Math.max(G.wins[0], G.wins[1]), scoreLabel: '勝', subtitle: sub, stats, ranking: false, retryLabel: 'もう一回',
-      grade: w < 0 ? null : diff >= 3 ? 'S' : diff === 2 ? 'A' : 'B', titles: { S: 'ストレート勝ち！完全勝利', A: '圧勝！', B: '接戦を制した！' } }, () => { G.state = 'title'; G.titleT = 0; });
-  }, 1700);
+      grade: w < 0 ? null : diff >= 3 ? 'S' : diff === 2 ? 'A' : 'B', titles: { S: 'ストレート勝ち！完全勝利', A: '圧勝！', B: '接戦を制した！' } }, () => { G.state = 'title'; G.titleT = 0; G.ready = [0, 0]; });
+  }, 2200);
 }
 
-/* ================================================================ 各勝負 */
+/* ------------------------------------------------------------ 各勝負 */
+function foul(p, label) { popText(label, px(p), CY, '#ff4d4d', 40); SND.foul(); endRound(1 - p, `${P[1 - p].name} の勝ち！`, `${P[p].name} が${label}`); }
+function closest(err, fmt, draw) {   // 誤差が小さい方の勝ち（null は押さず）
+  const d0 = err[0] == null ? 99 : err[0], d1 = err[1] == null ? 99 : err[1];
+  if (Math.abs(d0 - d1) < 0.001) endRound(-1, 'ひきわけ！', `${fmt(err[0])} vs ${fmt(err[1])}`);
+  else { const w = d0 < d1 ? 0 : 1; endRound(w, `${P[w].name} の勝ち！`, `${fmt(err[0])} vs ${fmt(err[1])}`); }
+}
+function timerBar(left, total) {
+  const bw = Math.min(420, W - 120), y = TOP + 56;
+  rr(W / 2 - bw / 2, y, bw, 14 * S + 4, 9); ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fill();
+  rr(W / 2 - bw / 2, y, bw * clamp(left / total, 0, 1), 14 * S + 4, 9); ctx.fillStyle = left < 1.5 ? '#ff4d4d' : '#ffd36e'; ctx.fill();
+  text(left.toFixed(1), W / 2, y + 34, 24 * S, '#fff');
+}
 const MAKE = {
-  // ---- 早押し: 「GO!」が出た瞬間に押す。フライングは負け。
+  // ---- 早押し: 「GO!」が出た瞬間に押す。フライングは負け。ときどきフェイント（赤い「まだ！」）が出る。
   flash() {
-    const m = { wait: rand(1.4, 4.2), go: false, goT: 0, done: false };
+    const m = { wait: rand(1.4, 4.0), go: false, goT: 0, done: false, fake: Math.random() < 0.4, fakeAt: 0, fakeT: -1 };
+    if (m.fake) m.fakeAt = rand(0.9, m.wait - 0.8);
     m.onPress = p => {
       if (m.done) return;
-      if (!m.go) { m.done = true; popText('フライング！', p === 0 ? W * .25 : W * .75, H * .5, '#ff4d4d', 40); endRound(1 - p, `${P[1 - p].name} の勝ち！`, `${P[p].name} がフライング…`); return; }
+      if (!m.go) { m.done = true; foul(p, m.fakeT >= 0 && G.st - m.fakeT < 0.7 ? 'フェイントに引っかかった…' : 'フライング…'); return; }
       m.done = true; const rt = G.st - m.goT; G.fastest[p] = Math.min(G.fastest[p], rt);
-      endRound(p, `${P[p].name} の勝ち！`, `反応 ${Math.round(rt * 1000)} ms`);
+      SND.hit(p); endRound(p, `${P[p].name} の勝ち！`, `反応 ${Math.round(rt * 1000)} ms`);
     };
-    m.update = dt => {
+    m.update = () => {
       if (m.done) return;
-      if (!m.go && G.st >= m.wait) { m.go = true; m.goT = G.st; hitFlash('#ffd36e', .35); FES.sfx('go'); G.shake = 5; }
+      if (m.fake && m.fakeT < 0 && G.st >= m.fakeAt) { m.fakeT = G.st; SND.fake(); G.shake = 3; }
+      if (!m.go && G.st >= m.wait) { m.go = true; m.goT = G.st; hitFlash('#ffd36e', .35); SND.go(); G.shake = 5; }
       if (m.go && G.st - m.goT > 2.5) { m.done = true; endRound(-1, 'どっちも押さず…', 'ひきわけ'); }
     };
     m.draw = () => {
-      const cx = W / 2, cy = H / 2 + 20;
+      const cx = W / 2, cy = CY, R = 120 * S;
       if (!m.go) {
-        const pulse = 1 + Math.sin(G.t * 6) * .04;
+        const fakeK = m.fakeT >= 0 ? clamp(1 - (G.st - m.fakeT) / 0.7, 0, 1) : 0;
+        const pulse = 1 + Math.sin(G.t * 6) * .04 + fakeK * 0.25;
         ctx.save(); ctx.translate(cx, cy); ctx.scale(pulse, pulse);
-        ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.beginPath(); ctx.arc(0, 0, 120, 0, TAU); ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 4; ctx.setLineDash([12, 10]); ctx.lineDashOffset = -G.t * 40; ctx.stroke(); ctx.setLineDash([]);
-        text('まて…', 0, 0, 54, '#9aa0b8'); ctx.restore();
-        text('まだ押すな！', cx, cy + 150, 24, 'rgba(255,255,255,.55)');
+        ctx.fillStyle = fakeK > 0 ? `rgba(255,60,60,${0.15 + fakeK * 0.5})` : 'rgba(255,255,255,.06)'; ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.fill();
+        ctx.strokeStyle = fakeK > 0 ? '#ff4d4d' : 'rgba(255,255,255,.25)'; ctx.lineWidth = 4; ctx.setLineDash([12, 10]); ctx.lineDashOffset = -G.t * 40; ctx.stroke(); ctx.setLineDash([]);
+        text(fakeK > 0 ? 'まだ！' : 'まて…', 0, 0, 54 * S, fakeK > 0 ? '#ff6b6b' : '#9aa0b8'); ctx.restore();
+        text('まだ押すな！ 赤い「まだ！」はフェイント', cx, cy + R + 36 * S, 20 * S, 'rgba(255,255,255,.55)');
       } else {
         const k = clamp((G.st - m.goT) * 6, 0, 1), s = easeOutBack(k);
         ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
-        ctx.fillStyle = '#ffd36e'; ctx.shadowColor = '#ffd36e'; ctx.shadowBlur = 60; ctx.beginPath(); ctx.arc(0, 0, 130, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
-        text('GO!', 0, 4, 96, '#2a1a00', 'center', { stroke: false }); ctx.restore();
+        ctx.fillStyle = '#ffd36e'; ctx.shadowColor = '#ffd36e'; ctx.shadowBlur = 60; ctx.beginPath(); ctx.arc(0, 0, R + 10, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+        text('GO!', 0, 4, 96 * S, '#2a1a00', 'center', { stroke: false }); ctx.restore();
       }
     };
     return m;
   },
   // ---- 連打: 5 秒間の連打数で勝負。
   mash() {
-    const m = { n: [0, 0], dur: 5, done: false, started: false, countT: 0 };
+    const m = { n: [0, 0], dur: 5, done: false, started: false, countT: 0, heat: [0, 0] };
     m.onPress = p => {
       if (m.done || !m.started) return;
-      m.n[p]++; G.particles.push({ x: p === 0 ? W * .25 + rand(-60, 60) : W * .75 + rand(-60, 60), y: H * .62, vx: rand(-80, 80), vy: rand(-320, -180), life: .6, t: 0, c: P[p].color, r: rand(3, 6), g: 700 });
-      if (m.n[p] % 10 === 0) { popText(`${m.n[p]}!`, p === 0 ? W * .25 : W * .75, H * .3, P[p].color, 36); FES.sfx('combo'); }
-      else FES.sfx('tick');
+      m.n[p]++; m.heat[p] = Math.min(1, m.heat[p] + 0.12);
+      G.particles.push({ x: px(p) + rand(-60, 60) * S, y: CY + 60 * S, vx: rand(-80, 80), vy: rand(-320, -180), life: .6, t: 0, c: P[p].color, r: rand(3, 6), g: 700 });
+      if (m.n[p] % 10 === 0) { popText(`${m.n[p]}!`, px(p), CY - 120 * S, P[p].color, 36); FES.sfx('combo'); } else SND.tick();
     };
     m.update = dt => {
       if (m.done) return;
-      if (!m.started) { // 3・2・1
+      for (let p = 0; p < 2; p++) m.heat[p] = Math.max(0, m.heat[p] - dt * 0.8);
+      if (!m.started) {
         const c = Math.ceil(2.4 - G.st);
         if (c !== m.countT) { m.countT = c; if (c > 0) FES.sfx('countdown'); }
-        if (G.st >= 2.4) { m.started = true; m.t0 = G.st; FES.sfx('go'); hitFlash('#ff6b3d', .3); }
+        if (G.st >= 2.4) { m.started = true; m.t0 = G.st; SND.go(); hitFlash('#ff6b3d', .3); }
         return;
       }
       if (G.st - m.t0 >= m.dur) {
@@ -239,225 +304,372 @@ const MAKE = {
       }
     };
     m.draw = () => {
-      const cy = H / 2 + 20;
+      const cy = CY;
       if (!m.started) {
         const c = Math.ceil(2.4 - G.st), k = (2.4 - G.st) % 1, s = 1 + (1 - k) * .3;
-        ctx.save(); ctx.translate(W / 2, cy); ctx.scale(s, s); text(c > 0 ? String(c) : 'GO!', 0, 0, 110, '#ff6b3d'); ctx.restore();
-        text('3・2・1 で 連打スタート！', W / 2, cy + 120, 24, 'rgba(255,255,255,.6)');
+        ctx.save(); ctx.translate(W / 2, cy); ctx.scale(s, s); text(c > 0 ? String(c) : 'GO!', 0, 0, 110 * S, '#ff6b3d'); ctx.restore();
+        text('3・2・1 で 連打スタート！', W / 2, cy + 120 * S, 24 * S, 'rgba(255,255,255,.6)');
         return;
       }
       const left = Math.max(0, m.dur - (G.st - m.t0));
-      // 残り時間
-      const bw = 420; rr(W / 2 - bw / 2, 70, bw, 18, 9); ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fill();
-      rr(W / 2 - bw / 2, 70, bw * left / m.dur, 18, 9); ctx.fillStyle = left < 1.5 ? '#ff4d4d' : '#ffd36e'; ctx.fill();
-      text(left.toFixed(1), W / 2, 110, 28, '#fff');
+      timerBar(left, m.dur);
       // 綱引きバー
       const total = m.n[0] + m.n[1] || 1, ratio = m.n[0] / total;
-      const x0 = 120, x1 = W - 120, y = cy + 60, h = 46;
-      rr(x0, y - h / 2, x1 - x0, h, 23); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
+      const x0 = PORTRAIT ? 40 : 120, x1 = W - x0, y = cy + 70 * S, h = 46 * S;
+      rr(x0, y - h / 2, x1 - x0, h, h / 2); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
       const mid = lerp(x0 + 30, x1 - 30, 1 - ratio);
-      ctx.save(); rr(x0, y - h / 2, x1 - x0, h, 23); ctx.clip();
+      ctx.save(); rr(x0, y - h / 2, x1 - x0, h, h / 2); ctx.clip();
       ctx.fillStyle = P[0].color; ctx.fillRect(x0, y - h / 2, mid - x0, h);
       ctx.fillStyle = P[1].color; ctx.fillRect(mid, y - h / 2, x1 - mid, h); ctx.restore();
-      ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(mid, y, 30, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
-      text('🔥', mid, y + 2, 30, '#fff', 'center', { stroke: false });
+      ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(mid, y, 30 * S, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+      text('🔥', mid, y + 2, 30 * S, '#fff', 'center', { stroke: false });
       [0, 1].forEach(p => {
-        const x = p === 0 ? W * .25 : W * .75, s = 1 + G.press[p] * .25;
-        ctx.save(); ctx.translate(x, cy - 40); ctx.scale(s, s); glowText(String(m.n[p]), 0, 0, 96, P[p].color); ctx.restore();
-        text('回', x + 70, cy - 20, 24, 'rgba(255,255,255,.6)');
+        const x = px(p), s = 1 + G.press[p] * .25;
+        // 熱の炎
+        if (m.heat[p] > 0.05) { ctx.save(); ctx.globalAlpha = m.heat[p] * 0.8; for (let i = 0; i < 5; i++) { const fx0 = x + Math.sin(G.t * 9 + i * 1.3) * 30 * S, fy = cy - 110 * S - i * 14 * S - m.heat[p] * 30 * S; ctx.fillStyle = i % 2 ? '#ffd36e' : P[p].color; ctx.beginPath(); ctx.arc(fx0, fy, (14 - i * 2) * S * m.heat[p], 0, TAU); ctx.fill(); } ctx.restore(); }
+        ctx.save(); ctx.translate(x, cy - 40 * S); ctx.scale(s, s); glowText(String(m.n[p]), 0, 0, 96 * S, P[p].color); ctx.restore();
+        text('回', x + 70 * S, cy - 20 * S, 24 * S, 'rgba(255,255,255,.6)');
       });
     };
     return m;
   },
   // ---- タイミング: 往復するカーソルを中央で止める。中央に近い方の勝ち。
   timing() {
-    const m = { pos: [0, 0], dir: [1, -1], stop: [null, null], speed: [1.35, 1.35], done: false, limit: 6 };
-    m.pos = [0, 1]; m.dir = [1, -1];
+    const m = { pos: [0, 1], dir: [1, -1], stop: [null, null], speed: 1.35, done: false, limit: 6 };
     m.onPress = p => {
       if (m.done || m.stop[p] != null) return;
       m.stop[p] = m.pos[p];
-      const d = Math.abs(m.stop[p] - .5) * 2;  // 0 = ど真ん中, 1 = 端
-      const px = p === 0 ? W * .25 : W * .75;
-      if (d < .04) { popText('PERFECT!', px, H * .3, '#ffd36e', 40); FES.sfx('perfect'); burst(px, H / 2 + 20, '#ffd36e', 30, 300); }
-      else if (d < .15) { popText('GREAT', px, H * .3, '#5cff8d', 34); FES.sfx('hit'); }
-      else if (d < .4) { popText('OK', px, H * .3, '#9aa0b8', 30); FES.sfx('bounce'); }
-      else { popText('ズレた…', px, H * .3, '#ff6b6b', 30); FES.sfx('miss'); }
+      const d = Math.abs(m.stop[p] - .5) * 2;
+      if (d < .04) { popText('PERFECT!', px(p), CY - 110 * S, '#ffd36e', 40); FES.sfx('perfect'); burst(px(p), CY + 30 * S, '#ffd36e', 30, 300); }
+      else if (d < .15) { popText('GREAT', px(p), CY - 110 * S, '#5cff8d', 34); SND.hit(p); }
+      else if (d < .4) { popText('OK', px(p), CY - 110 * S, '#9aa0b8', 30); FES.sfx('bounce'); }
+      else { popText('ズレた…', px(p), CY - 110 * S, '#ff6b6b', 30); FES.sfx('miss'); }
       if (m.stop[0] != null && m.stop[1] != null) m.finish();
     };
     m.finish = () => {
       m.done = true;
-      const d0 = m.stop[0] == null ? 2 : Math.abs(m.stop[0] - .5), d1 = m.stop[1] == null ? 2 : Math.abs(m.stop[1] - .5);
-      const pct = d => d >= 2 ? '押さず' : Math.round((1 - d * 2) * 100) + '%';
-      if (Math.abs(d0 - d1) < .004) endRound(-1, 'ひきわけ！', `${pct(d0)} vs ${pct(d1)}`);
-      else { const w = d0 < d1 ? 0 : 1; endRound(w, `${P[w].name} の勝ち！`, `${pct(d0)} vs ${pct(d1)}`); }
+      const err = [0, 1].map(p => m.stop[p] == null ? null : Math.abs(m.stop[p] - .5));
+      closest(err, d => d == null ? '押さず' : Math.round((1 - d * 2) * 100) + '%');
     };
     m.update = dt => {
       if (m.done) return;
       for (let p = 0; p < 2; p++) {
         if (m.stop[p] != null) continue;
-        m.pos[p] += m.dir[p] * m.speed[p] * dt * (1 + G.st * .08);
+        m.pos[p] += m.dir[p] * m.speed * dt * (1 + G.st * .08);
         if (m.pos[p] > 1) { m.pos[p] = 1; m.dir[p] = -1; } else if (m.pos[p] < 0) { m.pos[p] = 0; m.dir[p] = 1; }
       }
       if (G.st > m.limit) m.finish();
     };
     m.draw = () => {
-      const bw = 300, bh = 34;
+      const bw = PORTRAIT ? 220 : 300, bh = 34 * S;
       [0, 1].forEach(p => {
-        const cx = p === 0 ? W * .25 : W * .75, y = H / 2 + 30, x0 = cx - bw / 2;
-        rr(x0, y - bh / 2, bw, bh, 17); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fill();
-        // 的
-        const zones = [[.4, 'rgba(255,255,255,.08)'], [.15, 'rgba(92,255,141,.35)'], [.04, '#ffd36e']];
-        zones.forEach(([z, c]) => { ctx.fillStyle = c; rr(cx - bw * z / 2, y - bh / 2, bw * z, bh, 6); ctx.fill(); });
-        // カーソル
-        const px = x0 + bw * (m.stop[p] != null ? m.stop[p] : m.pos[p]);
+        const cx = px(p), y = CY + 30 * S, x0 = cx - bw / 2;
+        rr(x0, y - bh / 2, bw, bh, bh / 2); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fill();
+        [[.4, 'rgba(255,255,255,.08)'], [.15, 'rgba(92,255,141,.35)'], [.04, '#ffd36e']].forEach(([z, c]) => { ctx.fillStyle = c; rr(cx - bw * z / 2, y - bh / 2, bw * z, bh, 6); ctx.fill(); });
+        const cpx = x0 + bw * (m.stop[p] != null ? m.stop[p] : m.pos[p]);
         ctx.fillStyle = P[p].color; ctx.shadowColor = P[p].color; ctx.shadowBlur = 18;
-        rr(px - 6, y - bh / 2 - 14, 12, bh + 28, 6); ctx.fill(); ctx.shadowBlur = 0;
-        text(m.stop[p] != null ? 'STOP' : P[p].key + ' で止める', cx, y + 56, 20, m.stop[p] != null ? P[p].color : 'rgba(255,255,255,.6)');
+        rr(cpx - 6, y - bh / 2 - 14, 12, bh + 28, 6); ctx.fill(); ctx.shadowBlur = 0;
+        text(m.stop[p] != null ? 'STOP' : P[p].key + ' で止める', cx, y + 56 * S, 20 * S, m.stop[p] != null ? P[p].color : 'rgba(255,255,255,.6)');
       });
-      text('ど真ん中（金色）で止めろ！', W / 2, H / 2 - 70, 26, '#fff');
-      const left = Math.max(0, m.limit - G.st); text(left.toFixed(1), W / 2, 110, 28, left < 2 ? '#ff4d4d' : 'rgba(255,255,255,.7)');
+      text('ど真ん中（金色）で止めろ！', W / 2, CY - 70 * S, 26 * S, '#fff');
+      timerBar(Math.max(0, m.limit - G.st), m.limit);
     };
     return m;
   },
-  // ---- 色よみ: 文字の「色」がお題と同じになったら押す。文字の「意味」にだまされるな。
+  // ---- 色よみ: 文字の「色」がお題と同じになったら押す。
   stroop() {
-    const m = { target: pick(COLORS), cur: null, interval: .95, next: 0, done: false, shown: 0, matchShownAt: -1, limit: 14, idx: 0 };
+    const m = { target: pick(COLORS), cur: null, interval: .95, next: 0, done: false, shown: 0, matchShownAt: -1, limit: 14 };
     const roll = () => {
       m.shown++;
-      // 4 回に 1 回くらい正解を出す（最初の 2 回は出さない）
       const makeMatch = m.shown > 2 && Math.random() < .3;
       const colorObj = makeMatch ? m.target : pick(COLORS.filter(c => c !== m.target));
-      const word = Math.random() < .7 ? pick(COLORS.filter(c => c !== colorObj)) : colorObj;  // 意味は色とズラす
+      const word = Math.random() < .7 ? pick(COLORS.filter(c => c !== colorObj)) : colorObj;
       m.cur = { word: word.name, color: colorObj.c, match: makeMatch };
-      m.matchShownAt = makeMatch ? G.st : -1; m.idx++;
-      FES.sfx('tick');
+      m.matchShownAt = makeMatch ? G.st : -1;
+      SND.tick();
     };
     m.onPress = p => {
       if (m.done) return;
       m.done = true;
-      if (m.cur && m.cur.match) { const rt = G.st - m.matchShownAt; G.fastest[p] = Math.min(G.fastest[p], rt); endRound(p, `${P[p].name} の勝ち！`, `反応 ${Math.round(rt * 1000)} ms`); }
-      else { popText('ちがう！', p === 0 ? W * .25 : W * .75, H * .5, '#ff4d4d', 40); endRound(1 - p, `${P[1 - p].name} の勝ち！`, `${P[p].name} がお手つき…`); }
+      if (m.cur && m.cur.match) { const rt = G.st - m.matchShownAt; G.fastest[p] = Math.min(G.fastest[p], rt); SND.hit(p); endRound(p, `${P[p].name} の勝ち！`, `反応 ${Math.round(rt * 1000)} ms`); }
+      else foul(p, 'お手つき…');
     };
-    m.update = dt => {
+    m.update = () => {
       if (m.done) return;
       if (G.st >= m.next) { roll(); m.next = G.st + m.interval; }
       if (G.st > m.limit) { m.done = true; endRound(-1, 'どっちも押さず…', 'ひきわけ'); }
     };
     m.draw = () => {
-      const cx = W / 2, cy = H / 2 + 30;
-      // お題
-      rr(cx - 230, 62, 460, 56, 28); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fill();
-      text('お題の色:', cx - 90, 90, 22, 'rgba(255,255,255,.7)');
-      ctx.fillStyle = m.target.c; ctx.shadowColor = m.target.c; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx + 10, 90, 16, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
-      text(m.target.name, cx + 95, 90, 28, '#fff');
+      const cx = W / 2, cy = CY + 30 * S, y0 = TOP + 60;
+      rr(cx - 200 * S, y0, 400 * S, 56 * S, 28 * S); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fill();
+      text('お題の色:', cx - 80 * S, y0 + 28 * S, 22 * S, 'rgba(255,255,255,.7)');
+      ctx.fillStyle = m.target.c; ctx.shadowColor = m.target.c; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx + 10 * S, y0 + 28 * S, 16 * S, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+      text(m.target.name, cx + 90 * S, y0 + 28 * S, 28 * S, '#fff');
       if (m.cur) {
         const k = clamp((G.st - (m.next - m.interval)) * 8, 0, 1), s = easeOutBack(k);
         ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
-        rr(-170, -70, 340, 140, 28); ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fill();
-        glowText(m.cur.word, 0, 0, 84, m.cur.color); ctx.restore();
+        rr(-170 * S, -70 * S, 340 * S, 140 * S, 28); ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fill();
+        glowText(m.cur.word, 0, 0, 84 * S, m.cur.color); ctx.restore();
       }
-      text('文字の 色 を見ろ！（意味じゃない）', cx, cy + 120, 22, 'rgba(255,255,255,.6)');
+      text('文字の 色 を見ろ！（意味じゃない）', cx, cy + 120 * S, 22 * S, 'rgba(255,255,255,.6)');
+    };
+    return m;
+  },
+  // ---- リズム: 4 回鳴ったあと、8 回目のタイミング（鳴らない）で押す。
+  rhythm() {
+    const bpm = pick([84, 96, 108]), beat = 60 / bpm;
+    const m = { beat, t0: 1.0, hits: [null, null], done: false, played: 0, target: 1.0 + beat * 7, limit: 1.0 + beat * 7 + 1.6 };
+    m.onPress = p => {
+      if (m.done || m.hits[p] != null) return;
+      if (G.st < m.t0 + beat * 3.5) { m.done = true; foul(p, 'はやすぎ…'); return; }
+      m.hits[p] = G.st - m.target; SND.hit(p);
+      const e = Math.abs(m.hits[p]);
+      popText(e < 0.06 ? 'PERFECT!' : e < 0.15 ? 'GREAT' : e < 0.3 ? 'OK' : 'ズレた…', px(p), CY - 110 * S, e < 0.06 ? '#ffd36e' : e < 0.15 ? '#5cff8d' : '#9aa0b8', 36);
+      if (m.hits[0] != null && m.hits[1] != null) m.finish();
+    };
+    m.finish = () => { m.done = true; closest(m.hits.map(h => h == null ? null : Math.abs(h)), d => d == null ? '押さず' : `${Math.round(d * 1000)} ms`); };
+    m.update = () => {
+      if (m.done) return;
+      const k = Math.floor((G.st - m.t0) / beat);
+      if (k >= 0 && k < 4 && k >= m.played) { m.played = k + 1; SND.drum(k); G.shake = 3; }
+      if (G.st > m.limit) m.finish();
+    };
+    m.draw = () => {
+      const cx = W / 2, cy = CY;
+      text('4 回 鳴ったあと、8 回目で押せ！', cx, TOP + 70, 24 * S, '#fff');
+      // 8 つの丸: 鳴った分が光る。5〜8 は点線
+      const gap = Math.min(70 * S, (W - 80) / 8), x0 = cx - gap * 3.5;
+      for (let i = 0; i < 8; i++) {
+        const x = x0 + i * gap, on = (G.st - m.t0) >= i * beat && i < 4, isT = i === 7;
+        ctx.beginPath(); ctx.arc(x, cy, isT ? 22 * S : 16 * S, 0, TAU);
+        if (i < 4) { ctx.fillStyle = on ? '#ff9ee8' : 'rgba(255,255,255,.15)'; ctx.shadowColor = '#ff9ee8'; ctx.shadowBlur = on && (G.st - m.t0) - i * beat < 0.25 ? 30 : 0; ctx.fill(); ctx.shadowBlur = 0; }
+        else { ctx.strokeStyle = isT ? '#ffd36e' : 'rgba(255,255,255,.35)'; ctx.lineWidth = isT ? 4 : 2; ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]); if (isT) text('ココ', x, cy - 34 * S, 16 * S, '#ffd36e'); }
+      }
+      const beatK = Math.max(0, 1 - ((G.st - m.t0) % beat) / beat);
+      if (G.st >= m.t0 && G.st < m.t0 + beat * 4) { ctx.save(); ctx.globalAlpha = beatK * 0.3; ctx.fillStyle = '#ff9ee8'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+      [0, 1].forEach(p => text(m.hits[p] != null ? (m.hits[p] > 0 ? 'おそい' : 'はやい') + ` ${Math.round(Math.abs(m.hits[p]) * 1000)} ms` : (G.st > m.t0 + beat * 4 ? '…' : ''), px(p), cy + 80 * S, 20 * S, m.hits[p] != null ? P[p].color : 'rgba(255,255,255,.5)'));
+      text(`テンポ ${bpm}`, cx, cy + 130 * S, 16 * S, 'rgba(255,255,255,.45)');
+    };
+    return m;
+  },
+  // ---- ピッタリ 3 秒: GO! から 3 秒ちょうどで押す。時計は見えない。
+  seconds() {
+    const m = { t0: 1.2, hits: [null, null], done: false, went: false, limit: 1.2 + 6 };
+    m.onPress = p => {
+      if (m.done || m.hits[p] != null) return;
+      if (!m.went) { m.done = true; foul(p, 'フライング…'); return; }
+      m.hits[p] = G.st - m.t0 - 3; SND.hit(p);
+      const e = Math.abs(m.hits[p]);
+      popText(e < 0.1 ? 'ピッタリ！' : e < 0.3 ? 'おしい' : 'ズレた…', px(p), CY - 110 * S, e < 0.1 ? '#ffd36e' : e < 0.3 ? '#5cff8d' : '#9aa0b8', 36);
+      if (m.hits[0] != null && m.hits[1] != null) m.finish();
+    };
+    m.finish = () => { m.done = true; closest(m.hits.map(h => h == null ? null : Math.abs(h)), d => d == null ? '押さず' : `${(d).toFixed(2)} 秒ズレ`); };
+    m.update = () => {
+      if (m.done) return;
+      if (!m.went && G.st >= m.t0) { m.went = true; SND.go(); hitFlash('#5ee7ff', .3); }
+      if (G.st > m.limit) m.finish();
+    };
+    m.draw = () => {
+      const cx = W / 2, cy = CY;
+      if (!m.went) { text('GO! が出たら…', cx, cy - 30 * S, 30 * S, '#fff'); text('心の中で 3 秒 数えて 押せ', cx, cy + 30 * S, 22 * S, 'rgba(255,255,255,.6)'); return; }
+      // 時計は針なし。中央に「？」
+      ctx.save(); ctx.translate(cx, cy); ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(0, 0, 90 * S, 0, TAU); ctx.stroke();
+      for (let i = 0; i < 12; i++) { const a = i * TAU / 12; ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.beginPath(); ctx.arc(Math.cos(a) * 78 * S, Math.sin(a) * 78 * S, 3, 0, TAU); ctx.fill(); }
+      text(G.st - m.t0 < 0.5 ? 'GO!' : '？', 0, 0, 64 * S, G.st - m.t0 < 0.5 ? '#5ee7ff' : 'rgba(255,255,255,.7)'); ctx.restore();
+      text('ちょうど 3 秒 で押せ！', cx, cy + 130 * S, 24 * S, '#fff');
+      [0, 1].forEach(p => { if (m.hits[p] != null) text(`${(3 + m.hits[p]).toFixed(2)} 秒`, px(p), cy - 120 * S, 26 * S, P[p].color); });
+    };
+    return m;
+  },
+  // ---- かぞえて: ★ が次々に出る。そのあと出た数が合っていれば押す、違えば押さない。
+  count() {
+    const n = randInt(5, 11), truth = Math.random() < 0.5;
+    const shown = truth ? n : n + pick([-2, -1, 1, 2]);
+    const m = { n, items: [], spawnT: 0.6, showAt: 0, phase: 'show', ask: false, askAt: 0, done: false, shownNum: Math.max(1, shown), truth, limit: 0 };
+    const total = n + randInt(2, 4);   // ♥ もまぜる
+    const order = []; for (let i = 0; i < n; i++) order.push('star'); for (let i = n; i < total; i++) order.push('heart'); order.sort(() => Math.random() - 0.5);
+    m.order = order; m.limit = 0.6 + total * 0.32 + 1.2 + 3.2;
+    m.onPress = p => {
+      if (m.done) return;
+      if (!m.ask) { m.done = true; foul(p, 'まだ出てないのに押した…'); return; }
+      m.done = true;
+      if (m.truth) { const rt = G.st - m.askAt; G.fastest[p] = Math.min(G.fastest[p], rt); SND.hit(p); endRound(p, `${P[p].name} の勝ち！`, `正解！ ★は ${n} こ（反応 ${Math.round(rt * 1000)} ms）`); }
+      else foul(p, `お手つき（★は ${n} こ）`);
+    };
+    m.update = () => {
+      if (m.done) return;
+      const k = Math.floor((G.st - 0.6) / 0.32);
+      while (m.items.length < Math.min(total, k + 1) && k >= 0) {
+        const kind = order[m.items.length];
+        m.items.push({ kind, x: W / 2 + rand(-1, 1) * (PORTRAIT ? 170 : 260), y: CY + rand(-1, 1) * (PORTRAIT ? 180 : 110), t: 0, rot: rand(-0.5, 0.5) });
+        if (kind === 'star') SND.star(); else SND.heart();
+      }
+      if (!m.ask && G.st >= 0.6 + total * 0.32 + 1.2) { m.ask = true; m.askAt = G.st; SND.go(); hitFlash('#ffb347', .25); }
+      if (G.st > m.limit) { m.done = true; if (m.truth) endRound(-1, 'どっちも押さず…', `★は ${n} こ。合ってたのに！`); else endRound(-1, 'どっちも押さず！', `正解！ ★は ${n} こ`); }
+    };
+    m.draw = () => {
+      const cx = W / 2;
+      text(m.ask ? '' : '★ の数を かぞえろ！（♥ は数えない）', cx, TOP + 70, 24 * S, '#fff');
+      for (const it of m.items) {
+        it.t += 1 / 60;
+        const k = clamp(it.t * 5, 0, 1), s = easeOutBack(k) * (m.ask ? 0.6 : 1);
+        ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(it.rot); ctx.scale(s, s); ctx.globalAlpha = m.ask ? 0.35 : 1;
+        text(it.kind === 'star' ? '★' : '♥', 0, 0, 52 * S, it.kind === 'star' ? '#ffd36e' : '#ff6b9a', 'center', { stroke: false }); ctx.restore();
+      }
+      if (m.ask) {
+        const k = clamp((G.st - m.askAt) * 6, 0, 1), s = easeOutBack(k);
+        ctx.save(); ctx.translate(cx, CY); ctx.scale(s, s);
+        rr(-200 * S, -70 * S, 400 * S, 140 * S, 30); ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fill(); ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 3; ctx.stroke();
+        text(`★は ${m.shownNum} こ？`, 0, -10 * S, 56 * S, '#ffd36e'); text('合ってたら押せ！ 違うなら押すな', 0, 42 * S, 18 * S, 'rgba(255,255,255,.75)'); ctx.restore();
+        timerBar(Math.max(0, m.limit - G.st), 3.2);
+      }
     };
     return m;
   },
 };
 
-/* ================================================================ 更新 */
+/* ------------------------------------------------------------ 更新 */
 let last = performance.now();
 function update(dt) {
   G.t += dt;
   G.shake = Math.max(0, G.shake - dt * 40); G.flash = Math.max(0, G.flash - dt * 2.2);
-  for (let p = 0; p < 2; p++) G.press[p] = Math.max(0, G.press[p] - dt * 6);
+  G.beat = Math.max(0, G.beat - dt * 3);
+  if (G.beatQueue.length) { const ac = FES.audioContext(); if (ac) while (G.beatQueue.length && G.beatQueue[0] <= ac.currentTime) { G.beatQueue.shift(); G.beat = 1; } }
+  for (let p = 0; p < 2; p++) { G.press[p] = Math.max(0, G.press[p] - dt * 6); G.mood[p] *= Math.pow(0.5, dt); }
   for (let i = G.particles.length - 1; i >= 0; i--) { const q = G.particles[i]; q.t += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += q.g * dt; if (q.t > q.life) G.particles.splice(i, 1); }
   for (let i = G.texts.length - 1; i >= 0; i--) { const q = G.texts[i]; q.t += dt; if (q.t > q.life) G.texts.splice(i, 1); }
   if (G.state === 'title') { G.titleT += dt; return; }
+  if (G.state === 'play' || G.state === 'intro') bgmUpdate();
   G.st += dt;
-  if (G.state === 'intro' && G.st >= 2.4) beginPlay();
+  if (G.state === 'intro') {
+    const r = G.roulette;
+    if (!r.locked) {
+      if (G.st < r.spin) { const idx = Math.floor(G.st / (0.08 + G.st * 0.08)); if (idx !== r.lastIdx) { r.lastIdx = idx; r.idx = idx % r.items.length; SND.roulette(); } }
+      else { r.locked = true; r.idx = r.items.length - 1; SND.lock(); G.shake = 6; hitFlash(TYPES[G.type].color, 0.25); }
+    }
+    if (G.st >= 3.0) beginPlay();
+  }
   else if (G.state === 'play' && G.mini) G.mini.update(dt);
   else if (G.state === 'roundend') { G.rt += dt; if (G.rt >= 2.1) afterRound(); }
 }
 
-/* ================================================================ 描画 */
+/* ------------------------------------------------------------ 描画 */
 function drawBg() {
   ctx.fillStyle = '#07071a'; ctx.fillRect(0, 0, W, H);
-  // 左右の陣地
+  // 左右の陣地（斜めの境目）
   [0, 1].forEach(p => {
     const g = ctx.createLinearGradient(p === 0 ? 0 : W, 0, W / 2, 0);
     g.addColorStop(0, P[p].dark); g.addColorStop(1, 'rgba(7,7,26,0)');
     ctx.fillStyle = g; ctx.fillRect(p === 0 ? 0 : W / 2, 0, W / 2, H);
     if (G.press[p] > 0) { ctx.fillStyle = P[p].color; ctx.globalAlpha = G.press[p] * .18; ctx.fillRect(p === 0 ? 0 : W / 2, 0, W / 2, H); ctx.globalAlpha = 1; }
+    // 陣地のエネルギー線（中央へ流れる）
+    ctx.save(); ctx.globalAlpha = 0.12 + G.beat * 0.1; ctx.strokeStyle = P[p].color; ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) { const y = ((i / 6) + (G.t * 0.05)) % 1 * H; const x0 = p === 0 ? 0 : W, x1 = p === 0 ? W / 2 - 40 : W / 2 + 40; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y + (p === 0 ? 1 : -1) * 20); ctx.stroke(); }
+    ctx.restore();
   });
-  for (const s of stars) { ctx.globalAlpha = .3 + .7 * (Math.sin(G.t * 2 * s.s + s.k) * .5 + .5); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill(); }
+  for (const s of stars) { ctx.globalAlpha = .3 + .7 * (Math.sin(G.t * 2 * s.s + s.k) * .5 + .5); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.x * W, s.y * H, s.r, 0, TAU); ctx.fill(); }
   ctx.globalAlpha = 1;
   // 中央線
-  ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 2; ctx.setLineDash([10, 14]); ctx.lineDashOffset = -G.t * 30;
+  ctx.strokeStyle = `rgba(255,255,255,${0.15 + G.beat * 0.2})`; ctx.lineWidth = 2; ctx.setLineDash([10, 14]); ctx.lineDashOffset = -G.t * 30;
   ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); ctx.setLineDash([]);
 }
+function drawAvatar(p, x, y, r) {
+  // プレイヤーの顔（勝つと喜ぶ・負けるとしょんぼり）
+  const mood = G.mood[p], bounce = mood > 0 ? Math.abs(Math.sin(G.t * 10)) * mood * 10 : 0, tilt = mood < 0 ? mood * 0.25 : 0;
+  ctx.save(); ctx.translate(x, y - bounce); ctx.rotate(tilt);
+  ctx.fillStyle = P[p].dark; ctx.strokeStyle = P[p].color; ctx.lineWidth = 3; ctx.shadowColor = P[p].color; ctx.shadowBlur = 12 + Math.max(0, mood) * 20;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+  text(P[p].face, 0, 2, r * 1.2, '#fff', 'center', { stroke: false });
+  ctx.restore();
+}
 function drawScore() {
+  const y = TOP + 10;
   [0, 1].forEach(p => {
-    const x = p === 0 ? 40 : W - 40, dir = p === 0 ? 1 : -1;
-    text(P[p].name, x + dir * 30, 34, 26, P[p].color, p === 0 ? 'left' : 'right');
+    const x = p === 0 ? 20 : W - 20, dir = p === 0 ? 1 : -1;
+    drawAvatar(p, x + dir * 24 * S + dir * 4, y + 6, 20 * S);
+    text(P[p].name, x + dir * 58 * S, y + 2, 22 * S, P[p].color, p === 0 ? 'left' : 'right');
     for (let i = 0; i < WIN_NEED; i++) {
-      const cx = x + dir * (100 + i * 34), on = i < G.wins[p];
-      ctx.beginPath(); ctx.arc(cx, 34, 11, 0, TAU);
+      const cx = x + dir * (112 * S + i * 28 * S), on = i < G.wins[p];
+      ctx.beginPath(); ctx.arc(cx, y + 4, 10 * S, 0, TAU);
       ctx.fillStyle = on ? P[p].color : 'rgba(255,255,255,.12)'; ctx.shadowColor = P[p].color; ctx.shadowBlur = on ? 14 : 0; ctx.fill(); ctx.shadowBlur = 0;
       ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
     }
-    text(p === 0 ? '[A] / 左タップ' : '[L] / 右タップ', x + dir * 30, 60, 13, 'rgba(255,255,255,.45)', p === 0 ? 'left' : 'right', { weight: 700 });
+    text(p === 0 ? '[A] / 左タップ' : '[L] / 右タップ', x + dir * 58 * S, y + 26, 12, 'rgba(255,255,255,.45)', p === 0 ? 'left' : 'right', { weight: 700 });
   });
-  text(`ROUND ${G.round}`, W / 2, 24, 18, 'rgba(255,255,255,.6)');
-  text('❚❚', W / 2, 46, 14, 'rgba(255,255,255,.35)', 'center', { stroke: false });
+  const mp = G.wins[0] === WIN_NEED - 1 || G.wins[1] === WIN_NEED - 1;
+  text(`ROUND ${G.round}`, W / 2, y - 6, 16, mp ? '#ffd36e' : 'rgba(255,255,255,.6)');
+  if (mp) text('MATCH POINT', W / 2, y + 12, 11, '#ffd36e', 'center', { weight: 700 });
+  text('❚❚', W / 2 + 64, y - 6, 12, 'rgba(255,255,255,.35)', 'center', { stroke: false });   // ポーズ（タップ）
+  // これまでの結果
+  const hx = W / 2 - (G.history.length - 1) * 9, hy = y + (mp ? 28 : 16);
+  G.history.forEach((h, i) => { ctx.fillStyle = h.winner < 0 ? 'rgba(255,255,255,.3)' : P[h.winner].color; ctx.beginPath(); ctx.arc(hx + i * 18, hy, 4, 0, TAU); ctx.fill(); });
 }
 function drawTitle() {
   const t = G.titleT;
-  glowText('⚔️', W / 2, 92, 64, '#fff', '#ff5e5e');
+  const ty = PORTRAIT ? 120 : 92;
+  glowText('⚔️', W / 2, ty, 64 * S, '#fff', '#ff5e5e');
   const s = 1 + Math.sin(t * 2) * .02;
-  ctx.save(); ctx.translate(W / 2, 170); ctx.scale(s, s);
+  ctx.save(); ctx.translate(W / 2, ty + 78 * S); ctx.scale(s, s);
   const g = ctx.createLinearGradient(-240, 0, 240, 0); g.addColorStop(0, P[0].color); g.addColorStop(.5, '#fff'); g.addColorStop(1, P[1].color);
-  ctx.font = `900 76px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `900 ${76 * S}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(5,5,20,.9)'; ctx.lineJoin = 'round'; ctx.strokeText('ネオンデュエル', 0, 0);
   ctx.fillStyle = g; ctx.shadowColor = '#fff'; ctx.shadowBlur = 24; ctx.fillText('ネオンデュエル', 0, 0); ctx.restore();
-  text('1台で2人対決 ・ 先に 3 勝した方が勝ち', W / 2, 232, 22, 'rgba(255,255,255,.75)');
-  // 種目
+  text('1 台で 2 人対決 ・ 7 種目をルーレットで ・ 先に 3 勝した方が勝ち', W / 2, ty + 140 * S, 20 * S, 'rgba(255,255,255,.75)');
+  // 種目（7 つ）
+  const cols = PORTRAIT ? 2 : 4, cw = PORTRAIT ? 230 : 210, ch = PORTRAIT ? 56 : 62, gy = ty + 180 * S;
   TYPE_KEYS.forEach((k, i) => {
-    const ty = TYPES[k], x = 150 + i * 220, y = 310;
-    rr(x - 95, y - 38, 190, 76, 18); ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fill(); ctx.strokeStyle = ty.color; ctx.lineWidth = 2; ctx.globalAlpha = .6; ctx.stroke(); ctx.globalAlpha = 1;
-    text(ty.icon, x - 60, y, 32, '#fff', 'center', { stroke: false }); text(ty.name, x + 18, y, 24, ty.color);
+    const ty2 = TYPES[k], col = i % cols, row = Math.floor(i / cols), rowN = Math.min(cols, TYPE_KEYS.length - row * cols);
+    const x = W / 2 + (col - (rowN - 1) / 2) * (cw + 12), y = gy + row * (ch + 10);
+    const hi = Math.floor(t * 1.5) % TYPE_KEYS.length === i;
+    rr(x - cw / 2, y - ch / 2, cw, ch, 16); ctx.fillStyle = hi ? `${ty2.color}33` : 'rgba(255,255,255,.07)'; ctx.fill(); ctx.strokeStyle = ty2.color; ctx.lineWidth = 2; ctx.globalAlpha = hi ? 1 : .5; ctx.stroke(); ctx.globalAlpha = 1;
+    text(ty2.icon, x - cw / 2 + 30, y, 26 * S + 4, '#fff', 'center', { stroke: false }); text(ty2.name, x + 14, y, 20 * S + 2, ty2.color);
   });
-  // 操作
+  // 操作（両方押すとスタート）
+  const by = PORTRAIT ? H * 0.72 : 440;
   [0, 1].forEach(p => {
-    const x = p === 0 ? W * .25 : W * .75, press = G.press[p];
-    ctx.save(); ctx.translate(x, 420); ctx.scale(1 + press * .2, 1 + press * .2);
-    rr(-110, -40, 220, 80, 22); ctx.fillStyle = P[p].dark; ctx.fill(); ctx.strokeStyle = P[p].color; ctx.lineWidth = 3; ctx.stroke();
-    text(P[p].name, -60, 0, 30, P[p].color); text(`${P[p].key} キー / ${p === 0 ? '左' : '右'}タップ`, 30, 0, 18, '#fff'); ctx.restore();
+    const x = px(p), press = G.press[p], on = G.ready[p];
+    ctx.save(); ctx.translate(x, by); ctx.scale(1 + press * .2, 1 + press * .2);
+    rr(-110 * S, -42 * S, 220 * S, 84 * S, 22); ctx.fillStyle = on ? P[p].color : P[p].dark; ctx.shadowColor = P[p].color; ctx.shadowBlur = on ? 30 : 0; ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = P[p].color; ctx.lineWidth = 3; ctx.stroke();
+    text(on ? 'READY!' : P[p].name, -56 * S, 0, 28 * S, on ? '#fff' : P[p].color); text(on ? P[p].face : `${P[p].key} キー / ${p === 0 ? '左' : '右'}タップ`, 34 * S, 0, on ? 30 * S : 16 * S, '#fff', 'center', { stroke: !on });
+    ctx.restore();
   });
   const bl = .55 + Math.sin(t * 5) * .45;
-  text('どちらかのボタンを押してスタート', W / 2, 500, 24, `rgba(255,255,255,${bl})`);
+  text(G.ready[0] || G.ready[1] ? 'もう一人も 押して！' : '2 人とも 自分のボタンを押すとスタート', W / 2, by + 70 * S, 22 * S, `rgba(255,255,255,${bl})`);
+  text('スタッフ: Space / Enter でもスタート', W / 2, by + 98 * S, 12, 'rgba(255,255,255,.4)', 'center', { weight: 700 });
 }
 function drawIntro() {
-  const ty = TYPES[G.type], k = clamp(G.st * 3, 0, 1), s = easeOutBack(k);
-  ctx.save(); ctx.translate(W / 2, H / 2 - 30); ctx.scale(s, s);
-  text(`ROUND ${G.round}`, 0, -120, 30, 'rgba(255,255,255,.7)');
-  text(ty.icon, 0, -40, 80, '#fff', 'center', { stroke: false });
-  glowText(ty.name, 0, 50, 72, ty.color); ctx.restore();
-  if (G.st > .5) { const a = clamp((G.st - .5) * 3, 0, 1); ctx.globalAlpha = a; text(ty.rule, W / 2, H / 2 + 120, 26, '#fff'); ctx.globalAlpha = 1; }
-  const left = Math.ceil(2.4 - G.st); if (left > 0 && left <= 3) text(String(left), W / 2, H - 50, 36, 'rgba(255,255,255,.5)');
+  const ty = TYPES[G.type], r = G.roulette;
+  const cy = CY - 20 * S;
+  text(`ROUND ${G.round}`, W / 2, cy - 130 * S, 30 * S, 'rgba(255,255,255,.7)');
+  // ルーレット: 枠の中でアイコンが回る
+  const cur = TYPES[r.items[r.idx]];
+  const k = r.locked ? clamp((G.st - r.spin) * 4, 0, 1) : 0, s = r.locked ? easeOutBack(k) : 1 + Math.sin(G.t * 30) * 0.03;
+  ctx.save(); ctx.translate(W / 2, cy);
+  rr(-150 * S, -70 * S, 300 * S, 140 * S, 28); ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fill(); ctx.strokeStyle = r.locked ? ty.color : 'rgba(255,255,255,.35)'; ctx.lineWidth = r.locked ? 4 : 2; ctx.shadowColor = ty.color; ctx.shadowBlur = r.locked ? 24 : 0; ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.scale(s, s);
+  text(cur.icon, -80 * S, 0, 64 * S, '#fff', 'center', { stroke: false });
+  glowText(cur.name, 30 * S, 0, 44 * S, r.locked ? ty.color : 'rgba(255,255,255,.8)'); ctx.restore();
+  if (!r.locked) text('どの勝負になる…？', W / 2, cy + 100 * S, 22 * S, 'rgba(255,255,255,.6)');
+  else { const a = clamp((G.st - r.spin) * 3, 0, 1); ctx.globalAlpha = a; text(ty.rule, W / 2, cy + 110 * S, PORTRAIT ? 17 : 24, '#fff'); ctx.globalAlpha = 1; }
+  const left = Math.ceil(3.0 - G.st); if (r.locked && left > 0 && left <= 2) text(String(left), W / 2, H - 50, 36, 'rgba(255,255,255,.5)');
 }
 function drawRoundEnd() {
   const k = clamp(G.rt * 4, 0, 1), s = easeOutBack(k), w = G.roundWinner;
   ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, 0, W, H);
-  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(s, s);
-  glowText(G.roundMsg, 0, -20, 68, w >= 0 ? P[w].color : '#fff'); ctx.restore();
-  text(G.roundSub, W / 2, H / 2 + 56, 26, 'rgba(255,255,255,.8)');
-  text(`${G.wins[0]} - ${G.wins[1]}`, W / 2, H / 2 + 110, 40, '#ffd36e');
+  ctx.save(); ctx.translate(W / 2, CY); ctx.scale(s, s);
+  glowText(G.roundMsg, 0, -20 * S, 64 * S, w >= 0 ? P[w].color : '#fff'); ctx.restore();
+  text(G.roundSub, W / 2, CY + 56 * S, PORTRAIT ? 18 : 26, 'rgba(255,255,255,.8)');
+  text(`${G.wins[0]} - ${G.wins[1]}`, W / 2, CY + 110 * S, 40 * S, '#ffd36e');
+  if (w >= 0) drawAvatar(w, px(w), CY - 100 * S, 46 * S);
 }
 function drawMatchEnd() {
   const w = G.wins[0] === G.wins[1] ? -1 : (G.wins[0] > G.wins[1] ? 0 : 1);
   const k = clamp(G.st * 2.5, 0, 1), s = easeOutBack(k);
-  ctx.save(); ctx.translate(W / 2, H / 2 - 20); ctx.scale(s, s);
-  text('🏆', 0, -90, 80, '#fff', 'center', { stroke: false });
-  glowText(w < 0 ? 'ひきわけ！' : `${P[w].name} WIN!`, 0, 10, 84, w < 0 ? '#fff' : P[w].color); ctx.restore();
-  text(`${G.wins[0]} - ${G.wins[1]}`, W / 2, H / 2 + 80, 44, '#ffd36e');
+  ctx.save(); ctx.translate(W / 2, CY - 20 * S); ctx.scale(s, s);
+  text('🏆', 0, -90 * S, 80 * S, '#fff', 'center', { stroke: false });
+  glowText(w < 0 ? 'ひきわけ！' : `${P[w].name} WIN!`, 0, 10 * S, 84 * S, w < 0 ? '#fff' : P[w].color); ctx.restore();
+  text(`${G.wins[0]} - ${G.wins[1]}`, W / 2, CY + 80 * S, 44 * S, '#ffd36e');
+  if (w >= 0) drawAvatar(w, px(w), CY + 60 * S, 56 * S);
 }
 function draw() {
   ctx.save();
@@ -479,14 +691,15 @@ function draw() {
   ctx.restore();
 }
 
-/* ================================================================ ループ */
+/* ------------------------------------------------------------ ループ */
+fit();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (!G.paused) update(dt);
   draw();
   requestAnimationFrame(frame);
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden && G.state !== 'title' && !G.paused) togglePause(); last = performance.now(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && G.state !== 'title' && G.state !== 'matchend' && !G.paused) togglePause(); last = performance.now(); });
 requestAnimationFrame(t => { last = t; frame(t); });
 </script>
 </body>
