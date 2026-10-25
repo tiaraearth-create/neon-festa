@@ -20,6 +20,20 @@
           filter: drop-shadow(0 0 22px rgba(255,120,220,.45)); }
   @keyframes shine { from { background-position: 0% 0; } to { background-position: 300% 0; } }
   .sec-label { font-size: 12px; letter-spacing: .3em; opacity: .7; font-weight: 700; margin: 12px 0 8px; }
+  .tabs { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 0 auto 10px; max-width: 900px; }
+  .tabs button { padding: 6px 14px; border-radius: 999px; border: 2px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: #fff;
+                 font-weight: 900; font-size: 12px; cursor: pointer; font-family: inherit; transition: transform .12s, box-shadow .2s, border-color .2s; }
+  .tabs button:hover { transform: translateY(-1px); }
+  .tabs button.sel { border-color: #ffd23f; background: rgba(255,210,63,.16); box-shadow: 0 0 14px rgba(255,210,63,.35); }
+  .tabs button.rnd { border-color: rgba(94,241,255,.5); color: #5ef1ff; }
+  .tabs button small { opacity: .6; font-weight: 700; margin-left: 4px; }
+  .card.hide { display: none; }
+  .card .cl { position: absolute; right: 8px; top: 8px; font-size: 10px; font-weight: 900; letter-spacing: .05em; color: #ffd23f; opacity: .9; font-variant-numeric: tabular-nums; }
+  .card .cr { position: absolute; left: 8px; top: 6px; width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; font-weight: 900;
+              color: #101020; background: #fff; box-shadow: 0 0 10px rgba(255,255,255,.5); transform: rotate(-8deg); }
+  .card .cr.S { background: linear-gradient(135deg,#ffd23f,#ff8a3d); } .card .cr.A { background: linear-gradient(135deg,#5ef1ff,#4fc3ff); }
+  .card .cr.B { background: linear-gradient(135deg,#8dff7a,#3dffb0); } .card .cr.C { background: #cfd2e8; } .card .cr.D, .card .cr.F { background: #ff8a9a; }
+  .card .cr.none { display: none; }
   .songs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; max-width: 900px; margin: 0 auto 6px; }
   @media (max-width: 760px) { .songs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .card { --c: #ff4f8b; --cr: 255,79,139; position: relative; padding: 12px 8px 10px; border-radius: 16px; cursor: pointer;
@@ -99,6 +113,7 @@
     <div class="logo-sub">RHYTHM STARS</div>
     <div class="logo">リズムスターズ</div>
     <div class="sec-label">SELECT SONG ↑↓</div>
+    <div class="tabs" id="tabs"></div>
     <div class="songs" id="songs"></div>
     <div class="sec-label">DIFFICULTY ←→</div>
     <div class="diff" id="diff">
@@ -124,7 +139,7 @@
     <div class="howto">
       ⌨ <b class="k0">D</b><b class="k1">F</b><b class="k2">J</b><b class="k3">K</b> または <b class="k0">←</b><b class="k1">↓</b><b class="k2">↑</b><b class="k3">→</b> でノーツをたたけ！ 帯のノーツは<b>押しっぱなし</b>！<br>
       📱 スマホ・タブレットは画面下の4つのボタンをタップ（長押しでホールド）<br>
-      ↑↓ 曲 ／ ←→ 難易度 ／ M フル・ミニ切替 ／ Enter・Space スタート ／ Esc・P ポーズ
+      ↑↓ 曲 ／ ←→ 難易度 ／ Tab ジャンル ／ R おまかせ ／ M フル・ミニ切替 ／ Enter・Space スタート ／ Esc・P ポーズ
     </div>
   </div>
 </div>
@@ -1483,6 +1498,7 @@ const G = {
   failed: false, fever: 0, feverAmt: 0, endAt: 0, offset: 0, voff: 0,
   auto: false, laneChanges: [], laneChgIdx: 0, warnIdx: 0, themeIdx: 0, frozen: false,
   autoLite: false,                    // 重いときに自動で軽量表示へ（このページ表示中だけ）
+  devSum: 0, devN: 0, lastSec: '',    // タイミングのズレの合計（平均ズレ用）・いまのセクション名
 };
 /** 軽量モード（ホームの 🐢 設定、または自動フォールバック） */
 let liteSetting = false;              // FES.lite() は localStorage を読むので毎フレーム1回だけ更新する
@@ -1493,7 +1509,7 @@ const PERF = { sum: 0, n: 0, toasted: false };          // フレーム時間の
 const FX = {
   particles: [], rings: [], texts: [], bolts: [], streaks: [],
   flash: new Array(MAX_LANES).fill(0), press: new Array(MAX_LANES).fill(0),
-  judge: null, comboPop: 0, shake: 0, count: null, gaugeFlash: 0, streakTimer: 1.5,
+  judge: null, comboPop: 0, shake: 0, count: null, gaugeFlash: 0, streakTimer: 1.5, deltas: [],
   laneAnim: null, warn: null, newLaneUntil: 0, newLanes: [], bang: -9, critical: false,
 };
 const VIS = { kick: 0, snare: 0, hat: 0, bass: 0, lead: 0, bands: new Float32Array(14) };
@@ -1674,7 +1690,7 @@ function buildCards() {
   SONGS.forEach((def, i) => {
     const card = document.createElement('div'); card.className = 'card' + (def.tas ? ' tas' : '');
     card.style.setProperty('--c', def.hex); card.style.setProperty('--cr', def.color.join(','));
-    card.innerHTML = `<div class="sel-mark"></div><div class="cg">${def.genre}</div><div class="cn">${def.name}</div>` +
+    card.innerHTML = `<div class="sel-mark"></div><div class="cr none" data-r></div><div class="cl" data-lv></div><div class="cg">${def.genre}</div><div class="cn">${def.name}</div>` +
       `<div class="cm" data-len>${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(SONG_DATA[i].length)}</div><div class="cs" data-s></div><div class="ch" data-h></div>` +
       (def.tas ? '<div class="skull">☠ 人力クリア不可</div>' : '') + (def.sudden ? '<div class="skull sudden">⚡ 急変注意</div>' : '') + (def.ext ? '<div class="skull ext">🎧 リミックス曲</div>' : '');
     card.addEventListener('click', () => { if (G.state !== 'title') return; if (G.songIdx === i) startGame(); else { setSong(i); FES.sfx('select'); } });
@@ -1694,7 +1710,60 @@ function refreshCards() {
     if (lenEl && def.ext) lenEl.textContent = `${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(extLength(def))}${(MINI && hasMini(def)) ? '（ミニ）' : ''}`;
     if (s) s.textContent = `${def.tas ? 'TAS ／ ' : ''}♪ ${st.notes} ノーツ ／ ロング ${st.holds}`;
     if (h) h.textContent = `HI-SCORE ${hi.toLocaleString()}`;
+    // むずかしさ（Lv）: ノーツの密度から。ランク: その難易度のベスト
+    const lvEl = card.querySelector('[data-lv]'), rEl = card.querySelector('[data-r]');
+    const len = def.ext ? extLength(def) : SONG_DATA[i].length;
+    if (lvEl) lvEl.textContent = def.tas ? 'Lv ☠' : `Lv ${levelOf(st, len)}`;
+    const best = FES.bestGrade ? FES.bestGrade(def.rankId || DIFFS[di].rankId) : null;
+    if (rEl) { rEl.className = 'cr ' + (best || 'none'); rEl.textContent = best || ''; }
+    card.classList.toggle('hide', !FILTERS[filterIdx].test(def));
   });
+}
+/** むずかしさ Lv（1〜12）: 1 秒あたりのノーツ数とロングの多さから */
+function levelOf(st, len) {
+  const d = (st.notes + st.holds * 0.5) / Math.max(10, len);
+  return FES.clamp(Math.round(d * 2.6 + 0.5), 1, 12);
+}
+/* ---------- ジャンルで絞りこむタブ ---------- */
+const FILTERS = [
+  { label: 'すべて', test: () => true },
+  { label: 'ボカロ', test: d => ['ボカロ', 'オリジナル'].includes(d.genre) },
+  { label: 'Sans 系', test: d => ['バトル', 'NOAU', 'マッシュアップ'].includes(d.genre) },
+  { label: 'ゲーム・アニメ', test: d => ['DELTARUNE', 'ブルアカ', '東方', 'J-ROCK'].includes(d.genre) },
+  { label: '内蔵曲', test: d => !d.ext },
+];
+let filterIdx = 0;
+function buildTabs() {
+  const box = $('tabs'); box.innerHTML = '';
+  FILTERS.forEach((f, i) => {
+    const n = SONGS.filter(f.test).length;
+    const b = document.createElement('button'); b.innerHTML = `${f.label}<small>${n}</small>`; b.className = i === filterIdx ? 'sel' : '';
+    b.addEventListener('click', () => { if (G.state !== 'title') return; setFilter(i); FES.sfx('select'); });
+    box.appendChild(b);
+  });
+  const r = document.createElement('button'); r.className = 'rnd'; r.textContent = '🎲 おまかせ';
+  r.addEventListener('click', () => { if (G.state !== 'title') return; randomSong(); });
+  box.appendChild(r);
+}
+function setFilter(i) {
+  filterIdx = i;
+  Array.from($('tabs').children).forEach((b, k) => b.classList.toggle('sel', k === i));
+  if (!FILTERS[i].test(SONGS[G.songIdx])) { const first = SONGS.findIndex(FILTERS[i].test); if (first >= 0) setSong(first); }
+  refreshCards();
+}
+/** いま見えている曲の中で前後へ */
+function stepSong(dir) {
+  const n = SONGS.length; let i = G.songIdx;
+  for (let k = 0; k < n; k++) { i = (i + dir + n) % n; if (FILTERS[filterIdx].test(SONGS[i])) break; }
+  setSong(i);
+}
+function randomSong() {
+  const cand = SONGS.map((d, i) => i).filter(i => FILTERS[filterIdx].test(SONGS[i]) && !SONGS[i].tas && i !== G.songIdx);
+  if (!cand.length) return;
+  const pick = cand[Math.floor(Math.random() * cand.length)];
+  setSong(pick); FES.sfx('coin');
+  const card = $('songs').children[pick]; if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  FES.toast(`🎲 ${SONGS[pick].name}`, 1200);
 }
 function setSong(i) {
   G.songIdx = (i + SONGS.length) % SONGS.length;
@@ -1728,7 +1797,8 @@ function resetGame() {
   G.nextIdx = 0; G.drawIdx = 0; G.visIdx = 0;
   G.raw = 0; G.score = 0; G.dispScore = 0; G.combo = 0; G.maxCombo = 0; G.gauge = 60;
   G.counts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };
-  G.failed = false; G.fever = 0; G.feverAmt = 0; G.countStage = 0; G.readyUntil = 0; G.endAt = 0;
+  G.failed = false; G.fever = 0; G.feverAmt = 0; G.countStage = 0; G.readyUntil = 0; G.endAt = 0; G.devSum = 0; G.devN = 0; G.lastSec = '';
+  FX.deltas.length = 0;
   FX.particles.length = 0; FX.rings.length = 0; FX.texts.length = 0; FX.bolts.length = 0;
   FX.flash.fill(0); FX.press.fill(0); FX.judge = null; FX.comboPop = 0; FX.shake = 0; FX.count = null; FX.gaugeFlash = 0;
   VIS.kick = VIS.snare = VIS.hat = VIS.bass = VIS.lead = 0; VIS.bands.fill(0);
@@ -1810,7 +1880,9 @@ function finishGame() {
     { label: 'PERFECT', value: c.PERFECT }, { label: 'GREAT', value: c.GREAT },
     { label: 'GOOD', value: c.GOOD }, { label: 'MISS', value: c.MISS },
     { label: 'MAX COMBO', value: G.maxCombo },
+    { label: '精度', value: Math.round((c.PERFECT + c.GREAT * 0.7 + c.GOOD * 0.4) / (G.points || 1) * 100) + '%' },
   ];
+  if (G.devN >= 5) { const avg = Math.round(G.devSum / G.devN * 1000); stats.push({ label: '平均ズレ', value: (avg > 0 ? '+' : '') + avg + 'ms' + (avg > 25 ? ' おそい' : avg < -25 ? ' はやい' : '') }); }
   if (G.auto) {
     FES.showResult({
       score: G.score, scoreLabel: 'pt', title: 'AUTO PLAY', subtitle: `オートプレイ（記録されません） ／ ${SONGS[G.songIdx].name} ／ ${diffLabel}`,
@@ -1911,6 +1983,7 @@ function applyJudge(n, j, delta) {
     G.holds.push(n);
   }
   FX.judge = { text: j, color: J.color, rgb: J.rgb, t: now, delta };
+  if (j !== 'MISS') { G.devSum += delta; G.devN++; FX.deltas.push({ d: delta, t: now }); if (FX.deltas.length > 14) FX.deltas.shift(); }
   FX.comboPop = 1;
   while (G.nextIdx < G.notes.length && G.notes[G.nextIdx].state !== 0) G.nextIdx++;
 }
@@ -2080,6 +2153,10 @@ function update(dt, now) {
       }
     }
     if (G.laneChgIdx < LC.length && st >= LC[G.laneChgIdx].t - (LC[G.laneChgIdx].instant ? 0.02 : 0.08)) { const lc = LC[G.laneChgIdx++]; setLanes(lc.lanes, now, true, lc); }
+    // セクションの名前（サビ など）が変わったら上に出す
+    const SS = G.song.sections; let secNow = '';
+    for (let i = 0; i < SS.length; i++) if (st >= SS[i].start && st < SS[i].end) secNow = SS[i].name;
+    if (secNow !== G.lastSec) { if (secNow && G.state === 'play') FX.texts.push({ text: `♪ ${secNow}`, t: now, color: '#8ed6ff' }); G.lastSec = secNow; }
     // テーマ切替 / フェイク停止
     const TC = G.song.themeChanges || [];
     while (G.themeIdx < TC.length && st >= TC[G.themeIdx].t) setTheme(TC[G.themeIdx++].theme);
@@ -2512,6 +2589,20 @@ function drawEffects(now) {
       ctx.restore();
     }
   }
+  // タイミングメーター: 最近のズレを点で。左が EARLY・右が LATE
+  if ((G.state === 'play' || G.state === 'countin') && FX.deltas.length && !G.auto) {
+    const mw = Math.min(180, L.botW * 0.4), mx = L.cx - mw / 2, my = jy + Math.min(44, L.botW * 0.09) * 1.25;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; rr(mx, my - 2, mw, 4, 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,227,110,0.5)'; rr(L.cx - mw * (WIN.PERFECT / WIN.GOOD) / 2, my - 2, mw * (WIN.PERFECT / WIN.GOOD), 4, 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(L.cx - 1, my - 7, 2, 14);
+    for (let i = 0; i < FX.deltas.length; i++) {
+      const q = FX.deltas[i], age = now - q.t; if (age > 2.5) continue;
+      const x = L.cx + FES.clamp(q.d / WIN.GOOD, -1, 1) * mw / 2, a = (1 - age / 2.5) * 0.9;
+      const ad = Math.abs(q.d), col = ad <= WIN.PERFECT ? [255, 227, 110] : ad <= WIN.GREAT ? [94, 241, 255] : [141, 255, 122];
+      ctx.fillStyle = rgba(col, a); ctx.beginPath(); ctx.arc(x, my, 3 + (i === FX.deltas.length - 1 ? 1.5 : 0), 0, 6.2832); ctx.fill();
+    }
+    fillText('EARLY', mx - 6, my, 9, 'rgba(127,184,255,0.6)', 800, 'right'); fillText('LATE', mx + mw + 6, my, 9, 'rgba(255,162,107,0.6)', 800, 'left');
+  }
   if (G.combo >= 3) {
     const cy = L.judgeY - (L.judgeY - L.topY) * 0.52;
     const sc = 1 + FX.comboPop * 0.28;
@@ -2614,6 +2705,16 @@ function drawCenterText(now) {
       ctx.restore();
     }
   }
+  if (G.state === 'countin' && !G.auto) {
+    const st = songTime(), k = FES.clamp((st + countIn()) / 0.4, 0, 1) * FES.clamp(-st / 0.3, 0, 1);
+    if (k > 0) {
+      ctx.save(); ctx.globalAlpha = k;
+      const d = isTas() ? { label: 'TAS', color: '#ff2878' } : DIFFS[G.diff];
+      glowText(`♪ ${SONGS[G.songIdx].name}`, L.cx, cy + Math.min(90, L.botW * 0.22), Math.min(30, L.botW * 0.07), '#fff', rgba(theme.glow, 0.9), 900, 16);
+      fillText(`${d.label}${MINI && hasMini(G.song.def) ? ' ・ ミニ' : ''}`, L.cx, cy + Math.min(90, L.botW * 0.22) + Math.min(26, L.botW * 0.06), Math.min(15, L.botW * 0.035), d.color, 900);
+      ctx.restore();
+    }
+  }
   if (G.readyUntil > now && G.state !== 'pause') {
     const k = 0.5 + 0.5 * Math.sin(now * 12);
     glowText('READY', L.cx, cy, Math.min(64, L.botW * 0.16), `rgba(255,255,255,${0.6 + 0.4 * k})`, '#4fc3ff', 900, 20);
@@ -2710,8 +2811,10 @@ document.addEventListener('keydown', e => {
     if (code === 'KeyM' && hasMini(SONGS[G.songIdx])) { setMode(!MINI); FES.sfx('select'); }
     if (code === 'ArrowLeft') { setDiff(G.diff - 1); FES.sfx('select'); }
     else if (code === 'ArrowRight' || code === 'KeyD') { setDiff(G.diff + 1); FES.sfx('select'); }
-    else if (code === 'ArrowUp' || code === 'KeyW') { setSong(G.songIdx - 1); FES.sfx('select'); }
-    else if (code === 'ArrowDown' || code === 'KeyS') { setSong(G.songIdx + 1); FES.sfx('select'); }
+    else if (code === 'ArrowUp' || code === 'KeyW') { stepSong(-1); FES.sfx('select'); }
+    else if (code === 'ArrowDown' || code === 'KeyS') { stepSong(1); FES.sfx('select'); }
+    else if (code === 'KeyR') randomSong();
+    else if (code === 'Tab') { e.preventDefault(); setFilter((filterIdx + 1) % FILTERS.length); FES.sfx('select'); }
     else if (/^Digit[1-5]$/.test(code)) { setDiff(Number(code.slice(5)) - 1); FES.sfx('select'); }   // 4・5 はエキスパート・マスター（追加曲だけ。ない曲は setDiff が丸める）
     else if (code === 'Enter' || code === 'Space') startGame();
     else if (code === 'KeyA') startGame(true);
@@ -2823,6 +2926,7 @@ function applyLite() {
 function updateLiteHint() { const h = $('liteHint'); if (h) h.classList.toggle('hidden', !LITE()); }
 loadOffset();
 buildCards();
+buildTabs();
 resize();
 showTitle();
 requestAnimationFrame(frame);
