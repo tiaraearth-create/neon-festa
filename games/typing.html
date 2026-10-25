@@ -252,6 +252,16 @@ const VOCAB = [
   ['本日は晴天なり','ほんじつはせいてんなり','短文'],['お疲れ様でした','おつかれさまでした','短文'],['ありがとうございました','ありがとうございました','短文'],
   ['いらっしゃいませ','いらっしゃいませ','短文'],['焼きそば一つください','やきそばひとつください','短文'],['写真を撮りましょう','しゃしんをとりましょう','短文'],
   ['先生の授業は面白い','せんせいのじゅぎょうはおもしろい','短文'],['金魚すくいで三匹','きんぎょすくいでさんびき','短文'],
+  // NEON FESTA・パソコン部
+  ['ネオンフェスタ','ねおんふぇすた','NEON FESTA'],['パソコン部','ぱそこんぶ','NEON FESTA'],['スタンプラリー','すたんぷらりー','NEON FESTA'],['殿堂入り','でんどういり','NEON FESTA'],
+  ['ハイスコア','はいすこあ','NEON FESTA'],['ランキング','らんきんぐ','NEON FESTA'],['コンボ','こんぼ','NEON FESTA'],['パーフェクト','ぱーふぇくと','NEON FESTA'],
+  ['フィーバー','ふぃーばー','NEON FESTA'],['表彰状','ひょうしょうじょう','NEON FESTA'],['景品','けいひん','NEON FESTA'],['七階のパソコン室','ななかいのぱそこんしつ','NEON FESTA'],
+  ['もぐらパニック','もぐらぱにっく','NEON FESTA'],['リズムスターズ','りずむすたーず','NEON FESTA'],['ジュエルラッシュ','じゅえるらっしゅ','NEON FESTA'],['ネオンドライブ','ねおんどらいぶ','NEON FESTA'],
+  ['ネコ忍者','ねこにんじゃ','NEON FESTA'],['エアホッケー','えあほっけー','NEON FESTA'],['早押しクイズ王','はやおしくいずおう','NEON FESTA'],['ネオンブレイカー','ねおんぶれいかー','NEON FESTA'],
+  ['ネオンデュエル','ねおんでゅえる','NEON FESTA'],['ネオンスタック','ねおんすたっく','NEON FESTA'],['メモリーフラッシュ','めもりーふらっしゅ','NEON FESTA'],['ネオンストライク','ねおんすとらいく','NEON FESTA'],
+  ['ギャラクシーブラスター','ぎゃらくしーぶらすたー','NEON FESTA'],['ゲームセンター','げーむせんたー','NEON FESTA'],['キーボード','きーぼーど','NEON FESTA'],['マウス','まうす','NEON FESTA'],
+  ['プログラミング','ぷろぐらみんぐ','NEON FESTA'],['大画面','おおがめん','NEON FESTA'],['対戦','たいせん','NEON FESTA'],['空きパソコン','あきぱそこん','NEON FESTA'],
+  ['全ゲーム制覇','ぜんげーむせいは','NEON FESTA'],['来てくれてありがとう','きてくれてありがとう','NEON FESTA'],['また遊びに来てね','またあそびにきてね','NEON FESTA'],
 ];
 
 /* =====================================================================
@@ -272,6 +282,13 @@ const pauseBtn = document.getElementById('pausebtn');
 
 const view = { scale: 1, ox: 0, oy: 0 };
 let state = 'title';   // title | countdown | play | pause | result
+let MODE = 1;          // 0 やさしい / 1 ふつう / 2 むずかしい
+const MODES = [
+  { label: 'やさしい', sub: '短いことば', color: '#5ee06a', mul: 0.8, par: 1.3 },
+  { label: 'ふつう', sub: 'だんだん長く', color: '#ffd36e', mul: 1.0, par: 1.0 },
+  { label: 'むずかしい', sub: '最初から長文', color: '#ff4d6d', mul: 1.3, par: 0.85 },
+];
+const modeMul = () => MODES[MODE].mul;
 let softOn = false;
 
 const G = {   // 1プレイの状態
@@ -282,6 +299,7 @@ const G = {   // 1プレイの状態
   shake: 0, flashRed: 0, flashWhite: 0, hitstop: 0,
   comboPop: 0, scrollSpeed: 30, scroll: 0, missAt: 0, absorbN: false,
   particles: [], floats: [], lastSec: -1, bgT: 0,
+  wordT: 0, speedHits: 0, slash: null,   // いまの単語にかかった秒・スピードボーナス回数・フィニッシュの斬撃
 };
 let countdown = { t: 0, n: 3 };
 let lastTs = 0, raf = 0;
@@ -408,10 +426,16 @@ function buildPools() {
 function pickWord() {
   const e = G.elapsed, r = Math.random();
   let tier;
-  if (e < 12) tier = 1;
-  else if (e < 30) tier = r < 0.3 ? 1 : 2;
-  else if (e < 45) tier = r < 0.3 ? 3 : 2;
-  else tier = r < 0.35 ? 2 : 3;
+  if (MODE === 0) {          // やさしい: 短いことば中心。長文は出ない
+    tier = e < 20 ? 1 : (r < 0.7 ? 1 : 2);
+  } else if (MODE === 2) {   // むずかしい: 最初からふつう〜長文
+    tier = e < 15 ? 2 : e < 30 ? (r < 0.5 ? 2 : 3) : (r < 0.3 ? 2 : 3);
+  } else {
+    if (e < 12) tier = 1;
+    else if (e < 30) tier = r < 0.3 ? 1 : 2;
+    else if (e < 45) tier = r < 0.3 ? 3 : 2;
+    else tier = r < 0.35 ? 2 : 3;
+  }
   const P = G.pools;
   if (!P.pools[tier].length) { P.pools[tier] = shuffle(P.used[tier]); P.used[tier] = []; }
   const v = P.pools[tier].pop(); P.used[tier].push(v);
@@ -429,6 +453,8 @@ function newEnemy(word) {
 }
 function nextWord() {
   G.word = pickWord();
+  G.word.par = (1.0 + G.word.keys * 0.34) * MODES[MODE].par;   // この秒数以内に打ち切ると SPEED ボーナス
+  G.wordT = 0;
   G.enemy = newEnemy(G.word);
   updateKeyHint();
 }
@@ -441,7 +467,7 @@ function resetGame() {
     time: GAME_TIME, elapsed: 0, score: 0, dispScore: 0, combo: 0, maxCombo: 0, correct: 0, miss: 0, words: 0, mult: 1,
     word: null, enemy: null, deadEnemies: [], pools: buildPools(),
     hero: { atk: 0, hurt: 0, bob: 0 }, shake: 0, flashRed: 0, flashWhite: 0, hitstop: 0, comboPop: 0,
-    scrollSpeed: 30, scroll: 0, missAt: 0, absorbN: false, particles: [], floats: [], lastSec: -1,
+    scrollSpeed: 30, scroll: 0, missAt: 0, absorbN: false, particles: [], floats: [], lastSec: -1, wordT: 0, speedHits: 0, slash: null,
   });
 }
 function startGame() {
@@ -481,12 +507,13 @@ function endGame() {
       score: Math.floor(G.score), scoreLabel: 'pt', title: 'TIME UP!',
       grade: title === 'タイピング神' ? 'S' : title === '達人' ? 'A' : title === '上級者' ? 'B' : title === '中級者' ? 'C' : 'D',
       titles: { S: 'タイピング神', A: '達人', B: '上級者', C: '中級者', D: '初心者（これから！）' },
-      subtitle: `${G.words} 体撃破`,
+      subtitle: `${MODES[MODE].label} ／ ${G.words} 体撃破`,
       stats: [
         { label: '単語数', value: G.words },
         { label: 'KPM', value: kpm },
         { label: '正確率', value: acc + '%' },
         { label: 'MAX COMBO', value: G.maxCombo },
+        { label: 'SPEED ボーナス', value: G.speedHits },
       ],
     }, () => startGame());
   }, 900);
@@ -523,7 +550,7 @@ function handleChar(ch) {
   G.correct++; G.combo++; if (G.combo > G.maxCombo) G.maxCombo = G.combo;
   G.mult = Math.min(4, 1 + Math.floor(G.combo / 10) * 0.5);
   if (G.combo === 20) FES.fever(true);
-  G.score += 10 * G.mult;
+  G.score += 10 * G.mult * modeMul();
   G.hero.atk = 0.16;
   const en = G.enemy;
   if (en) { en.hp = r === 'done' ? 0 : Math.min(en.maxHp, ROMA.guide(st).rest.length); en.hit = 0.14; en.kb = 14; }
@@ -538,8 +565,11 @@ function completeWord() {
   const w = G.word, en = G.enemy;
   G.words++;
   G.absorbN = !!w.st.trailingN;
-  const bonus = Math.round((100 + w.keys * 22) * G.mult);
+  const fast = G.wordT <= w.par;
+  const bonus = Math.round((100 + w.keys * 22) * G.mult * modeMul() * (fast ? 1.5 : 1));
   G.score += bonus;
+  if (fast) { G.speedHits++; spawnFloat('SPEED! ×1.5', ENEMY_X, GROUND_Y - 150 * (en ? en.scale : 1) - 20, '#8ed6ff', 24); FES.tone({ freq: 1600, slide: 2400, dur: 0.12, type: 'sine', vol: 0.12 }); }
+  if (en) G.slash = { x: en.x, y: GROUND_Y - 60 * en.scale, t: 0.22, max: 0.22 };
   G.scrollSpeed = 420;
   G.shake = Math.max(G.shake, 5); G.flashWhite = 0.18; G.hitstop = 0.06;
   FES.sfx('correct');
@@ -561,14 +591,18 @@ document.addEventListener('keydown', e => {
   if (k === ' ' || k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Tab') e.preventDefault();
   if (state === 'result') return;
   if (k === 'Escape') { if (state === 'play' || state === 'pause') { togglePause(); } return; }
-  if (state === 'title') { if (k === 'Enter' || k === ' ') { startGame(); } return; }
+  if (state === 'title') { if (k === 'Enter' || k === ' ') startGame(); else if (k === '1' || k === '2' || k === '3') setMode(Number(k) - 1); else if (k === 'ArrowLeft') setMode(MODE - 1); else if (k === 'ArrowRight') setMode(MODE + 1); return; }
   if (state === 'pause') { if (k === 'Enter' || k === ' ') togglePause(); return; }
   if (state !== 'play') return;
   if (k.length === 1 && /[a-zA-Z\-]/.test(k)) { e.preventDefault(); handleChar(k.toLowerCase()); }
 });
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
-  if (state === 'title') { startGame(); }
+  if (state === 'title') {
+    const g = toGame(e.clientX, e.clientY);
+    for (let i = 0; i < MODES.length; i++) { const b = modeBtnRect(i); if (g.x >= b.x && g.x <= b.x + b.w && g.y >= b.y && g.y <= b.y + b.h) { setMode(i); return; } }
+    startGame();
+  }
   else if (state === 'pause') { togglePause(); }
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -587,7 +621,9 @@ function update(dt) {
     const sec = Math.ceil(G.time);
     if (sec !== G.lastSec) { G.lastSec = sec; if (sec <= 10 && sec > 0) FES.sfx('tick'); }
     if (G.time <= 0) { G.time = 0; endGame(); }
+    G.wordT += dt;
   }
+  if (G.slash) { G.slash.t -= dt; if (G.slash.t <= 0) G.slash = null; }
   // スクロール
   G.scrollSpeed = FES.lerp(G.scrollSpeed, 30 + Math.min(G.combo, 50) * 2.5, Math.min(1, dt * 4));
   G.scroll += G.scrollSpeed * adt;
@@ -894,6 +930,30 @@ function drawWordPanel() {
     rr(x0 + tw, ry + size * 0.55, cw, 4, 2); ctx.fill();
   }
 }
+/** 敵の頭上の輪: SPEED ボーナスの残り時間。なくなると赤くなる（ペナルティはなし） */
+function drawParRing(en) {
+  const w = G.word; if (!w || en.dead > 0) return;
+  const fly = (en.type === 'ghost' || en.type === 'ghost2' || en.type === 'bat') ? -40 : 0;
+  const x = en.x + en.kb, y = GROUND_Y - 130 * en.scale + fly;
+  const k = FES.clamp(1 - G.wordT / w.par, 0, 1);
+  ctx.save(); ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.stroke();
+  if (k > 0) { ctx.strokeStyle = k > 0.3 ? '#8ed6ff' : '#ffd36e'; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 8; ctx.beginPath(); ctx.arc(x, y, 16, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke(); }
+  else { ctx.fillStyle = 'rgba(255,100,120,.6)'; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+  if (k > 0) text('SPEED', x, y - 26, 10, 'rgba(142,214,255,.8)', { weight: 700 });
+}
+/** 単語を打ち切ったときの斬撃 */
+function drawSlash() {
+  const sl = G.slash; if (!sl) return;
+  const k = 1 - sl.t / sl.max;
+  ctx.save(); ctx.translate(sl.x, sl.y); ctx.rotate(-0.6); ctx.globalAlpha = 1 - k;
+  const len = 90 + k * 120, wd = 10 * (1 - k) + 2;
+  const g = ctx.createLinearGradient(-len, 0, len, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-len, 0); ctx.quadraticCurveTo(0, -wd, len, 0); ctx.quadraticCurveTo(0, wd, -len, 0); ctx.fill();
+  ctx.globalAlpha = (1 - k) * 0.5; ctx.fillStyle = '#ffd36e'; ctx.beginPath(); ctx.arc(0, 0, 30 + k * 60, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
 function drawHUD() {
   // タイマー
   const tratio = FES.clamp(G.time / GAME_TIME, 0, 1);
@@ -927,8 +987,13 @@ function drawHUD() {
     const cc = G.combo >= 50 ? '#ff4d6d' : G.combo >= 20 ? '#ffb347' : '#ffd36e';
     text(`${G.combo}`, 0, 0, 48, cc, { stroke: 6 });
     text('COMBO', 0, 34, 16, '#fff', { stroke: 4 });
+    if (G.combo >= 20) text('FEVER!', 0, 58, 16, `rgba(255,120,160,${0.6 + 0.4 * Math.sin(G.bgT * 10)})`, { stroke: 4 });
     ctx.restore();
   }
+  // モード
+  const md = MODES[MODE];
+  ctx.fillStyle = md.color; rr(W - 258, 114, 90, 20, 10); ctx.fill();
+  text(md.label, W - 213, 124, 12, '#101020');
 }
 function drawParticles() {
   for (const p of G.particles) {
@@ -973,16 +1038,27 @@ function drawTitle() {
   text('ミスするとコンボが途切れる。コンボでスコア倍率アップ！', W / 2, 294, 16, 'rgba(255,255,255,.85)', { weight: 700 });
   text('キーボード: そのまま打つ / Esc でポーズ　　スマホ: 右下 ⌨ でソフトキーボード', W / 2, 322, 15, '#8ed6ff', { weight: 700 });
   text('HI-SCORE  ' + FES.getHiScore().toLocaleString(), W / 2, 350, 15, '#ffd36e', { weight: 700 });
+  // モードのボタン（1・2・3 キーでも）
+  MODES.forEach((m, i) => {
+    const b = modeBtnRect(i), on = i === MODE;
+    ctx.fillStyle = on ? m.color : 'rgba(255,255,255,.08)'; rr(b.x, b.y, b.w, b.h, 12); ctx.fill();
+    ctx.strokeStyle = on ? '#fff' : 'rgba(255,255,255,.3)'; ctx.lineWidth = on ? 2 : 1; rr(b.x, b.y, b.w, b.h, 12); ctx.stroke();
+    text(`${i + 1} ${m.label}`, b.x + b.w / 2, b.y + 13, 14, on ? '#101020' : '#fff');
+    text(m.sub, b.x + b.w / 2, b.y + 30, 10, on ? 'rgba(16,16,32,.8)' : 'rgba(255,255,255,.6)', { weight: 700 });
+  });
   // スタートボタン
   const pulse = 1 + Math.sin(t * 5) * 0.04;
-  ctx.save(); ctx.translate(W / 2, 410); ctx.scale(pulse, pulse);
+  ctx.save(); ctx.translate(W / 2, 440); ctx.scale(pulse, pulse);
   const bg = ctx.createLinearGradient(-130, 0, 130, 0); bg.addColorStop(0, '#6a5cff'); bg.addColorStop(1, '#ff4d8d');
   ctx.fillStyle = 'rgba(0,0,0,.4)'; rr(-130, -22, 260, 60, 30); ctx.fill();
   ctx.fillStyle = bg; rr(-130, -28, 260, 56, 28); ctx.fill();
   text('スタート', 0, 0, 26, '#fff');
   ctx.restore();
-  text('クリック / タップ / Enter / Space', W / 2, 462, 13, 'rgba(255,255,255,.6)', { weight: 700 });
+  text('クリック / タップ / Enter / Space', W / 2, 490, 13, 'rgba(255,255,255,.6)', { weight: 700 });
 }
+function modeBtnRect(i) { return { x: W / 2 - 230 + i * 160, y: 366, w: 140, h: 42 }; }
+function setMode(i) { MODE = FES.clamp(i, 0, 2); try { localStorage.setItem('fes:typing:mode', String(MODE)); } catch (e) { /* ignore */ } FES.sfx('select'); }
+try { const mv = Number(localStorage.getItem('fes:typing:mode')); if (mv >= 0 && mv <= 2) MODE = mv; } catch (e) { /* ignore */ }
 function drawCountdown() {
   ctx.fillStyle = 'rgba(5,3,25,.35)'; ctx.fillRect(0, 0, W, H);
   const n = countdown.n, f = countdown.t % 1;
@@ -1004,8 +1080,9 @@ function render() {
     drawTitle();
   } else {
     for (const d of G.deadEnemies) drawEnemy(d);
-    if (G.enemy && state !== 'countdown') drawEnemy(G.enemy);
+    if (G.enemy && state !== 'countdown') { drawEnemy(G.enemy); if (state === 'play') drawParRing(G.enemy); }
     drawHero();
+    drawSlash();
     drawParticles();
     if (state !== 'countdown') { drawWordPanel(); drawHUD(); }
     if (state === 'countdown') drawCountdown();
