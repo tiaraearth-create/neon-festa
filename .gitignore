@@ -31,18 +31,18 @@ Thumbs.db
 活動資料/
 
 # 音量を変える前の元の曲（手元のバックアップ）
-開発用/元の曲（音量を変える前）/
+開発用/保管/元の曲（音量を変える前）/
 
 # やることチェックリストの元ファイル（ローカル専用）
 開発用/チェックリスト.src.html
-開発用/build_checklist.py
+開発用/ツール/build_checklist.py
 
 # USB から外した古いもの（手元に残すだけ）
-開発用/古いもの（USBから外した）/
-開発用/reorg_prints.py
-開発用/make_pdfs.py
-開発用/pdf_list.json
-開発用/make_print_guide.py
+開発用/保管/古いもの（USBから外した）/
+開発用/ツール/reorg_prints.py
+開発用/ツール/make_pdfs.py
+開発用/ツール/pdf_list.json
+開発用/ツール/make_print_guide.py
 
 # クラス（1年1組）の文化祭シフト表など、NEON FESTA 以外でクラスメイトの名前が入るもの。公開しない
 クラス/
