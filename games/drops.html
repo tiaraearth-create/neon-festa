@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>ネオンドロップバトル</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07071a; overflow: hidden;
+    font-family: "Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; }
+  #game { position: absolute; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+</style>
+<script src="../common.js"></script>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+'use strict';
+/* =====================================================================
+   ネオンドロップバトル — ドロップをなぞって動かし、3 つそろえて消す。コンボで属性攻撃、5 フロアの敵を倒せ（パズル RPG）
+   ===================================================================== */
+FES.init({ id: 'drops', title: 'ネオンドロップバトル', ranking: true, portraitOk: true });
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const TAU = Math.PI * 2;
+const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
+const { clamp, lerp, rand, randInt, pick } = FES;
+const COLS = 6, ROWS = 5;
+const MOVE_TIME = 4.0;            // なぞれる時間（秒）
+const PLAYER_HP = 1000;
+const ATK = 140;                  // 1 属性の基本攻撃力（3 個そろえで 140）
+const HEAL_PER = 60;              // 回復ドロップ 1 個の回復量
+const ATTRS = [
+  { id: 'fire',  name: '火',   glyph: '🔥', c: '#ff4d4d', hi: '#ffd0c0', dk: '#7a1010' },
+  { id: 'water', name: '水',   glyph: '💧', c: '#3b9bff', hi: '#cfe6ff', dk: '#0b2f80' },
+  { id: 'wood',  name: '木',   glyph: '🌿', c: '#3ddc6b', hi: '#d2ffdf', dk: '#0a6a2a' },
+  { id: 'light', name: '光',   glyph: '✨', c: '#ffd84a', hi: '#fff6c8', dk: '#7a5a00' },
+  { id: 'dark',  name: '闇',   glyph: '🌙', c: '#b45cff', hi: '#ead2ff', dk: '#420a7a' },
+  { id: 'heal',  name: '回復', glyph: '💗', c: '#ff7ad9', hi: '#ffd7f2', dk: '#7a0a55' },
+];
+const HEAL = 5;
+// 属性の相性: 火 > 木 > 水 > 火、光 ⇔ 闇（おたがい 2 倍）
+function affinity(att, def) {
+  const strong = { fire: 'wood', wood: 'water', water: 'fire', light: 'dark', dark: 'light' };
+  if (strong[att] === def) return 2;
+  if (strong[def] === att) return 0.5;
+  return 1;
+}
+const FLOORS = [
+  { name: 'ネオンスライム', kind: 'slime',  attr: 1, hp: 600,  atk: 110, cd: 2, color: '#3b9bff' },
+  { name: 'ゴーストバット', kind: 'ghost',  attr: 4, hp: 900,  atk: 170, cd: 2, color: '#b45cff' },
+  { name: 'ハンタードローン', kind: 'drone', attr: 3, hp: 1300, atk: 210, cd: 1, color: '#ffd84a' },
+  { name: 'ジャングルゴーレム', kind: 'golem', attr: 2, hp: 1800, atk: 280, cd: 2, color: '#3ddc6b' },
+  { name: 'ネオンドラゴン', kind: 'dragon', attr: 0, hp: 3000, atk: 360, cd: 2, color: '#ff4d4d', boss: true },
+];
+const RANK = { S: 32000, A: 22000, B: 14000, C: 6000 };
+const hex2rgb = h => `${parseInt(h.slice(1, 3), 16)},${parseInt(h.slice(3, 5), 16)},${parseInt(h.slice(5, 7), 16)}`;
+ATTRS.forEach(a => { a.rgb = hex2rgb(a.c); });
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+const easeOutBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+
+/* ---------------------------------------------------------------- 画面（縦 540×960 ／ 横 960×540）・レイアウト */
+let SW = 540, SH = 960, PORTRAIT = true;
+const view = { scale: 1, offsetX: 0, offsetY: 0, toGame(cx, cy) { return { x: (cx - view.offsetX) / view.scale, y: (cy - view.offsetY) / view.scale }; } };
+const L = { board: { x: 0, y: 0, cell: 84 }, enemy: { x: 0, y: 0, w: 0, h: 0 }, hp: { x: 0, y: 0, w: 0 }, timer: { x: 0, y: 0, w: 0 }, title: {} };
+function fit() {
+  const vw = innerWidth, vh = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  PORTRAIT = vh > vw * 1.05;
+  SW = PORTRAIT ? 540 : 960; SH = PORTRAIT ? 960 : 540;
+  const s = Math.min(vw / SW, vh / SH);
+  view.scale = s; view.offsetX = (vw - SW * s) / 2; view.offsetY = (vh - SH * s) / 2;
+  canvas.width = Math.round(SW * s * dpr); canvas.height = Math.round(SH * s * dpr);
+  canvas.style.width = (SW * s) + 'px'; canvas.style.height = (SH * s) + 'px'; canvas.style.left = view.offsetX + 'px'; canvas.style.top = view.offsetY + 'px';
+  ctx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
+  const topSafe = Math.ceil(60 / s);
+  if (PORTRAIT) {
+    L.board.cell = 84; L.board.x = (SW - COLS * 84) / 2; L.board.y = SH - ROWS * 84 - 28;
+    L.enemy = { x: 20, y: Math.max(topSafe, 64), w: SW - 40, h: L.board.y - 150 - Math.max(topSafe, 64) };
+    L.hp = { x: 30, y: L.board.y - 118, w: SW - 60 };
+    L.timer = { x: L.board.x, y: L.board.y - 42, w: COLS * 84 };
+  } else {
+    L.board.cell = 78; L.board.x = SW - COLS * 78 - 24; L.board.y = (SH - ROWS * 78) / 2 + 30;
+    L.enemy = { x: 24, y: Math.max(topSafe, 60), w: L.board.x - 60, h: SH - Math.max(topSafe, 60) - 150 };
+    L.hp = { x: 34, y: SH - 78, w: L.board.x - 80 };
+    L.timer = { x: L.board.x, y: L.board.y - 34, w: COLS * 78 };
+  }
+}
+addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 60)); fit();
+const cellCenter = (r, c) => ({ x: L.board.x + c * L.board.cell + L.board.cell / 2, y: L.board.y + r * L.board.cell + L.board.cell / 2 });
+const cellAt = (x, y) => {
+  const c = Math.floor((x - L.board.x) / L.board.cell), r = Math.floor((y - L.board.y) / L.board.cell);
+  return (r >= 0 && r < ROWS && c >= 0 && c < COLS) ? { r, c } : null;
+};
+
+/* ---------------------------------------------------------------- 状態 */
+const G = {
+  state: 'title', t: 0, paused: false,
+  grid: [], phase: 'idle', phaseT: 0,
+  hold: null, moveT: 0, moved: false, pointerId: null, cursor: { r: 2, c: 2, on: false },
+  floor: 0, enemy: null, hp: PLAYER_HP, hpDisp: PLAYER_HP, enemyHpDisp: 0,
+  score: 0, dispScore: 0, combo: 0, maxCombo: 0, totalDmg: 0, kills: 0, turns: 0, healTotal: 0,
+  groups: [], clearQueue: [], attackQueue: [], damageDone: 0,
+  particles: [], floats: [], beams: [], flash: 0, flashColor: '#fff', shake: 0, banner: null, enemyHit: 0, enemyAtkT: 0, playerHit: 0,
+  cdT: 0, cdStep: -1, intro: 0, idleT: 0,
+};
+function makeGrid() {
+  const g = [];
+  for (let r = 0; r < ROWS; r++) { g.push([]); for (let c = 0; c < COLS; c++) g[r].push({ a: randInt(0, 5), dy: 0, s: 1, clear: 0 }); }
+  // 最初から 3 つそろっている所はなくす
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    let guard = 0;
+    while (guard++ < 20 && ((c >= 2 && g[r][c - 1].a === g[r][c].a && g[r][c - 2].a === g[r][c].a) || (r >= 2 && g[r - 1][c].a === g[r][c].a && g[r - 2][c].a === g[r][c].a))) g[r][c].a = randInt(0, 5);
+  }
+  return g;
+}
+function makeEnemy(i) {
+  const f = FLOORS[i];
+  const hp = Math.round(f.hp * rand(0.92, 1.08) / 10) * 10;
+  return Object.assign({}, f, { hp, maxHp: hp, cdNow: f.cd, enraged: false, bob: rand(0, TAU) });
+}
+
+/* ---------------------------------------------------------------- BGM */
+const BGM = {
+  on: false, next: 0, step: 0,
+  bass: [98, 0, 98, 0, 117, 0, 98, 0, 131, 0, 98, 0, 147, 0, 131, 0],
+  lead: [0, 392, 0, 466, 0, 523, 0, 466, 0, 392, 0, 587, 0, 523, 466, 0],
+  start() { const ac = FES.audioContext(); if (!ac) return; this.on = true; this.next = ac.currentTime + 0.1; this.step = 0; },
+  stop() { this.on = false; },
+  update() {
+    if (!this.on) return;
+    const ac = FES.audioContext(); if (!ac) return;
+    const boss = G.enemy && G.enemy.boss;
+    const spb = 60 / (boss ? 150 : 126) / 2;
+    if (this.next < ac.currentTime - 0.5) this.next = ac.currentTime + 0.05;
+    let guard = 0;
+    while (this.next < ac.currentTime + 0.15 && guard++ < 8) {
+      if (!FES.isMuted()) {
+        const i = this.step % 16, d = Math.max(0, this.next - ac.currentTime);
+        const b = this.bass[i]; if (b) FES.tone({ freq: boss ? b * 0.94 : b, dur: spb * 0.9, type: 'sawtooth', vol: 0.055, delay: d });
+        const l = this.lead[i]; if (l && Math.floor(this.step / 16) % 2 === 1) FES.tone({ freq: l, dur: spb * 0.5, type: 'square', vol: 0.02, delay: d });
+        if (i % 4 === 0) FES.tone({ freq: 95, slide: -55, dur: 0.1, type: 'sine', vol: 0.09, delay: d });
+        if (i % 2 === 1) FES.noise({ dur: 0.03, freq: 7000, vol: 0.02, filter: 'highpass', delay: d });
+      }
+      this.next += spb; this.step++;
+    }
+  },
+};
+
+/* ---------------------------------------------------------------- エフェクト */
+function spawnParticles(x, y, n, color, speed, size, life, grav) {
+  if (G.particles.length > 600) return;
+  for (let i = 0; i < n; i++) { const a = rand(0, TAU), sp = rand(speed * 0.3, speed); G.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(life * 0.6, life), max: life, size: rand(size * 0.6, size), color, grav: grav || 0 }); }
+}
+function addFloat(x, y, text, color, size, dur, bounce) { G.floats.push({ x, y, text, color, size, t: 0, dur: dur || 0.9, bounce: !!bounce }); }
+function addBeam(from, to, color, delay) { G.beams.push({ x0: from.x, y0: from.y, x1: to.x, y1: to.y, color, t: -(delay || 0), dur: 0.45 }); }
+function updateFx(dt) {
+  for (let i = G.particles.length - 1; i >= 0; i--) { const p = G.particles[i]; p.life -= dt; if (p.life <= 0) { G.particles.splice(i, 1); continue; } p.vy += p.grav * dt; p.vx *= Math.exp(-2 * dt); p.vy *= Math.exp(-1.2 * dt); p.x += p.vx * dt; p.y += p.vy * dt; }
+  for (let i = G.floats.length - 1; i >= 0; i--) { const f = G.floats[i]; f.t += dt; if (f.t >= f.dur) G.floats.splice(i, 1); }
+  for (let i = G.beams.length - 1; i >= 0; i--) { const b = G.beams[i]; b.t += dt; if (b.t >= b.dur) G.beams.splice(i, 1); }
+  G.shake *= Math.exp(-7 * dt); if (G.shake < 0.2) G.shake = 0;
+  G.flash = Math.max(0, G.flash - dt * 2.4);
+  G.enemyHit = Math.max(0, G.enemyHit - dt * 3); G.playerHit = Math.max(0, G.playerHit - dt * 2.5); G.enemyAtkT = Math.max(0, G.enemyAtkT - dt * 2);
+  if (G.banner) { G.banner.t += dt; if (G.banner.t >= G.banner.dur) G.banner = null; }
+  if (G.dispScore !== G.score) { const d = G.score - G.dispScore; G.dispScore = Math.abs(d) < 1 ? G.score : G.dispScore + d * Math.min(1, dt * 8); }
+  G.hpDisp += (G.hp - G.hpDisp) * Math.min(1, dt * 6);
+  if (G.enemy) G.enemyHpDisp += (G.enemy.hp - G.enemyHpDisp) * Math.min(1, dt * 6);
+}
+
+/* ---------------------------------------------------------------- 進行 */
+function startGame() {
+  FES.howto(['🟣 ドロップをなぞって動かす（4 秒）', '3 つそろえると消えて 属性攻撃', '🔗 コンボが多いほど ダメージアップ']);
+  FES.hideResult(); FES.pause(false);
+  G.state = 'countdown'; G.cdT = 0; G.cdStep = -1; G.paused = false;
+  G.grid = makeGrid(); G.phase = 'idle'; G.hold = null; G.moved = false; G.moveT = 0;
+  G.floor = 0; G.enemy = makeEnemy(0); G.enemyHpDisp = G.enemy.hp; G.hp = PLAYER_HP; G.hpDisp = PLAYER_HP;
+  G.score = 0; G.dispScore = 0; G.combo = 0; G.maxCombo = 0; G.totalDmg = 0; G.kills = 0; G.turns = 0; G.healTotal = 0;
+  G.particles = []; G.floats = []; G.beams = []; G.banner = null; G.shake = 0; G.flash = 0; G.idleT = 0;
+  FES.fever(false); FES.sfx('start');
+}
+function beginPlay() { G.state = 'play'; G.phase = 'idle'; BGM.start(); G.banner = { text: 'FLOOR 1', sub: G.enemy.name, t: 0, dur: 1.6, color: G.enemy.color }; }
+function nextFloor() {
+  G.floor++;
+  if (G.floor >= FLOORS.length) { allClear(); return; }
+  G.enemy = makeEnemy(G.floor); G.enemyHpDisp = 0;
+  G.phase = 'idle';
+  const boss = G.enemy.boss;
+  G.banner = { text: boss ? 'BOSS' : 'FLOOR ' + (G.floor + 1), sub: G.enemy.name, t: 0, dur: boss ? 2.2 : 1.6, color: G.enemy.color };
+  if (boss) { G.flash = 0.6; G.flashColor = '#ff3355'; G.shake = 14; FES.sfx('wrong'); FES.noise({ dur: 0.6, freq: 700, slide: -500, vol: 0.3 }); }
+  else FES.sfx('levelup');
+}
+function allClear() {
+  const bonus = 5000 + G.hp * 3;
+  G.score += bonus;
+  G.state = 'ending'; G.phaseT = 0; BGM.stop();
+  G.banner = { text: 'ALL CLEAR!!', sub: 'ボーナス +' + bonus.toLocaleString(), t: 0, dur: 3.0, color: '#ffd36e' };
+  FES.sfx('fanfare'); try { FES.confetti(); } catch (e) { /* なくても OK */ }
+  for (let i = 0; i < 6; i++) spawnParticles(rand(60, SW - 60), rand(100, SH * 0.5), 30, pick(ATTRS).c, 400, 7, 1.2, 300);
+}
+function gameOver() {
+  G.state = 'gameover'; G.phaseT = 0; BGM.stop(); FES.fever(false);
+  G.banner = { text: 'やられた…', sub: 'FLOOR ' + (G.floor + 1) + ' で力つきた', t: 0, dur: 2.2, color: '#ff5577' };
+  FES.sfx('gameover'); G.flash = 0.5; G.flashColor = '#ff2244';
+}
+function finish() {
+  G.state = 'result';
+  const cleared = G.floor >= FLOORS.length;
+  FES.showResult({
+    score: G.score, scoreLabel: 'pt',
+    title: cleared ? 'ALL CLEAR!' : 'GAME OVER',
+    subtitle: cleared ? '全 5 フロア制覇！' : 'FLOOR ' + (G.floor + 1) + ' まで到達',
+    rank: RANK, titles: { S: 'ドロップの神', A: 'コンボマスター', B: 'いい手さばき！', C: 'まずは一歩' },
+    stats: [
+      { label: 'フロア', value: Math.min(G.floor + 1, FLOORS.length) + '/' + FLOORS.length },
+      { label: 'MAX COMBO', value: G.maxCombo },
+      { label: '与えたダメージ', value: G.totalDmg.toLocaleString() },
+      { label: '倒した敵', value: G.kills },
+      { label: 'ターン', value: G.turns },
+    ],
+    retryLabel: 'もう一度',
+  }, startGame);
+}
+function togglePause() {
+  if (G.state !== 'play' && G.state !== 'countdown') return;
+  G.paused = !G.paused; FES.sfx('select');
+  if (G.paused) { BGM.stop(); FES.pause(true, { onResume: () => { if (G.paused) togglePause(); }, onRetry: () => { FES.pause(false); startGame(); } }); }
+  else { FES.pause(false); if (G.state === 'play') BGM.start(); }
+}
+
+/* ---------------------------------------------------------------- なぞる操作 */
+function grab(r, c) {
+  if (G.state !== 'play' || G.phase !== 'idle' || G.paused) return false;
+  G.hold = { r, c, x: cellCenter(r, c).x, y: cellCenter(r, c).y, trail: [] }; G.moved = false; G.moveT = MOVE_TIME; G.phase = 'move';
+  FES.sfx('click');
+  return true;
+}
+function moveHoldTo(x, y) {
+  const h = G.hold; if (!h) return;
+  h.x = x; h.y = y;
+  const cell = cellAt(x, y); if (!cell) return;
+  const dr = cell.r - h.r, dc = cell.c - h.c;
+  if (dr === 0 && dc === 0) return;
+  if (Math.abs(dr) > 1 || Math.abs(dc) > 1) return;      // 速すぎてとなりでない → 無視
+  // 入れかえ
+  const a = G.grid[h.r][h.c], b = G.grid[cell.r][cell.c];
+  G.grid[h.r][h.c] = b; G.grid[cell.r][cell.c] = a;
+  b.s = 0.7;                                              // 押しのけられたドロップは少し縮んで戻る
+  h.trail.push({ x: cellCenter(h.r, h.c).x, y: cellCenter(h.r, h.c).y, t: 0 });
+  if (h.trail.length > 12) h.trail.shift();
+  h.r = cell.r; h.c = cell.c; G.moved = true;
+  FES.tone({ freq: 700 + G.hold.trail.length * 40, dur: 0.03, type: 'square', vol: 0.06 });
+}
+function release() {
+  const h = G.hold; if (!h) return;
+  G.hold = null; G.pointerId = null;
+  if (!G.moved) { G.phase = 'idle'; return; }
+  G.turns++; G.combo = 0; G.damageDone = 0; G.attackQueue = [];
+  G.phase = 'resolve'; G.phaseT = 0;
+  resolveMatches();
+}
+function findGroups() {
+  const mark = [];
+  for (let r = 0; r < ROWS; r++) { mark.push([]); for (let c = 0; c < COLS; c++) mark[r].push(false); }
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const a = G.grid[r][c].a;
+    let k = c; while (k + 1 < COLS && G.grid[r][k + 1].a === a) k++;
+    if (k - c >= 2) for (let i = c; i <= k; i++) mark[r][i] = true;
+    k = r; while (k + 1 < ROWS && G.grid[k + 1][c].a === a) k++;
+    if (k - r >= 2) for (let i = r; i <= k; i++) mark[i][c] = true;
+  }
+  const seen = [], groups = [];
+  for (let r = 0; r < ROWS; r++) { seen.push([]); for (let c = 0; c < COLS; c++) seen[r].push(false); }
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (!mark[r][c] || seen[r][c]) continue;
+    const a = G.grid[r][c].a, cells = [], st = [[r, c]]; seen[r][c] = true;
+    while (st.length) {
+      const [y, x] = st.pop(); cells.push({ r: y, c: x });
+      for (const [dy, dx] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ny = y + dy, nx = x + dx;
+        if (ny < 0 || ny >= ROWS || nx < 0 || nx >= COLS || seen[ny][nx] || !mark[ny][nx] || G.grid[ny][nx].a !== a) continue;
+        seen[ny][nx] = true; st.push([ny, nx]);
+      }
+    }
+    groups.push({ a, cells });
+  }
+  return groups;
+}
+function resolveMatches() {
+  const groups = findGroups();
+  if (!groups.length) { afterCascade(); return; }
+  G.clearQueue = groups; G.phase = 'clearing'; G.phaseT = 0;
+}
+function clearNextGroup() {
+  const g = G.clearQueue.shift();
+  G.combo++; G.maxCombo = Math.max(G.maxCombo, G.combo);
+  const attr = ATTRS[g.a];
+  for (const cell of g.cells) { G.grid[cell.r][cell.c].clear = 1; const p = cellCenter(cell.r, cell.c); spawnParticles(p.x, p.y, 8, attr.c, 180, 5, 0.6); }
+  const mid = g.cells.reduce((s, c) => { const p = cellCenter(c.r, c.c); return { x: s.x + p.x / g.cells.length, y: s.y + p.y / g.cells.length }; }, { x: 0, y: 0 });
+  addFloat(mid.x, mid.y - 10, G.combo + ' COMBO', G.combo >= 7 ? '#ff4de1' : G.combo >= 4 ? '#ffd36e' : '#fff', 20 + Math.min(14, G.combo * 2), 0.8, true);
+  G.attackQueue.push({ a: g.a, n: g.cells.length, x: mid.x, y: mid.y });
+  FES.tone({ freq: 523 * Math.pow(1.0595, Math.min(24, G.combo * 2)), dur: 0.12, type: 'triangle', vol: 0.22 });
+  FES.noise({ dur: 0.05, freq: 2500, slide: 400, vol: 0.06 });
+  if (G.combo === 5) FES.fever(true, 'COMBO FEVER!');
+  if (G.combo % 3 === 0) G.shake = Math.max(G.shake, 4);
+}
+function dropOrbs() {
+  // 消えたドロップを取りのぞき、上から落とす。新しいドロップは盤面の上から降ってくる
+  for (let c = 0; c < COLS; c++) {
+    const col = [];
+    for (let r = ROWS - 1; r >= 0; r--) if (!G.grid[r][c].clear) col.push(G.grid[r][c]);
+    let r = ROWS - 1;
+    for (const o of col) { const from = G.grid.findIndex(row => row.includes(o)); o.dy = (from - r) * L.board.cell; G.grid[r][c] = o; r--; }
+    let k = 1;
+    while (r >= 0) { G.grid[r][c] = { a: randInt(0, 5), dy: -(k + 0.5) * L.board.cell - 40, s: 1, clear: 0 }; r--; k++; }
+  }
+  G.phase = 'falling'; G.phaseT = 0;
+}
+function afterCascade() {
+  if (!G.attackQueue.length) { G.phase = 'idle'; G.combo = 0; FES.fever(false); return; }
+  G.phase = 'attack'; G.phaseT = 0; G.attackIdx = 0;
+}
+function doAttack(q) {
+  const e = G.enemy, attr = ATTRS[q.a];
+  const comboMul = 1 + 0.25 * (G.combo - 1);
+  const target = PORTRAIT ? { x: L.enemy.x + L.enemy.w / 2, y: L.enemy.y + L.enemy.h * 0.55 } : { x: L.enemy.x + L.enemy.w / 2, y: L.enemy.y + L.enemy.h * 0.55 };
+  if (q.a === HEAL) {
+    const heal = Math.round(HEAL_PER * q.n * comboMul);
+    G.hp = Math.min(PLAYER_HP, G.hp + heal); G.healTotal += heal;
+    addFloat(L.hp.x + L.hp.w / 2, L.hp.y - 18, '+' + heal + ' 回復', ATTRS[HEAL].c, 22, 0.9, true);
+    spawnParticles(L.hp.x + L.hp.w / 2, L.hp.y, 16, ATTRS[HEAL].c, 160, 5, 0.6, -120);
+    FES.sfx('coin');
+    return;
+  }
+  const aff = affinity(attr.id, ATTRS[e.attr].id);
+  const dmg = Math.round(ATK * (1 + 0.25 * (q.n - 3)) * comboMul * aff);
+  e.hp = Math.max(0, e.hp - dmg); G.totalDmg += dmg; G.damageDone += dmg;
+  G.score += dmg;
+  addBeam(q, target, attr.c, 0);
+  const label = (aff > 1 ? '効果バツグン！ ' : aff < 1 ? 'いまひとつ… ' : '') + '-' + dmg.toLocaleString();
+  addFloat(target.x + rand(-40, 40), target.y - 40 + rand(-20, 20), label, aff > 1 ? '#ffd36e' : aff < 1 ? 'rgba(255,255,255,.6)' : '#fff', aff > 1 ? 30 : 24, 1.0, true);
+  spawnParticles(target.x, target.y, aff > 1 ? 28 : 14, attr.c, 260, 6, 0.6);
+  G.enemyHit = 1; G.shake = Math.max(G.shake, aff > 1 ? 10 : 5);
+  FES.sfx(aff > 1 ? 'explode' : 'hit');
+  if (e.boss && !e.enraged && e.hp > 0 && e.hp <= e.maxHp * 0.3) { e.enraged = true; e.cd = 1; e.atk = Math.round(e.atk * 1.3); addFloat(target.x, target.y - 80, 'ドラゴンが怒った！', '#ff4d4d', 28, 1.4, true); FES.sfx('wrong'); G.flash = 0.4; G.flashColor = '#ff3355'; }
+}
+function enemyTurn() {
+  const e = G.enemy;
+  e.cdNow--;
+  if (e.cdNow > 0) { G.phase = 'idle'; G.combo = 0; FES.fever(false); return; }
+  e.cdNow = e.cd;
+  G.phase = 'enemyAttack'; G.phaseT = 0; G.enemyAtkT = 1;
+}
+function applyEnemyAttack() {
+  const e = G.enemy;
+  const dmg = Math.round(e.atk * rand(0.9, 1.1));
+  G.hp = Math.max(0, G.hp - dmg);
+  G.playerHit = 1; G.shake = Math.max(G.shake, 12); G.flash = 0.35; G.flashColor = e.color;
+  addFloat(L.hp.x + L.hp.w / 2, L.hp.y - 20, '-' + dmg, '#ff6b8a', 28, 1.0, true);
+  spawnParticles(L.hp.x + L.hp.w / 2, L.hp.y, 20, e.color, 240, 6, 0.6);
+  FES.sfx('miss'); FES.noise({ dur: 0.2, freq: 900, slide: -500, vol: 0.2 });
+}
+
+/* ---------------------------------------------------------------- 更新 */
+function update(dt) {
+  G.t += dt;
+  if (G.paused) return;
+  updateFx(dt);
+  BGM.update();
+  for (const row of G.grid) for (const o of row) { o.s += (1 - o.s) * Math.min(1, dt * 12); }
+  switch (G.state) {
+    case 'title': break;
+    case 'countdown': {
+      G.cdT += dt; const step = Math.floor(G.cdT);
+      if (step !== G.cdStep && step <= 3) { G.cdStep = step; FES.sfx(step < 3 ? 'countdown' : 'go'); }
+      if (G.cdT >= 3.6) beginPlay();
+      break;
+    }
+    case 'play': updatePlay(dt); break;
+    case 'ending': G.phaseT += dt; if (G.phaseT > 3.2) finish(); break;
+    case 'gameover': G.phaseT += dt; if (G.phaseT > 2.4) finish(); break;
+  }
+}
+function updatePlay(dt) {
+  G.phaseT += dt;
+  if (G.hold) { for (const tr of G.hold.trail) tr.t += dt; }
+  switch (G.phase) {
+    case 'idle': G.idleT += dt; break;
+    case 'move':
+      if (G.moved) { G.moveT -= dt; if (G.moveT <= 0) { G.moveT = 0; release(); } }
+      break;
+    case 'clearing': {
+      // 0.22 秒ごとに 1 グループずつ消していく（コンボが見える）
+      if (G.phaseT >= 0.22 || (G.combo === 0 && G.phaseT >= 0.05)) {
+        G.phaseT = 0;
+        if (G.clearQueue.length) clearNextGroup(); else dropOrbs();
+      }
+      break;
+    }
+    case 'falling': {
+      let moving = false;
+      for (const row of G.grid) for (const o of row) { if (o.dy < 0) { o.dy = Math.min(0, o.dy + 1500 * dt); if (o.dy < 0) moving = true; } }
+      if (!moving && G.phaseT > 0.15) { G.phase = 'resolve'; resolveMatches(); }
+      break;
+    }
+    case 'resolve': break;
+    case 'attack': {
+      if (G.phaseT >= 0.26) {
+        G.phaseT = 0;
+        if (G.attackIdx < G.attackQueue.length) { doAttack(G.attackQueue[G.attackIdx]); G.attackIdx++; }
+        else { G.phase = 'attackEnd'; G.phaseT = 0; }
+      }
+      break;
+    }
+    case 'attackEnd': {
+      if (G.phaseT < 0.5) break;
+      if (G.combo >= 3) { G.score += G.combo * 100; }
+      if (G.enemy.hp <= 0) {
+        G.kills++; const bonus = 1000 * (G.floor + 1) + (G.enemy.boss ? 5000 : 0); G.score += bonus;
+        const target = { x: L.enemy.x + L.enemy.w / 2, y: L.enemy.y + L.enemy.h * 0.55 };
+        spawnParticles(target.x, target.y, 60, G.enemy.color, 420, 8, 1.0, 200); spawnParticles(target.x, target.y, 30, '#fff', 300, 4, 0.7);
+        addFloat(target.x, target.y - 60, G.enemy.name + ' をたおした！ +' + bonus.toLocaleString(), '#ffd36e', 22, 1.5, true);
+        G.flash = 0.5; G.flashColor = '#fff'; G.shake = 16; FES.sfx('explode'); FES.sfx('powerup');
+        G.phase = 'floorClear'; G.phaseT = 0; G.combo = 0; FES.fever(false);
+      } else { enemyTurn(); }
+      break;
+    }
+    case 'enemyAttack': {
+      if (G.phaseT >= 0.45 && !G.enemyAttacked) { G.enemyAttacked = true; applyEnemyAttack(); }
+      if (G.phaseT >= 1.0) { G.enemyAttacked = false; G.combo = 0; FES.fever(false); if (G.hp <= 0) gameOver(); else G.phase = 'idle'; }
+      break;
+    }
+    case 'floorClear': { if (G.phaseT >= 1.4) nextFloor(); break; }
+  }
+}
+
+/* ---------------------------------------------------------------- 入力 */
+function toGame(e) { return view.toGame(e.clientX, e.clientY); }
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const p = toGame(e);
+  if (G.state === 'title') { startGame(); return; }
+  if (G.state !== 'play' || G.paused) return;
+  if (hitPause(p)) { togglePause(); return; }
+  if (G.hold) return;
+  const cell = cellAt(p.x, p.y);
+  if (cell && grab(cell.r, cell.c)) { G.pointerId = e.pointerId; G.hold.x = p.x; G.hold.y = p.y; G.cursor.on = false; }
+});
+window.addEventListener('pointermove', e => {
+  if (!G.hold || G.pointerId !== e.pointerId) return;
+  const p = toGame(e); moveHoldTo(p.x, p.y);
+});
+const up = e => { if (G.hold && G.pointerId === e.pointerId) release(); };
+window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+window.addEventListener('keydown', e => {
+  const k = e.code;
+  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(k)) e.preventDefault();
+  if (e.repeat) return;
+  if (k === 'Escape' || k === 'KeyP') { togglePause(); return; }
+  if (G.state === 'title') { if (k === 'Space' || k === 'Enter') startGame(); return; }
+  if (G.state !== 'play' || G.paused) return;
+  const cur = G.cursor;
+  const dir = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0], KeyA: [0, -1], KeyD: [0, 1], KeyW: [-1, 0], KeyS: [1, 0] }[k];
+  if (dir) {
+    cur.on = true;
+    if (G.hold && G.pointerId === 'key') {
+      const nr = clamp(G.hold.r + dir[0], 0, ROWS - 1), nc = clamp(G.hold.c + dir[1], 0, COLS - 1);
+      const p = cellCenter(nr, nc); moveHoldTo(p.x, p.y); cur.r = G.hold.r; cur.c = G.hold.c;
+    } else { cur.r = clamp(cur.r + dir[0], 0, ROWS - 1); cur.c = clamp(cur.c + dir[1], 0, COLS - 1); FES.sfx('tick'); }
+  } else if (k === 'Space' || k === 'Enter') {
+    cur.on = true;
+    if (G.hold && G.pointerId === 'key') release();
+    else if (!G.hold && grab(cur.r, cur.c)) G.pointerId = 'key';
+  }
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'play' && !G.paused) togglePause(); });
+function pauseRect() { return PORTRAIT ? { x: SW - 58, y: L.board.y - 46, w: 44, h: 36 } : { x: SW - 58, y: SH - 42, w: 44, h: 36 }; }
+function hitPause(p) { const r = pauseRect(); return p.x >= r.x - 6 && p.x <= r.x + r.w + 6 && p.y >= r.y - 6 && p.y <= r.y + r.h + 6; }
+
+/* ---------------------------------------------------------------- 描画ヘルパ */
+function text(s, x, y, size, color, align, weight, base) { ctx.font = (weight || '900') + ' ' + size + 'px ' + FONT; ctx.fillStyle = color; ctx.textAlign = align || 'center'; ctx.textBaseline = base || 'middle'; ctx.fillText(s, x, y); }
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r); ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); }
+function glow(x, y, r, rgb, a) { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(0.5, `rgba(${rgb},${a * 0.35})`); g.addColorStop(1, `rgba(${rgb},0)`); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+function outlined(s, x, y, size, color, align) { ctx.font = '900 ' + size + 'px ' + FONT; ctx.textAlign = align || 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(5,5,25,0.9)'; ctx.lineWidth = Math.max(3, size * 0.16); ctx.strokeText(s, x, y); ctx.fillStyle = color; ctx.fillText(s, x, y); }
+
+/* ---------------------------------------------------------------- 描画 */
+function draw() {
+  ctx.save();
+  ctx.fillStyle = '#07071a'; ctx.fillRect(0, 0, SW, SH);
+  if (G.shake > 0) ctx.translate(rand(-G.shake, G.shake), rand(-G.shake, G.shake));
+  drawBackground();
+  if (G.state === 'title') { drawTitle(); ctx.restore(); return; }
+  drawEnemyArea();
+  drawPlayerHp();
+  drawBoard();
+  drawBeams();
+  drawParticles();
+  drawFloats();
+  drawHUD();
+  drawOverlays();
+  ctx.restore();
+  if (G.flash > 0.01) { ctx.globalAlpha = G.flash * 0.7; ctx.fillStyle = G.flashColor; ctx.fillRect(0, 0, SW, SH); ctx.globalAlpha = 1; }
+}
+function drawBackground() {
+  const t = G.t;
+  ctx.strokeStyle = 'rgba(120,110,255,0.07)'; ctx.lineWidth = 1;
+  const off = (t * 20) % 48; ctx.beginPath();
+  for (let x = -48 + off; x < SW + 48; x += 48) { ctx.moveTo(x, 0); ctx.lineTo(x, SH); }
+  for (let y = -48 + off; y < SH + 48; y += 48) { ctx.moveTo(0, y); ctx.lineTo(SW, y); }
+  ctx.stroke();
+  const col = G.enemy ? G.enemy.color : '#b45cff';
+  glow(L.enemy.x + L.enemy.w / 2, L.enemy.y + L.enemy.h / 2, Math.max(L.enemy.w, L.enemy.h) * 0.7, hex2rgb(col), 0.12 + 0.03 * Math.sin(t * 1.5));
+}
+
+// ---- 敵 ----
+function drawEnemyArea() {
+  const e = G.enemy; if (!e) return;
+  const cx = L.enemy.x + L.enemy.w / 2, cy = L.enemy.y + L.enemy.h * 0.55, size = Math.min(L.enemy.w, L.enemy.h) * (e.boss ? 0.34 : 0.33);
+  const bob = Math.sin(G.t * 2 + e.bob) * size * 0.06;
+  const lunge = G.enemyAtkT > 0.5 ? (1 - G.enemyAtkT) * 2 : G.enemyAtkT * 2;   // 攻撃のとき前に出る
+  const dead = G.phase === 'floorClear' || G.state === 'ending';
+  ctx.save();
+  if (dead) ctx.globalAlpha = Math.max(0, 1 - G.phaseT * 1.2);
+  ctx.translate(cx, cy + bob + (PORTRAIT ? lunge * 40 : 0)); if (!PORTRAIT) ctx.translate(lunge * 50, 0);
+  if (G.enemyHit > 0) { ctx.translate(rand(-6, 6) * G.enemyHit, 0); }
+  const sc = 1 + (dead ? G.phaseT * 0.3 : 0) + (G.enemyAtkT > 0.5 ? 0.12 : 0);
+  ctx.scale(sc, sc);
+  glow(0, 0, size * 1.6, hex2rgb(e.color), 0.35 + G.enemyHit * 0.4);
+  drawMonster(e.kind, size, e.color, G.t, G.enemyHit);
+  ctx.restore();
+  // 名前・HP バー
+  const bx = L.enemy.x + 10, bw = L.enemy.w - 20, by = L.enemy.y + 8;
+  text((e.boss ? '👑 BOSS  ' : 'FLOOR ' + (G.floor + 1) + '  ') + e.name, bx, by + 12, PORTRAIT ? 20 : 18, '#fff', 'left');
+  // 属性バッジ
+  const at = ATTRS[e.attr];
+  ctx.fillStyle = `rgba(${at.rgb},0.25)`; rrect(bx + bw - 86, by, 86, 26, 13); ctx.fill(); ctx.strokeStyle = at.c; ctx.lineWidth = 1.5; ctx.stroke();
+  text(at.glyph + ' ' + at.name + '属性', bx + bw - 43, by + 13, 13, '#fff');
+  const hy = by + 34;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; rrect(bx, hy, bw, 16, 8); ctx.fill();
+  const k = clamp(G.enemyHpDisp / e.maxHp, 0, 1);
+  const hg = ctx.createLinearGradient(bx, 0, bx + bw, 0); hg.addColorStop(0, e.enraged ? '#ff2244' : e.color); hg.addColorStop(1, '#fff');
+  ctx.fillStyle = hg; rrect(bx, hy, Math.max(16, bw * k), 16, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; rrect(bx, hy, bw, 16, 8); ctx.stroke();
+  text(Math.max(0, Math.round(G.enemyHpDisp)).toLocaleString() + ' / ' + e.maxHp.toLocaleString(), bx + bw / 2, hy + 8, 12, '#fff');
+  // 攻撃までのカウント
+  if (!dead) {
+    const cdx = L.enemy.x + L.enemy.w - 34, cdy = L.enemy.y + L.enemy.h - 30;
+    const urgent = e.cdNow <= 1;
+    ctx.fillStyle = urgent ? 'rgba(255,40,80,0.8)' : 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.arc(cdx, cdy, 24 + (urgent ? Math.sin(G.t * 10) * 2 : 0), 0, TAU); ctx.fill();
+    ctx.strokeStyle = urgent ? '#ff9ab0' : 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2; ctx.stroke();
+    text(String(e.cdNow), cdx, cdy + 1, 24, '#fff'); text('あと', cdx, cdy - 32, 11, 'rgba(255,255,255,0.7)');
+    text('攻撃 ' + e.atk, cdx, cdy + 34, 11, 'rgba(255,255,255,0.7)');
+  }
+}
+function drawMonster(kind, s, color, t, hit) {
+  const rgb = hex2rgb(color), body = `rgba(${rgb},0.85)`, light = '#ffffff';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  const eye = (x, y, r) => { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.fillStyle = '#1a0a30'; ctx.beginPath(); ctx.arc(x + r * 0.25, y + r * 0.1, r * 0.5, 0, TAU); ctx.fill(); };
+  if (hit > 0) { ctx.save(); ctx.globalAlpha = 1; }
+  switch (kind) {
+    case 'slime': {
+      const w = Math.sin(t * 3) * 0.06;
+      ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, s * 0.15, s * (1 + w), s * 0.8 * (1 - w), 0, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(-s * 0.35, -s * 0.3, s * 0.28, s * 0.16, -0.5, 0, TAU); ctx.fill();
+      eye(-s * 0.3, s * 0.05, s * 0.13); eye(s * 0.3, s * 0.05, s * 0.13);
+      ctx.strokeStyle = '#1a0a30'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, s * 0.35, s * 0.2, 0.2, Math.PI - 0.2); ctx.stroke();
+      break;
+    }
+    case 'ghost': {
+      ctx.fillStyle = body; ctx.beginPath(); ctx.arc(0, -s * 0.2, s * 0.75, Math.PI, 0); ctx.lineTo(s * 0.75, s * 0.55);
+      for (let i = 0; i < 5; i++) { const x = s * 0.75 - (i + 0.5) * s * 0.3; ctx.quadraticCurveTo(x + s * 0.15, s * 0.8 + Math.sin(t * 6 + i) * s * 0.06, x - s * 0.15, s * 0.55); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      // 羽
+      ctx.fillStyle = `rgba(${rgb},0.55)`; for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(d * s * 0.7, -s * 0.1); ctx.lineTo(d * s * 1.35, -s * 0.5 + Math.sin(t * 8) * s * 0.15); ctx.lineTo(d * s * 1.2, s * 0.1); ctx.lineTo(d * s * 0.75, s * 0.3); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+      eye(-s * 0.28, -s * 0.2, s * 0.14); eye(s * 0.28, -s * 0.2, s * 0.14);
+      ctx.fillStyle = '#1a0a30'; ctx.beginPath(); ctx.moveTo(-s * 0.15, s * 0.15); ctx.lineTo(s * 0.15, s * 0.15); ctx.lineTo(0, s * 0.3); ctx.closePath(); ctx.fill();
+      break;
+    }
+    case 'drone': {
+      ctx.save(); ctx.rotate(Math.sin(t * 2) * 0.08);
+      ctx.fillStyle = '#2a2a44'; rrect(-s * 0.9, -s * 0.22, s * 1.8, s * 0.44, s * 0.2); ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.stroke();
+      for (const d of [-1, 1]) { ctx.fillStyle = `rgba(${rgb},0.6)`; ctx.beginPath(); ctx.ellipse(d * s * 0.95, -s * 0.35, s * 0.42, s * 0.08, t * 20 % TAU, 0, TAU); ctx.fill(); }
+      glow(0, 0, s * 0.5, rgb, 0.8); ctx.fillStyle = light; ctx.beginPath(); ctx.arc(0, 0, s * 0.16 + Math.sin(t * 10) * s * 0.03, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#ff4d4d'; ctx.beginPath(); ctx.arc(0, 0, s * 0.07, 0, TAU); ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-s * 0.4, s * 0.22); ctx.lineTo(-s * 0.5, s * 0.6); ctx.moveTo(s * 0.4, s * 0.22); ctx.lineTo(s * 0.5, s * 0.6); ctx.stroke();
+      ctx.restore();
+      break;
+    }
+    case 'golem': {
+      ctx.fillStyle = body;
+      rrect(-s * 0.8, -s * 0.2, s * 1.6, s * 1.0, s * 0.2); ctx.fill(); ctx.stroke();                 // 胴
+      rrect(-s * 0.45, -s * 0.85, s * 0.9, s * 0.7, s * 0.18); ctx.fill(); ctx.stroke();               // 頭
+      for (const d of [-1, 1]) { ctx.save(); ctx.translate(d * s * 1.0, s * 0.1 + Math.sin(t * 3 + d) * s * 0.05); rrect(-s * 0.22, -s * 0.3, s * 0.44, s * 0.9, s * 0.15); ctx.fill(); ctx.stroke(); ctx.restore(); }
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; for (let i = 0; i < 4; i++) { rrect(-s * 0.6 + i * s * 0.32, s * 0.05, s * 0.2, s * 0.25, 4); ctx.fill(); }
+      ctx.fillStyle = '#ffd84a'; for (const d of [-1, 1]) { ctx.beginPath(); ctx.arc(d * s * 0.2, -s * 0.5, s * 0.09 + Math.sin(t * 6) * s * 0.015, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#5cff8d'; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(-s * 0.3 + i * s * 0.3, -s * 0.9, s * 0.12, s * 0.2, (i - 1) * 0.5, 0, TAU); ctx.fill(); }
+      break;
+    }
+    case 'dragon': {
+      const flap = Math.sin(t * 5) * 0.35;
+      ctx.fillStyle = `rgba(${rgb},0.55)`;
+      for (const d of [-1, 1]) { ctx.save(); ctx.translate(d * s * 0.55, -s * 0.2); ctx.rotate(d * flap); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(d * s * 1.1, -s * 0.9); ctx.lineTo(d * s * 1.45, -s * 0.2); ctx.lineTo(d * s * 1.05, s * 0.2); ctx.lineTo(d * s * 0.4, s * 0.35); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(0, s * 0.25, s * 0.75, s * 0.6, 0, 0, TAU); ctx.fill(); ctx.stroke();      // 胴
+      ctx.beginPath(); ctx.moveTo(-s * 0.3, s * 0.6); ctx.quadraticCurveTo(-s * 1.2, s * 1.0, -s * 1.3, s * 0.3 + Math.sin(t * 3) * s * 0.1); ctx.lineWidth = s * 0.16; ctx.strokeStyle = body; ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';   // しっぽ
+      ctx.beginPath(); ctx.ellipse(s * 0.25, -s * 0.45, s * 0.55, s * 0.4, 0.2, 0, TAU); ctx.fill(); ctx.stroke();  // 頭
+      ctx.fillStyle = '#ffd84a'; for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(d * s * 0.2 + s * 0.2, -s * 0.8); ctx.lineTo(d * s * 0.35 + s * 0.2, -s * 1.25); ctx.lineTo(d * s * 0.45 + s * 0.2, -s * 0.72); ctx.closePath(); ctx.fill(); }   // 角
+      eye(s * 0.5, -s * 0.52, s * 0.12);
+      ctx.fillStyle = '#fff'; for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(s * 0.45 + i * s * 0.1, -s * 0.2); ctx.lineTo(s * 0.5 + i * s * 0.1, -s * 0.05); ctx.lineTo(s * 0.55 + i * s * 0.1, -s * 0.2); ctx.closePath(); ctx.fill(); }   // 牙
+      if (G.enemyAtkT > 0.3) { glow(s * 0.9, -s * 0.3, s * 0.6, '255,140,40', 0.8); }
+      break;
+    }
+  }
+  if (hit > 0) { ctx.globalAlpha = hit * 0.7; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, s * 1.1, 0, TAU); ctx.fill(); ctx.restore(); }
+}
+
+// ---- プレイヤー HP ----
+function drawPlayerHp() {
+  const { x, y, w } = L.hp;
+  text('❤ HP', x, y - 14, 14, '#fff', 'left'); text(Math.round(G.hpDisp) + ' / ' + PLAYER_HP, x + w, y - 14, 14, 'rgba(255,255,255,0.8)', 'right');
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; rrect(x, y, w, 20, 10); ctx.fill();
+  const k = clamp(G.hpDisp / PLAYER_HP, 0, 1);
+  const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, k < 0.3 ? '#ff2244' : '#ff7ad9'); g.addColorStop(1, k < 0.3 ? '#ff8899' : '#ffd0f0');
+  ctx.fillStyle = g; rrect(x, y, Math.max(20, w * k), 20, 10); ctx.fill();
+  if (G.playerHit > 0) { ctx.globalAlpha = G.playerHit; ctx.fillStyle = '#fff'; rrect(x, y, w, 20, 10); ctx.fill(); ctx.globalAlpha = 1; }
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.5; rrect(x, y, w, 20, 10); ctx.stroke();
+}
+
+// ---- 盤面 ----
+function drawOrb(x, y, a, r, held) {
+  const at = ATTRS[a];
+  glow(x, y, r * 1.5, at.rgb, held ? 0.9 : 0.45);
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
+  g.addColorStop(0, at.hi); g.addColorStop(0.45, at.c); g.addColorStop(1, at.dk);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r - 1, 0, TAU); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(x - r * 0.3, y - r * 0.45, r * 0.3, r * 0.17, -0.6, 0, TAU); ctx.fill();
+  text(at.glyph, x, y + r * 0.06, r * 1.0, '#fff');
+}
+function drawBoard() {
+  const { x, y, cell } = L.board, w = COLS * cell, h = ROWS * cell;
+  ctx.fillStyle = 'rgba(10,10,40,0.7)'; rrect(x - 8, y - 8, w + 16, h + 16, 18); ctx.fill();
+  ctx.strokeStyle = 'rgba(180,120,255,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+  for (let c = 1; c < COLS; c++) { ctx.beginPath(); ctx.moveTo(x + c * cell, y); ctx.lineTo(x + c * cell, y + h); ctx.stroke(); }
+  for (let r = 1; r < ROWS; r++) { ctx.beginPath(); ctx.moveTo(x, y + r * cell); ctx.lineTo(x + w, y + r * cell); ctx.stroke(); }
+  // なぞった軌跡
+  if (G.hold && G.hold.trail.length) {
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const at = ATTRS[G.grid[G.hold.r][G.hold.c].a];
+    ctx.strokeStyle = `rgba(${at.rgb},0.35)`; ctx.lineWidth = cell * 0.35; ctx.beginPath();
+    G.hold.trail.forEach((p, i) => { if (i) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y); }); ctx.lineTo(G.hold.x, G.hold.y); ctx.stroke(); ctx.restore();
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(x - 2, y - 2, w + 4, h + 4); ctx.clip();
+  const r0 = cell * 0.4;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const o = G.grid[r][c]; if (!o) continue;
+    if (G.hold && G.hold.r === r && G.hold.c === c) continue;
+    const p = cellCenter(r, c);
+    if (o.clear) {
+      const k = clamp(G.phaseT / 0.22, 0, 1);
+      ctx.globalAlpha = 1 - k; drawOrb(p.x, p.y, o.a, r0 * (1 + k * 0.5), false); ctx.globalAlpha = 1; continue;
+    }
+    drawOrb(p.x, p.y + o.dy, o.a, r0 * o.s, false);
+  }
+  ctx.restore();
+  // カーソル（キーボード用）
+  if (G.cursor.on && G.state === 'play' && G.phase === 'idle') {
+    const p = cellCenter(G.cursor.r, G.cursor.c);
+    ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * Math.sin(G.t * 8)})`; ctx.lineWidth = 3; rrect(p.x - cell / 2 + 4, p.y - cell / 2 + 4, cell - 8, cell - 8, 12); ctx.stroke();
+  }
+  // 持っているドロップは最後に大きく
+  if (G.hold) {
+    const o = G.grid[G.hold.r][G.hold.c];
+    drawOrb(G.hold.x, G.hold.y - 10, o.a, r0 * 1.25, true);
+  }
+  // はじめの案内
+  if (G.state === 'play' && G.phase === 'idle' && G.turns === 0 && G.idleT > 1.2) {
+    const k = (G.t % 1.6) / 1.6, p0 = cellCenter(2, 1), p1 = cellCenter(2, 4);
+    const px = lerp(p0.x, p1.x, easeOutCubic(k)), py = p0.y - 36;
+    text('👆', px, py, 30, '#fff');
+    outlined('ドロップをなぞって動かそう', x + w / 2, y - 16, 18, '#ffd36e');
+  }
+}
+function drawBeams() {
+  for (const b of G.beams) {
+    if (b.t < 0) continue;
+    const k = b.t / b.dur;
+    const x = lerp(b.x0, b.x1, easeOutCubic(k)), y = lerp(b.y0, b.y1, easeOutCubic(k));
+    ctx.strokeStyle = b.color; ctx.lineWidth = 6 * (1 - k * 0.5); ctx.lineCap = 'round'; ctx.globalAlpha = 1 - k * 0.6;
+    ctx.beginPath(); ctx.moveTo(lerp(b.x0, x, 0.75), lerp(b.y0, y, 0.75)); ctx.lineTo(x, y); ctx.stroke();
+    glow(x, y, 26, hex2rgb(b.color), 0.8); ctx.globalAlpha = 1;
+  }
+}
+function drawParticles() { for (const p of G.particles) { ctx.globalAlpha = clamp(p.life / p.max, 0, 1); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.4 + 0.6 * p.life / p.max), 0, TAU); ctx.fill(); } ctx.globalAlpha = 1; }
+function drawFloats() {
+  for (const f of G.floats) {
+    const k = f.t / f.dur, a = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
+    const s = f.bounce && f.t < 0.25 ? easeOutBack(f.t / 0.25) : 1;
+    ctx.save(); ctx.globalAlpha = clamp(a, 0, 1); ctx.translate(f.x, f.y - k * 46); ctx.scale(s, s);
+    outlined(f.text, 0, 0, f.size, f.color); ctx.restore();
+  }
+}
+function drawHUD() {
+  // スコア・コンボ（縦: 盤面の上 ／ 横: 左下）
+  const topSafe = Math.ceil(60 / view.scale);
+  const sx = PORTRAIT ? L.board.x : 34, sy = PORTRAIT ? L.board.y - 60 : SH - 30;
+  text('SCORE', sx, sy - 14, 11, 'rgba(255,255,255,0.6)', 'left'); text(Math.floor(G.dispScore).toLocaleString(), sx, sy + 6, 24, '#ffd36e', 'left');
+  if (G.combo >= 2 && G.state === 'play') { const s = 1 + 0.08 * Math.sin(G.t * 14); ctx.save(); ctx.translate(sx + 160, sy); ctx.scale(s, s); outlined(G.combo + ' COMBO  ×' + (1 + 0.25 * (G.combo - 1)).toFixed(2), 0, 0, 18, '#ffe36e'); ctx.restore(); }
+  // なぞり時間のバー
+  if (G.phase === 'move' && G.moved) {
+    const { x, y, w } = L.timer, k = G.moveT / MOVE_TIME;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; rrect(x, y, w, 12, 6); ctx.fill();
+    ctx.fillStyle = k < 0.3 ? '#ff4d6d' : '#5ee7ff'; rrect(x, y, w * k, 12, 6); ctx.fill();
+    text(G.moveT.toFixed(1), x + w + 4, y + 6, 13, '#fff', 'left');
+  }
+  // ポーズボタン
+  if (G.state === 'play' || G.state === 'countdown') {
+    const r = pauseRect();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; rrect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillRect(r.x + 14, r.y + 10, 5, 16); ctx.fillRect(r.x + 25, r.y + 10, 5, 16);
+  }
+  // 操作ヒント（横画面）
+  if (!PORTRAIT) text('なぞる／矢印＋Space で動かす　Esc: ポーズ', L.board.x + COLS * L.board.cell / 2 - 30, SH - 14, 12, 'rgba(255,255,255,0.45)');
+}
+function drawOverlays() {
+  if (G.state === 'countdown') {
+    const step = Math.floor(G.cdT), frac = G.cdT - step;
+    if (step <= 3) {
+      const label = step < 3 ? String(3 - step) : 'GO!';
+      ctx.save(); ctx.translate(SW / 2, SH / 2); ctx.scale(1 + (1 - frac) * 0.6, 1 + (1 - frac) * 0.6); ctx.globalAlpha = Math.max(0, 1 - frac * 0.6);
+      outlined(label, 0, 0, 120, step < 3 ? '#fff' : '#7dff8a'); ctx.restore();
+    }
+  }
+  if (G.banner) {
+    const b = G.banner, k = b.t / b.dur, a = k < 0.1 ? k / 0.1 : k > 0.8 ? (1 - k) / 0.2 : 1, pop = b.t < 0.3 ? easeOutBack(b.t / 0.3) : 1;
+    ctx.save(); ctx.globalAlpha = clamp(a, 0, 1); ctx.translate(SW / 2, PORTRAIT ? L.enemy.y + L.enemy.h + 10 : SH / 2 - 40); ctx.scale(pop, pop);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; rrect(-SW * 0.45, -48, SW * 0.9, 96, 20); ctx.fill(); ctx.strokeStyle = b.color; ctx.lineWidth = 3; ctx.stroke();
+    outlined(b.text, 0, -14, b.text.length > 8 ? 36 : 48, b.color);
+    text(b.sub, 0, 26, 18, '#fff'); ctx.restore();
+  }
+}
+function drawTitle() {
+  const t = G.t;
+  const cx = SW / 2, ty = PORTRAIT ? 200 : 110;
+  // 飾りのドロップ
+  for (let i = 0; i < 7; i++) { const a = i % 6, x = cx - 150 + i * 50 + Math.sin(t * 1.3 + i) * 8, y = ty + 150 + Math.cos(t * 1.7 + i * 1.2) * 14; drawOrb(x, y, a, 20, false); }
+  text('NEON DROP BATTLE', cx, ty - 50, 16, 'rgba(255,255,255,0.6)', 'center', '700');
+  ctx.save(); ctx.translate(cx, ty + 20); ctx.scale(1 + 0.02 * Math.sin(t * 2), 1 + 0.02 * Math.sin(t * 2));
+  ctx.font = '900 ' + (PORTRAIT ? 54 : 60) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(180,92,255,0.9)'; ctx.shadowBlur = 30; ctx.strokeStyle = 'rgba(5,5,25,0.9)'; ctx.lineWidth = 12; ctx.strokeText('ネオンドロップ', 0, -32); ctx.strokeText('バトル', 0, 32); ctx.shadowBlur = 0;
+  const g = ctx.createLinearGradient(-220, 0, 220, 0); g.addColorStop(0, '#ff4d8d'); g.addColorStop(0.5, '#ffd84a'); g.addColorStop(1, '#5ee7ff');
+  ctx.fillStyle = g; ctx.fillText('ネオンドロップ', 0, -32); ctx.fillText('バトル', 0, 32); ctx.restore();
+  // 敵のプレビュー
+  ctx.save(); ctx.translate(cx + (PORTRAIT ? 0 : 300), PORTRAIT ? ty + 300 : 300); drawMonster('dragon', PORTRAIT ? 70 : 60, '#ff4d4d', t, 0); ctx.restore();
+  const ly = PORTRAIT ? ty + 430 : 380;
+  text('ドロップをなぞって動かし、3 つそろえて属性攻撃！', cx, ly, PORTRAIT ? 17 : 18, '#ffd36e');
+  text('コンボが多いほど強い。5 フロアの敵を倒せ（最後はドラゴン）', cx, ly + 28, PORTRAIT ? 14 : 15, 'rgba(255,255,255,0.8)', 'center', '700');
+  text('火 > 木 > 水 > 火　光 ⇔ 闇　💗 は回復', cx, ly + 54, PORTRAIT ? 14 : 15, 'rgba(255,255,255,0.7)', 'center', '700');
+  // スタートボタン
+  const by = PORTRAIT ? SH - 200 : SH - 96, s = 1 + Math.sin(t * 4) * 0.03;
+  ctx.save(); ctx.translate(cx, by); ctx.scale(s, s);
+  glow(0, 0, 170, '180,92,255', 0.4);
+  const bg = ctx.createLinearGradient(-150, 0, 150, 0); bg.addColorStop(0, '#6a5cff'); bg.addColorStop(1, '#ff4de1');
+  ctx.fillStyle = bg; rrect(-150, -32, 300, 64, 20); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.stroke();
+  text('スタート', 0, 1, 28, '#fff'); ctx.restore();
+  text('タップ／クリック／Space でスタート　　矢印＋Space でも動かせる', cx, by + 50, 13, 'rgba(255,255,255,0.6)', 'center', '700');
+  text('HI-SCORE ' + FES.getHiScore().toLocaleString(), cx, by + 74, 16, '#ffd36e');
+}
+
+/* ---------------------------------------------------------------- メインループ */
+let last = performance.now();
+function frame(now) {
+  let dt = (now - last) / 1000; last = now;
+  if (!(dt > 0)) dt = 0; if (dt > 0.05) dt = 0.05;
+  try { update(dt); draw(); } catch (err) { console.error(err); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

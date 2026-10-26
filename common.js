@@ -1175,7 +1175,7 @@
   FES.stampBase = id => String(id || cfg.id).split('_')[0];      // rhythm_hard → rhythm
   FES.stampTotal = () => LS.get(TOTAL_KEY, 0);                     // ハブが起動時に書き込む
   FES.setStampTotal = n => LS.set(TOTAL_KEY, n | 0);
-  // 殿堂入り（表彰状）に必要なスタンプの数。14 本全部はきついので 8 個（2026/10/23 決定）。ゲームが 8 本より少なければ全部
+  // 殿堂入り（表彰状）に必要なスタンプの数。15 本全部はきついので 8 個（2026/10/23 決定）。ゲームが 8 本より少なければ全部
   const HALL_NEED = 8;
   FES.hallNeed = () => { const t = FES.stampTotal(); return t > 0 ? Math.min(HALL_NEED, t) : 0; };
   FES.stampCard = () => LS.get(STAMP_KEY, null);                   // { name, started, stamps:{id:ts}, done:ts|null }

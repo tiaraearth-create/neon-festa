@@ -48,6 +48,21 @@
       }
       c.globalAlpha = 1;
     },
+    drops(c, w, h, t, col) {
+      const cols = 6, rows = 3, s = Math.min(w / cols, h / rows), ox = (w - s * cols) / 2, oy = (h - s * rows) / 2;
+      const C = ['#ff4d4d', '#3b9bff', '#3ddc6b', '#ffd84a', '#b45cff', '#ff7ad9'];
+      for (let r = 0; r < rows; r++) for (let i = 0; i < cols; i++) {
+        const k = r * cols + i, cx = ox + i * s + s / 2, cy = oy + r * s + s / 2, rr = s * 0.36;
+        const g = c.createRadialGradient(cx - rr * 0.3, cy - rr * 0.3, 1, cx, cy, rr); g.addColorStop(0, '#fff'); g.addColorStop(0.4, C[(k * 7 + r) % 6]); g.addColorStop(1, 'rgba(0,0,0,.6)');
+        c.fillStyle = g; c.beginPath(); c.arc(cx, cy, rr, 0, 6.28); c.fill();
+      }
+      // なぞっているドロップ（指のあと）
+      const k = (t * 0.6) % 1, px = ox + s * (0.5 + 4.5 * k), py = oy + s * 1.5 + Math.sin(k * 6.28) * s * 0.9;
+      c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = s * 0.3; c.lineCap = 'round'; c.beginPath(); c.moveTo(ox + s * 0.5, oy + s * 1.5); c.quadraticCurveTo(ox + s * 2.5, oy + s * 1.5 + s * 1.2, px, py); c.stroke();
+      const g2 = c.createRadialGradient(px - 4, py - 4, 1, px, py, s * 0.46); g2.addColorStop(0, '#fff'); g2.addColorStop(0.4, col); g2.addColorStop(1, 'rgba(0,0,0,.5)');
+      c.fillStyle = g2; c.beginPath(); c.arc(px, py, s * 0.46, 0, 6.28); c.fill();
+      c.font = '900 10px sans-serif'; c.textAlign = 'center'; c.fillStyle = '#ffd36e'; c.fillText((2 + Math.floor(t) % 4) + ' COMBO', w - 34, 12);
+    },
     typing(c, w, h, t, col) {
       const word = 'NEONFESTA', n = Math.floor(t * 4) % (word.length + 4);
       c.font = '900 26px Consolas, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -153,7 +168,7 @@
     },
   };
 
-  const TITLES = { rhythm: 'リズムスターズ', shooter: 'ギャラクシーブラスター', puzzle: 'ジュエルラッシュ', typing: 'タイピングバトル', racing: 'ネオンドライブ', runner: 'ダッシュ！ネコ忍者', mole: 'もぐらパニック', hockey: 'ネオンエアホッケー', quiz: '早押しクイズ王', breakout: 'ネオンブレイカー', duel: 'ネオンデュエル', stack: 'ネオンスタック', memory: 'メモリーフラッシュ', fps: 'ネオンストライク' };
+  const TITLES = { rhythm: 'リズムスターズ', shooter: 'ギャラクシーブラスター', puzzle: 'ジュエルラッシュ', typing: 'タイピングバトル', racing: 'ネオンドライブ', runner: 'ダッシュ！ネコ忍者', mole: 'もぐらパニック', hockey: 'ネオンエアホッケー', quiz: '早押しクイズ王', breakout: 'ネオンブレイカー', duel: 'ネオンデュエル', stack: 'ネオンスタック', memory: 'メモリーフラッシュ', fps: 'ネオンストライク', drops: 'ネオンドロップバトル' };
   /** 模擬プレイ画面: 角丸の枠 ＋ 上部の小さな HUD ＋ 中にモチーフ。座標は呼び出し側の ctx の単位 */
   function drawScreen(c, id, x, y, w, h, t, col, opts) {
     opts = opts || {};
