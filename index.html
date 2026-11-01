@@ -1050,7 +1050,15 @@ if (FES.isRoomPC()) {
   document.getElementById('resetBtn').style.display = 'none'; document.getElementById('hallClear').style.display = 'none';
   titleEl.removeAttribute('contenteditable');
   const footer = document.getElementById('footer');
-  document.getElementById('staffBtn').onclick = () => { footer.classList.toggle('staff-open'); FES.sfx('select'); };
+  // ⚙ は 2 秒長押ししたときだけ開く（お客さんが押しても景品の設定などが出ないように）
+  const staffBtn = document.getElementById('staffBtn');
+  let holdT = null;
+  const holdStart = e => { e.preventDefault(); clearTimeout(holdT); holdT = setTimeout(() => { holdT = null; footer.classList.toggle('staff-open'); FES.sfx('select'); }, 2000); };
+  const holdEnd = () => { if (holdT) { clearTimeout(holdT); holdT = null; FES.toast('スタッフ用のボタンです'); } };
+  staffBtn.addEventListener('pointerdown', holdStart);
+  staffBtn.addEventListener('pointerup', holdEnd);
+  staffBtn.addEventListener('pointerleave', () => { clearTimeout(holdT); holdT = null; });
+  staffBtn.addEventListener('contextmenu', e => e.preventDefault());
 }
 addEventListener('storage', render);
 </script>
