@@ -127,6 +127,8 @@ async function testGame(g, durSec) {
   stage.appendChild(fr);
   const t0 = performance.now();
   await new Promise(res => { fr.addEventListener('load', res, { once: true }); setTimeout(res, 8000); });
+  // load が先に（空のページで）来ることがあるので、本物のページの body ができるまで待つ
+  for (let i = 0; i < 80; i++) { try { const d = fr.contentDocument; if (d && d.body && d.readyState !== 'loading' && fr.contentWindow.location.href.includes(g.id + '.html')) break; } catch (e) {} await sleep(100); }
   const cw = fr.contentWindow;
   if (!cw || !cw.document || !cw.document.body) { setStatus(g.id, 'ng', '❌ 失敗', '読み込めませんでした'); return false; }
   attachWatch(fr, errs);
@@ -177,7 +179,11 @@ async function run(list) {
   if (running) return; running = true; stopFlag = false; $('runAll').disabled = true; $('runOne').disabled = true; $('stop').disabled = false;
   const dur = +$('dur').value; let okN = 0;
   $('sum').innerHTML = '実行中…';
-  for (const g of list) { if (stopFlag) break; if (await testGame(g, dur)) okN++; }
+  for (const g of list) {
+    if (stopFlag) break;
+    // チェックする側でエラーが出ても止まらず、次のゲームへ進む
+    try { if (await testGame(g, dur)) okN++; } catch (e) { results[g.id] = false; setStatus(g.id, 'ng', '❌ NG', 'チェック中にエラー: ' + e.message); log(`[NG] ${g.id}: チェック中にエラー ${e.message}`); }
+  }
   const ng = list.filter(g => results[g.id] === false);
   $('sum').innerHTML = stopFlag ? '途中で止めました' : ng.length ? `<span class="big ng">❌ ${ng.length} 本に問題</span>　${ng.map(g => g.name).join('、')}` : `<span class="big ok">✅ ${okN} 本すべて OK</span>　（${new Date().toLocaleString('ja-JP')}）`;
   running = false; $('runAll').disabled = false; $('runOne').disabled = false; $('stop').disabled = true;
