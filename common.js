@@ -724,6 +724,36 @@
   .fes-pause .fes-act { width: 100%; }
   /* エラー */
   .fes-err { font-size: 12px; opacity: .55; word-break: break-all; margin: 6px 0 14px; max-height: 60px; overflow: hidden; }
+  /* ===== 2026-11-01 デザイン（ゲームセンターの筐体・ネオン管。ホーム・大画面とそろえる）。上を上書きする ===== */
+  .fes-btn { border-radius: 10px; background: rgba(6,4,18,.7); border-color: rgba(160,140,255,.35); box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.4); }
+  .fes-btn:hover { background: rgba(139,107,255,.3); border-color: rgba(190,170,255,.7); box-shadow: 0 0 14px rgba(139,107,255,.55); }
+  #fes-overlay, .fes-overlay { background: radial-gradient(ellipse at 50% 40%, rgba(40,20,90,.55), rgba(3,2,12,.86)); }
+  .fes-card { border-radius: 18px; background: linear-gradient(180deg, rgba(24,19,56,.97), rgba(9,7,26,.98)); border: 1px solid rgba(160,140,255,.32);
+    box-shadow: 0 30px 80px rgba(0,0,0,.65), 0 0 0 1px rgba(0,0,0,.6), 0 0 50px rgba(139,107,255,.22), inset 0 1px 0 rgba(255,255,255,.08); }
+  .fes-card::before { content: ""; position: absolute; left: 18px; right: 18px; top: 0; height: 3px; border-radius: 0 0 3px 3px; z-index: 2; pointer-events: none;
+    background: linear-gradient(90deg, #5ee7ff, #8b6bff, #ff4d8d); box-shadow: 0 0 10px rgba(139,107,255,.9), 0 0 24px rgba(255,77,141,.5); }
+  .fes-card.rankin::before, .fes-getcard::before { background: linear-gradient(90deg, #ffb347, #ffd36e, #ffb347); box-shadow: 0 0 12px #ffd36e, 0 0 28px rgba(255,211,110,.6); }
+  .fes-getcard::before { display: none; }
+  .fes-card h2 { letter-spacing: .4em; color: #bff6ff; opacity: .85; text-shadow: 0 0 10px rgba(94,231,255,.6); }
+  #fes-ui .fes-card h2, #fes-ui .fes-score, #fes-ui .fes-stat b, #fes-ui .fes-rank .s, #fes-ui .fes-rank .r { font-family: Consolas,"Courier New",monospace; }
+  .fes-card .fes-title { font-style: italic; }
+  .fes-score { color: #fff4d0; text-shadow: 0 0 6px #fff, 0 0 22px rgba(255,211,110,.9), 0 0 48px rgba(255,170,60,.55); letter-spacing: .02em; }
+  .fes-stat { background: rgba(0,0,0,.38); border: 1px solid rgba(255,255,255,.07); border-radius: 10px; }
+  .fes-stat b { color: #ffe9a8; text-shadow: 0 0 8px rgba(255,211,110,.45); }
+  .fes-rank li { border-radius: 6px; }
+  .fes-rank li:nth-child(odd) { background: rgba(0,0,0,.3); }
+  .fes-act { border-radius: 12px; box-shadow: 0 5px 0 rgba(30,10,70,.75), 0 10px 26px rgba(120,80,255,.45); position: relative; overflow: hidden; }
+  .fes-act.next { box-shadow: 0 5px 0 rgba(90,20,50,.75), 0 10px 26px rgba(255,100,120,.45); }
+  .fes-act.alt { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); box-shadow: 0 5px 0 rgba(0,0,0,.45); }
+  .fes-act:active { transform: translateY(4px); box-shadow: 0 1px 0 rgba(0,0,0,.6); }
+  .fes-chip { border-radius: 9px; background: rgba(0,0,0,.3); }
+  .fes-chip.on { box-shadow: 0 0 0 2px rgba(255,255,255,.35) inset, 0 0 16px rgba(139,107,255,.7); }
+  .fes-count .n { font-style: italic; text-shadow: 0 0 30px rgba(255,77,141,.9), .06em .06em 0 rgba(94,231,255,.6); }
+  .fes-count .n.go { text-shadow: 0 0 30px rgba(255,211,110,.95), .06em .06em 0 rgba(255,77,141,.6); }
+  .fes-lite .fes-count .n, .fes-lite .fes-count .n.go { text-shadow: .06em .06em 0 rgba(0,0,0,.4); }
+  .fes-lite .fes-card, .fes-lite .fes-act { box-shadow: 0 5px 0 rgba(0,0,0,.5); }
+  .fes-toast { border-radius: 12px; background: rgba(8,6,24,.92); border-color: rgba(160,140,255,.4); box-shadow: 0 0 20px rgba(139,107,255,.35); }
+  .fes-howto .chip { border-radius: 10px; border-color: rgba(94,231,255,.45); box-shadow: 0 0 16px rgba(94,231,255,.25), 0 6px 24px rgba(0,0,0,.5); }
   `;
 
   /* ------------------------------------------------------------ UI */
