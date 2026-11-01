@@ -898,8 +898,12 @@
 
   FES.toggleFullscreen = function () {
     const d = document;
-    if (!d.fullscreenElement) { (d.documentElement.requestFullscreen || function () {}).call(d.documentElement); }
-    else if (d.exitFullscreen) d.exitFullscreen();
+    // 全画面にできないとき（ブラウザが許可しないなど）の失敗は無視する。ほうっておくと「おっと」のエラー画面が出てしまう
+    const ignore = p => { if (p && p.catch) p.catch(() => {}); };
+    try {
+      if (!d.fullscreenElement) { if (d.documentElement.requestFullscreen) ignore(d.documentElement.requestFullscreen()); }
+      else if (d.exitFullscreen) ignore(d.exitFullscreen());
+    } catch (e) {}
   };
 
   let toastEl = null;
