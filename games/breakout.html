@@ -169,12 +169,12 @@ function randomRows() {
 }
 
 const ITEM_DEFS = {
-  multi:   { label: 'M', name: 'マルチボール!', color: '#ff5ea8', w: 3 },
-  expand:  { label: 'E', name: 'パドル拡大!',   color: '#4dff88', w: 3 },
-  laser:   { label: 'L', name: 'レーザー!',     color: '#ff4d4d', w: 2.5 },
-  slow:    { label: 'S', name: 'スローボール!', color: '#6ab0ff', w: 2 },
-  pierce:  { label: 'P', name: '貫通ボール!',   color: '#ffb347', w: 2 },
-  barrier: { label: 'B', name: 'バリア!',       color: '#b07cff', w: 2 },
+  multi:   { label: 'M', name: 'マルチボール！', color: '#ff5ea8', w: 3 },
+  expand:  { label: 'E', name: 'パドル拡大！',   color: '#4dff88', w: 3 },
+  laser:   { label: 'L', name: 'レーザー！',     color: '#ff4d4d', w: 2.5 },
+  slow:    { label: 'S', name: 'スローボール！', color: '#6ab0ff', w: 2 },
+  pierce:  { label: 'P', name: '貫通ボール！',   color: '#ffb347', w: 2 },
+  barrier: { label: 'B', name: 'バリア！',       color: '#b07cff', w: 2 },
   life:    { label: '♥', name: '1UP!',          color: '#ff6b8a', w: 1 },
   shrink:  { label: '−', name: 'パドル縮小…',   color: '#8a8a9a', w: 2.5, bad: true },
 };
@@ -218,6 +218,7 @@ function newGame() {
     ballWaiting: true, introDur: 1.5, clearBonus: 0, fwTimer: 0,
     countdownStep: -1, cursorHide: false,
     clearPerfect: false, bossEnrage: false,
+    ufo: null, ufoT: 16, ufos: 0,
   };
 }
 G = newGame();
@@ -294,6 +295,7 @@ function buildStage(idx) {
   G.barrier = false; G.slowT = 0; G.pierceT = 0;
   G.paddle.laserT = 0; G.paddle.laserCd = 0; G.paddle.sizeMode = 'normal'; G.paddle.sizeT = 0;
   G.stageTime = 0; G.combo = 0; FES.fever(false);
+  G.ufo = null; G.ufoT = 14 + Math.random() * 6;
   G.balls = [];
   spawnWaitingBall();
 }
@@ -692,6 +694,68 @@ function applyItem(type) {
   }
 }
 
+/* ------------------------------------------------------------ ボーナスUFO（ときどき横切る。当てると高得点＋よいアイテム） */
+const UFO_Y = 640, UFO_W = 74, UFO_H = 30;
+function updateUfo(dt) {
+  if (stageDef().boss || G.ballWaiting) return;
+  if (!G.ufo) {
+    G.ufoT -= dt;
+    if (G.ufoT <= 0) {
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      G.ufo = { x: dir > 0 ? -60 : W + 60, y: UFO_Y + rand(-40, 40), vx: dir * (130 + G.stage * 8), t: 0 };
+      FES.tone({ freq: 900, slide: 1300, dur: 0.25, type: 'sine', vol: 0.12 }); FES.tone({ freq: 1300, slide: 900, dur: 0.25, type: 'sine', vol: 0.1, delay: 0.25 });
+      addPop(W / 2, UFO_Y - 70, 'BONUS UFO!', '#7ff5ff', 24, 1.0, true);
+    }
+    return;
+  }
+  const u = G.ufo; u.t += dt; u.x += u.vx * dt;
+  const uy = u.y + Math.sin(u.t * 3) * 10;
+  if ((u.vx > 0 && u.x > W + 70) || (u.vx < 0 && u.x < -70)) { G.ufo = null; G.ufoT = 18 + Math.random() * 8; return; }
+  for (const ball of G.balls) {
+    const dx = ball.x - u.x, dy = ball.y - uy;
+    if (Math.abs(dx) < UFO_W / 2 + ball.r && Math.abs(dy) < UFO_H / 2 + ball.r) { ball.vy = dy < 0 ? -Math.abs(ball.vy) : Math.abs(ball.vy); fixAngle(ball); ufoHit(u.x, uy); return; }
+  }
+  for (let i = G.lasers.length - 1; i >= 0; i--) {
+    const l = G.lasers[i];
+    if (Math.abs(l.x - u.x) < UFO_W / 2 && l.y < uy + UFO_H / 2 && l.y + 18 > uy - UFO_H / 2) { G.lasers.splice(i, 1); ufoHit(u.x, uy); return; }
+  }
+}
+function ufoHit(x, y) {
+  const pts = 1000 + G.stage * 250;
+  G.score += pts; G.ufos++;
+  G.ufo = null; G.ufoT = 20 + Math.random() * 8;
+  addPop(x, y - 40, `UFO GET! +${pts.toLocaleString()}`, '#7ff5ff', 30, 1.2, true);
+  addRipple(x, y, 6, 140, 0.6, '#7ff5ff', 5);
+  spawnParticles(x, y, 40, '#7ff5ff', 380, 5, 0.8);
+  spawnParticles(x, y, 20, '#ffe36e', 300, 4, 0.7);
+  G.shake = Math.max(G.shake, 10); G.flash = 0.3; G.flashColor = '#7ff5ff'; G.hitStop = 0.05;
+  FES.sfx('perfect'); FES.sfx('explode');
+  // よいアイテムを 1 つ落とす（縮小は出ない）
+  const good = ['multi', 'expand', 'laser', 'pierce', 'barrier', 'slow'];
+  G.items.push({ x, y, type: good[Math.floor(Math.random() * good.length)], vy: 40, t: 0, wob: Math.random() * 6.28 });
+}
+function drawUfo() {
+  const u = G.ufo; if (!u) return;
+  const x = u.x, y = u.y + Math.sin(u.t * 3) * 10;
+  ctx.save();
+  // 下へのビーム
+  const bg = ctx.createLinearGradient(0, y, 0, y + 90); bg.addColorStop(0, 'rgba(127,245,255,0.28)'); bg.addColorStop(1, 'rgba(127,245,255,0)');
+  ctx.fillStyle = bg; ctx.beginPath(); ctx.moveTo(x - 14, y + 8); ctx.lineTo(x + 14, y + 8); ctx.lineTo(x + 34, y + 90); ctx.lineTo(x - 34, y + 90); ctx.closePath(); ctx.fill();
+  // 光
+  const gl = ctx.createRadialGradient(x, y, 4, x, y, 70); gl.addColorStop(0, 'rgba(127,245,255,0.35)'); gl.addColorStop(1, 'rgba(127,245,255,0)');
+  ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, 70, 0, 6.29); ctx.fill();
+  // ドーム
+  const dg = ctx.createRadialGradient(x - 6, y - 14, 2, x, y - 8, 22); dg.addColorStop(0, '#ffffff'); dg.addColorStop(0.4, '#9ff8ff'); dg.addColorStop(1, 'rgba(60,160,220,0.75)');
+  ctx.fillStyle = dg; ctx.beginPath(); ctx.ellipse(x, y - 6, 20, 16, 0, Math.PI, 0); ctx.fill();
+  // 本体
+  const body = ctx.createLinearGradient(0, y - 8, 0, y + 12); body.addColorStop(0, '#fff2b0'); body.addColorStop(0.5, '#ffc83d'); body.addColorStop(1, '#a8620a');
+  ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(x, y + 2, UFO_W / 2, 11, 0, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5; ctx.stroke();
+  // ライト
+  for (let i = 0; i < 6; i++) { const lx = x - 27 + i * 10.8, on = Math.floor(u.t * 8 + i) % 3 === 0; ctx.fillStyle = on ? '#ffffff' : ['#ff4de1', '#7ff5ff', '#7dff8a'][i % 3]; ctx.beginPath(); ctx.arc(lx, y + 4, on ? 3 : 2.3, 0, 6.29); ctx.fill(); }
+  ctx.restore();
+}
+
 /* ------------------------------------------------------------ レーザー */
 function fireLaser() {
   const p = G.paddle;
@@ -803,7 +867,7 @@ const BGM = {
 
 /* ------------------------------------------------------------ 進行 */
 function startGame() {
-  if (FES.howto(['↔ [←][→]かマウスでパドルを動かす', '🧱 ブロックを全部こわす。最後はボス「ネオンコア」', '💥 パドルを速く動かしながら打つとSMASH（2ダメージ）'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (FES.howto(['↔ [←][→]かマウスでパドルを動かす', '🧱 ブロックを全部こわす。最後はボス「ネオンコア」', '🛸 ときどき飛んでくるUFOに当てるとボーナスとアイテム'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   if (resultTimer) { clearTimeout(resultTimer); resultTimer = null; }
   FES.hideResult(); FES.pause(false);
   G = newGame();
@@ -844,11 +908,12 @@ function gameOver(cleared) {
       score, scoreLabel: 'pt',
       rank: { S: 60000, A: 35000, B: 15000, C: 5000 }, titles: { S: 'ブロックの神', A: 'ブレイクマスター', B: 'いい調子！' },
       title: cleared ? 'ALL CLEAR!' : 'GAME OVER',
-      subtitle: cleared ? `全 ${TOTAL_STAGES} ステージ制覇！` : `STAGE ${stageReached} まで到達`,
+      subtitle: cleared ? `全${TOTAL_STAGES}ステージ制覇！` : `STAGE ${stageReached}まで到達`,
       stats: [
-        { label: 'STAGE', value: `${stageReached}/${TOTAL_STAGES}` },
-        { label: 'BLOCKS', value: G.blocksDestroyed },
-        { label: 'MAX COMBO', value: G.maxCombo },
+        { label: 'ステージ', value: `${stageReached}/${TOTAL_STAGES}` },
+        { label: 'こわしたブロック', value: G.blocksDestroyed },
+        { label: '最大コンボ', value: G.maxCombo },
+        { label: 'ボーナスUFO', value: G.ufos },
         { label: 'SMASH', value: G.smashes },
         { label: 'PERFECT', value: G.perfects },
       ],
@@ -979,6 +1044,7 @@ function updatePlay(dt) {
 
   updateItems(dt);
   updateLasers(dt);
+  updateUfo(dt);
 
   if (G.state === 'play' && remainingBlocks() === 0 && G.explosions.length === 0) stageClear();
 }
@@ -1114,12 +1180,15 @@ function drawBlocks() {
       hg.addColorStop(0, 'rgba(255,255,255,0.55)'); hg.addColorStop(0.45, 'rgba(255,255,255,0.08)'); hg.addColorStop(1, 'rgba(0,0,0,0.35)');
       ctx.fillStyle = hg; rrect(x, y, w, h, 5); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5; rrect(x + 0.5, y + 0.5, w - 1, h - 1, 5); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1; rrect(x + 3.5, y + 3.5, w - 7, h - 7, 3); ctx.stroke();   // 内側の段差
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillRect(x + 6, y + 3, w * 0.42, 2);                              // 上のふちの光
+      ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.arc(x + w - 8, y + 6, 1.8, 0, 6.29); ctx.fill();  // つや
       if (b.type === 'x') {
         const pulse = 0.5 + 0.5 * Math.sin(G.time * 9 + b.col);
         const cg = ctx.createRadialGradient(0, 0, 1, 0, 0, 14);
         cg.addColorStop(0, `rgba(255,255,200,${0.7 + 0.3 * pulse})`); cg.addColorStop(0.5, `rgba(255,190,60,${0.5 * pulse})`); cg.addColorStop(1, 'rgba(255,120,0,0)');
         ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(0, 0, 14, 0, 6.29); ctx.fill();
-        ctx.fillStyle = '#3a1000'; ctx.font = font(15); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✸', 0, 1);
+        if (!FES.drawIcon(ctx, '✸', 0, 0, 16, '#3a1000')) { ctx.fillStyle = '#3a1000'; ctx.font = font(15); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✸', 0, 1); }
       } else if (b.type === 'r') {
         ctx.save(); rrect(x, y, w, h, 5); ctx.clip();
         const shift = (G.time * 160) % (w * 2);
@@ -1343,13 +1412,13 @@ function drawHUD() {
     const k = clamp(boss.hp / boss.maxHp, 0, 1);
     ctx.fillStyle = G.bossEnrage ? '#ff4d4d' : '#ff4de1'; rrect(bx, by, Math.max(14, bw * k), 14, 7); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5; rrect(bx, by, bw, 14, 7); ctx.stroke();
-    text(`NEON CORE  ${boss.hp} / ${boss.maxHp}`, W / 2, by + 7, 11, '#fff');
+    text(`NEON CORE ${boss.hp} / ${boss.maxHp}`, W / 2, by + 7, 11, '#fff');
   }
   // コンボ
   if (G.combo >= 2 && G.state === 'play') {
     const s = 1 + 0.08 * Math.sin(G.time * 14);
     ctx.save(); ctx.translate(W / 2, HUD_Y + 40); ctx.scale(s, s);
-    text(`COMBO ${G.combo}  ×${comboMult().toFixed(1)}`, 0, 0, 16, '#ffe36e');
+    text(`COMBO ${G.combo} ×${comboMult().toFixed(1)}`, 0, 0, 16, '#ffe36e');
     ctx.restore();
   }
   // アクティブ効果（横長モニターではサイドパネルに出す）
@@ -1368,9 +1437,9 @@ function drawHUD() {
   // 発射ヒント
   if (G.state === 'play' && G.ballWaiting && !G.paused) {
     const a = 0.5 + 0.5 * Math.sin(G.time * 5);
-    text('SPACE / クリック / タップ で発射', W / 2, PADDLE_Y - 60, 18, `rgba(255,255,255,${0.35 + a * 0.6})`);
+    text('Space・クリック・タップで発射', W / 2, PADDLE_Y - 60, 18, `rgba(255,255,255,${0.35 + a * 0.6})`);
   } else if (G.state === 'play' && p.laserT > 0 && !G.paused) {
-    text('SPACE / クリック / タップ でレーザー', W / 2, PADDLE_Y + 34, 13, 'rgba(255,120,120,0.8)');
+    text('Space・クリック・タップでレーザー', W / 2, PADDLE_Y + 34, 13, 'rgba(255,120,120,0.8)');
   }
   // ポーズボタン（タッチ用）
   if (['play', 'stageintro', 'stageclear', 'countdown'].includes(G.state)) {
@@ -1427,16 +1496,16 @@ function drawTitle() {
   ctx.restore();
 
   const lines = [
-    ['← → / A D / マウス / タッチ', 'パドル移動'],
-    ['SPACE / クリック / タップ', '発射・レーザー'],
-    ['Esc / P', 'ポーズ'],
+    ['←→・A D・マウス・タッチ', 'パドル移動'],
+    ['Space・クリック・タップ', '発射・レーザー'],
+    ['Esc・P', 'ポーズ'],
   ];
   lines.forEach(([k, v], i) => {
     const y = 760 + i * 36;
     text(k, W / 2 - 16, y, 17, '#8ed6ff', 'right', 700);
     text(v, W / 2 + 16, y, 17, 'rgba(255,255,255,0.85)', 'left', 700);
   });
-  text('全 9 ステージ。最後はボス「ネオンコア」！ パドルを速く動かして打つと SMASH', W / 2, 890, 15, 'rgba(255,255,255,0.55)', 'center', 700);
+  text('全9ステージ。最後はボス「ネオンコア」！パドルを速く動かして打つとSMASH。UFOをねらえ！', W / 2, 890, 15, 'rgba(255,255,255,0.55)', 'center', 700);
 }
 
 function drawOverlays() {
@@ -1453,7 +1522,7 @@ function drawOverlays() {
     }
     if (t < 3) {
       const a = 0.7 + 0.3 * Math.sin(t * 6);
-      text(`STAGE ${G.stage + 1}  「${stageDef().name}」`, W / 2, 760, 26, `rgba(255,255,255,${a})`);
+      text(`STAGE ${G.stage + 1}「${stageDef().name}」`, W / 2, 760, 26, `rgba(255,255,255,${a})`);
     }
   } else if (st === 'stageintro') {
     const a = t < 0.3 ? t / 0.3 : t > G.introDur - 0.5 ? Math.max(0, (G.introDur - t) / 0.5) : 1;
@@ -1461,7 +1530,7 @@ function drawOverlays() {
     glowText(`STAGE ${G.stage + 1}`, W / 2, 620, 64, '#fff', `hsl(${stageHue()},100%,70%)`);
     text(`「${stageDef().name}」`, W / 2, 690, 32, `hsl(${stageHue()},100%,75%)`);
     if (stageDef().moving) text('ブロックが動くぞ！', W / 2, 740, 20, 'rgba(255,255,255,0.8)');
-    if (stageDef().boss) { text('ボス登場！ コアを 30 回 たたけ！', W / 2, 740, 22, '#ff9af0'); text('6 回たたくごとに 盾を呼ぶぞ', W / 2, 772, 16, 'rgba(255,255,255,0.75)'); }
+    if (stageDef().boss) { text(`ボス登場！コアを${BOSS_HP}回たたけ！`, W / 2, 740, 22, '#ff9af0'); text('6回たたくごとに盾を呼ぶぞ', W / 2, 772, 16, 'rgba(255,255,255,0.75)'); }
     ctx.globalAlpha = 1;
   } else if (st === 'stageclear') {
     const s = t < 0.25 ? 0.5 + (t / 0.25) * 0.7 : t < 0.4 ? 1.2 - ((t - 0.25) / 0.15) * 0.2 : 1;
@@ -1471,8 +1540,8 @@ function drawOverlays() {
     ctx.restore();
     if (t > 0.5) {
       ctx.globalAlpha = a;
-      text(`BONUS  +${G.clearBonus.toLocaleString()}`, W / 2, 670, 28, '#fff');
-      if (G.clearPerfect && t > 0.9) glowText('PERFECT!  ノーミス +1,500', W / 2, 720, 26, '#ffe36e', '#ffb347');
+      text(`BONUS +${G.clearBonus.toLocaleString()}`, W / 2, 670, 28, '#fff');
+      if (G.clearPerfect && t > 0.9) glowText('PERFECT! ノーミス +1,500', W / 2, 720, 26, '#ffe36e', '#ffb347');
       ctx.globalAlpha = 1;
     }
   } else if (st === 'ending') {
@@ -1530,7 +1599,7 @@ function drawSidePanels() {
     const r = FES.getRanking().slice(0, 5);
     if (!r.length) line('まだ記録なし。1番乗りを狙おう！', 14, '#ffe36e', 700, 26);
     r.forEach((e, i) => {
-      text(['🥇', '🥈', '🥉'][i] || (i + 1) + '.', lx, y, 16 * u, '#fff', 'left');
+      text((i + 1) + '位', lx, y, 16 * u, ['#ffd36e', '#d8e0f0', '#e0a070'][i] || '#fff', 'left');
       text(e.name, lx + 34 * u, y, 16 * u, i === 0 ? '#ffe36e' : '#fff', 'left');
       text(e.score.toLocaleString(), lx + lw, y, 16 * u, 'rgba(255,255,255,.85)', 'right', 700);
       y += 28 * u;
@@ -1549,12 +1618,12 @@ function drawSidePanels() {
     const total = G.blocks.filter(b => b.type !== 'm').length || 1, left = remainingBlocks();
     ctx.fillStyle = 'rgba(255,255,255,.12)'; rrect(lx, y, lw, 10 * u, 5 * u); ctx.fill();
     ctx.fillStyle = accent; rrect(lx, y, lw * clamp(1 - left / total, 0, 1), 10 * u, 5 * u); ctx.fill(); y += 24 * u;
-    line(`のこり ${left} ブロック`, 13, 'rgba(255,255,255,.7)', 700, 34);
+    line(`のこり${left}ブロック`, 13, 'rgba(255,255,255,.7)', 700, 34);
     line('LIVES', 12, 'rgba(255,255,255,.6)', 900, 26);
     for (let i = 0; i < Math.min(G.lives, 6); i++) { ctx.fillStyle = 'rgba(120,240,255,0.4)'; ctx.beginPath(); ctx.arc(lx + 12 * u + i * 30 * u, y, 11 * u, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(lx + 12 * u + i * 30 * u, y, 7 * u, 0, 6.29); ctx.fill(); }
     y += 40 * u;
     line('COMBO', 12, 'rgba(255,255,255,.6)', 900, 24);
-    if (G.combo >= 2) { text(`${G.combo}`, lx, y + 14 * u, 46 * u, '#ffe36e', 'left'); text(`x${comboMult().toFixed(1)}`, lx + lw, y + 14 * u, 16 * u, '#ffe36e', 'right'); y += 60 * u; }
+    if (G.combo >= 2) { text(`${G.combo}`, lx, y + 14 * u, 46 * u, '#ffe36e', 'left'); text(`×${comboMult().toFixed(1)}`, lx + lw, y + 14 * u, 16 * u, '#ffe36e', 'right'); y += 60 * u; }
     else line('—', 30, 'rgba(255,255,255,.25)', 900, 56);
   }
   // ---- 右パネル ----
@@ -1580,8 +1649,8 @@ function drawSidePanels() {
     });
   } else {
     rline('HOW TO PLAY', 12, 'rgba(255,255,255,.6)', 900, 30);
-    rline(`全 ${TOTAL_STAGES} ステージ。最後はボス「ネオンコア」！`, 14, '#ffe36e', 900, 30);
-    rline('アイテムをキャッチ／速く動かして打つと SMASH', 13, 'rgba(255,255,255,.8)', 700, 40);
+    rline(`全${TOTAL_STAGES}ステージ。最後はボス「ネオンコア」！`, 14, '#ffe36e', 900, 30);
+    rline('アイテムをキャッチ ／ 速く動かして打つとSMASH', 13, 'rgba(255,255,255,.8)', 700, 40);
     rline('ITEMS', 12, 'rgba(255,255,255,.6)', 900, 26);
     for (const k of Object.keys(ITEM_DEFS)) {
       const d = ITEM_DEFS[k];
@@ -1590,7 +1659,7 @@ function drawSidePanels() {
       text(d.name, rx + 36 * u, y, 13 * u, d.bad ? 'rgba(255,255,255,.55)' : '#fff', 'left', 700); y += 24 * u;
     }
   }
-  const help = [['移動', '← → / A D / マウス'], ['発射', 'SPACE / クリック'], ['レーザー', 'SPACE / クリック'], ['ポーズ', 'Esc / P']];
+  const help = [['移動', '←→・A D・マウス'], ['発射', 'Space・クリック'], ['レーザー', 'Space・クリック'], ['ポーズ', 'Esc・P']];
   y = R.y + R.h - (help.length * 30 + 40) * u;
   text('CONTROLS', rx, y, 11 * u, 'rgba(255,255,255,.5)', 'left'); y += 26 * u;
   help.forEach(([k, v]) => { text(k, rx, y, 13 * u, '#8ed6ff', 'left'); text(v, rx + 70 * u, y, 13 * u, '#fff', 'left', 700); y += 30 * u; });
@@ -1614,6 +1683,7 @@ function draw() {
   } else {
     drawField();
     drawBlocks();
+    drawUfo();
     drawItems();
     drawLasers();
     drawBarrier();
@@ -1627,6 +1697,16 @@ function draw() {
   ctx.restore();
   if (G.flash > 0) { ctx.globalAlpha = G.flash * 0.7; ctx.fillStyle = G.flashColor; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   ctx.restore();
+  drawBloom();
+}
+const BLOOM = document.createElement('canvas');
+function drawBloom() {
+  if (FES.lite() || G.state === 'title') return;
+  const bw = Math.max(32, Math.round(canvas.width / 8)), bh = Math.max(18, Math.round(canvas.height / 8));
+  if (BLOOM.width !== bw || BLOOM.height !== bh) { BLOOM.width = bw; BLOOM.height = bh; }
+  const g = BLOOM.getContext('2d'); g.globalCompositeOperation = 'copy'; g.drawImage(canvas, 0, 0, bw, bh);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(BLOOM, 0, 0); g.drawImage(BLOOM, 0, 0);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.3; ctx.drawImage(BLOOM, 0, 0, canvas.width, canvas.height); ctx.restore();
 }
 
 /* ------------------------------------------------------------ 入力 */
