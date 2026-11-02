@@ -52,11 +52,12 @@ const CHECK_BONUS = 20;
 const CHECK_SEGS = CHECK_DIST_M * UNITS_PER_M / SEG_LEN;   // 720
 const TRACK_SEGS = CHECK_SEGS * 4;                         // 1周 = 4000m
 const NITRO_COST = 40, NITRO_DUR = 2.2, NITRO_MULT = 1.3;
+const SLIP_FILL = 0.6, SLIP_DUR = 2.5, SLIP_MULT = 1.12;   // スリップストリーム: 前の車の真後ろ（同じ車線）を走るとゲージがたまって加速。そのあとよけないとぶつかる
 const DAY_CYCLE = 90;
 const PLAYER_W = 0.22;          // 道路半幅を1とした車幅
 const MAX_CARS = 42;
 
-const BILL_TEXT = ['文化祭', 'WELCOME', 'NEON DRIVE', 'ようこそ', '全力疾走!', 'FESTIVAL', '大盛況', 'GO GO!!', '飛ばせ!!', 'ネオン'];
+const BILL_TEXT = ['文化祭', 'WELCOME', 'NEON DRIVE', 'ようこそ', '全力疾走！', 'FESTIVAL', '大盛況', 'GO GO!!', '飛ばせ！！', 'ネオン'];
 const BILL_COL = ['#5ef2ff', '#ff4dd2', '#ffd36e', '#7dff6e', '#ff8a2b'];
 const CAR_COLORS = ['#ff3b5c', '#3b8bff', '#ffd23b', '#2fe07a', '#f4f4ff', '#b04dff', '#ff8a2b'];
 const AREAS = ['海岸ハイウェイ', 'ネオン街', '山岳ロード', '夜のハイウェイ', '砂漠の直線', '工業地帯', '湖畔ロード'];
@@ -578,7 +579,7 @@ function resetGame() {
     dayClock: 0, dayT: 0, position: 0, speed: 0, playerX: 0, playerY: 0, steer: 0, fov: 100,
     timeLeft: START_TIME, score: 0, dispScore: 0, distM: 0, distUnits: 0, nextCheckM: CHECK_DIST_M, checkpoints: 0,
     passes: 0, nearMiss: 0, speedBonus: 0, maxKmh: 0, coins: 0, itemScore: 0, nmChain: 0, lastNearT: -9, chainBonus: 0,
-    nitro: 30, nitroT: 0, nitroGlow: 0, crash: 0, spinDir: 0, invuln: 0, shake: 0, flash: 0,
+    nitro: 30, nitroT: 0, nitroGlow: 0, slip: 0, slipT: 0, slipOn: false, slips: 0, crash: 0, spinDir: 0, invuln: 0, shake: 0, flash: 0,
     offroad: false, dustT: 0, rumbleT: 0, carsBySeg: new Map(), playerSegIdx: 0,
     hOffset: 0, cdT: 3.6, cdLast: -1, overT: 0, lastTick: -1, bgmT: 0, bgmI: 0, parts: [], popups: [], resultShown: false,
   });
@@ -589,7 +590,7 @@ function resetGame() {
   resetCars(18);
 }
 function startGame() {
-  if (FES.howto(['↔ [←][→]でハンドル', '🚀 [↑]でアクセル ／ [Space]でニトロ', '🏁 60秒でどこまで走れる？'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (FES.howto(['↔ [←][→]でハンドル', '🚀 [↑]でアクセル ／ [Space]でニトロ', '🏁 60秒でどこまで？車の真後ろを走ると加速する'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false);
   resetGame();
   G.state = 'countdown';
@@ -635,10 +636,11 @@ function showResult() {
     scoreLabel: 'pt',
     rank: { S: 9000, A: 6500, B: 4000, C: 2000 }, titles: { S: 'ハイウェイの帝王', A: 'スピードスター', B: 'いい走り！' },
     title: 'TIME UP',
-    subtitle: `${Math.floor(G.distM).toLocaleString()} m 走破 / チェックポイント ${G.checkpoints} 回`,
+    subtitle: `${Math.floor(G.distM).toLocaleString()}m走破 ／ チェックポイント${G.checkpoints}回`,
     stats: [
-      { label: '距離', value: Math.floor(G.distM).toLocaleString() + ' m' },
-      { label: '最高速', value: Math.floor(G.maxKmh) + ' km/h' },
+      { label: '距離', value: Math.floor(G.distM).toLocaleString() + 'm' },
+      { label: '最高速', value: Math.floor(G.maxKmh) + 'km/h' },
+      { label: 'スリップ', value: G.slips },
       { label: '追い抜き', value: G.passes },
       { label: 'ニアミス', value: G.nearMiss },
       { label: 'コイン', value: G.coins },
@@ -666,11 +668,11 @@ function updatePlayer(dt) {
   G.playerX += dx;
   G.playerX -= dt * 2.2 * pct * pct * seg.curve * CENTRIFUGAL;
 
-  const maxNow = MAX_SPEED * (G.nitroT > 0 ? NITRO_MULT : 1);
+  const maxNow = MAX_SPEED * (G.nitroT > 0 ? NITRO_MULT : 1) * (G.slipT > 0 ? SLIP_MULT : 1);
   { const nf = G.nitroT > 0; if (nf !== !!G.feverOn) { G.feverOn = nf; FES.fever(nf, 'NITRO!!'); } }
   if (G.crash > 0) G.speed = accelerate(G.speed, DECEL * 0.6, dt);
   else if (input.brake) G.speed = accelerate(G.speed, BRAKE, dt);
-  else if (input.accel) G.speed = accelerate(G.speed, ACCEL * (G.nitroT > 0 ? 2.4 : 1), dt);
+  else if (input.accel) G.speed = accelerate(G.speed, ACCEL * (G.nitroT > 0 ? 2.4 : G.slipT > 0 ? 1.6 : 1), dt);
   else G.speed = accelerate(G.speed, DECEL, dt);
 
   const off = Math.abs(G.playerX) > 1;
@@ -772,6 +774,60 @@ function checkCollisions() {
     car.ahead = aheadNow;
   }
 }
+function updateSlip(dt) {
+  // 前の車の真後ろ（同じ車線・少し前）を走るとゲージがたまり、満タンで SLIP_DUR 秒加速
+  G.slipT = Math.max(0, G.slipT - dt);
+  let behind = false;
+  if (G.slipT <= 0 && G.crash <= 0 && G.speed > MAX_SPEED * 0.45) {
+    const playerPos = G.position + G.playerZ;
+    for (const car of G.cars) {
+      let rel = ((car.z - playerPos) % trackLength + trackLength) % trackLength;
+      if (rel > trackLength / 2) rel -= trackLength;
+      if (rel > SEG_LEN * 2 && rel < SEG_LEN * 40 && Math.abs(G.playerX - car.offset) < 0.2) { behind = true; break; }
+    }
+  }
+  G.slipOn = behind;
+  if (behind) {
+    G.slip = Math.min(1, G.slip + dt / SLIP_FILL);
+    if (G.slip >= 1) {
+      G.slip = 0; G.slipT = SLIP_DUR; G.slips++; G.itemScore += 150; G.nitro = Math.min(100, G.nitro + 10);
+      addPopup('SLIPSTREAM! +150', W / 2, 112, '#b9ffda', 32, 1.1);
+      G.shake = Math.max(G.shake, 0.25);
+      FES.tone({ freq: 400, slide: 1200, dur: 0.35, type: 'triangle', vol: 0.14 }); FES.noise({ dur: 0.4, freq: 1500, slide: 5000, vol: 0.1, filter: 'bandpass' });
+    }
+  } else G.slip = Math.max(0, G.slip - dt * 0.8);
+}
+function drawSlipWind() {
+  // 空気の流れ（ゲージがたまっている間と加速中）
+  const k = G.slipT > 0 ? 1 : G.slipOn ? 0.35 + G.slip * 0.5 : 0;
+  if (k <= 0 || G.state !== 'play') return;
+  ctx.lineCap = 'round'; ctx.lineWidth = 3;
+  for (let i = 0; i < 10; i++) {
+    const t = (G.clock * (G.slipT > 0 ? 3.2 : 2) + i * 0.137) % 1, side = i % 2 ? 1 : -1;
+    const y0 = lerp(H * 0.56, H - 30, t), y1 = Math.min(H, y0 + 40 + t * 50), x0 = W / 2 + side * (60 + (i % 5) * 12 + t * 120);
+    ctx.strokeStyle = `rgba(185,255,218,${(k * 0.55 * Math.sin(t * Math.PI)).toFixed(3)})`;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + side * (14 + t * 40), y1); ctx.stroke();
+  }
+}
+function drawSlipGauge(cx, cy) {
+  if (G.slip <= 0.01 && G.slipT <= 0) return;
+  const w = 96, fill = G.slipT > 0 ? G.slipT / SLIP_DUR : G.slip;
+  ctx.fillStyle = 'rgba(5,5,25,0.7)'; rr(cx - w / 2 - 8, cy - 18, w + 16, 34, 10); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.15)'; rr(cx - w / 2, cy + 3, w, 7, 4); ctx.fill();
+  ctx.fillStyle = G.slipT > 0 ? '#b9ffda' : '#5fd99a'; rr(cx - w / 2, cy + 3, w * fill, 7, 4); ctx.fill();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = font(10, 800);
+  ctx.fillStyle = G.slipT > 0 ? '#b9ffda' : 'rgba(255,255,255,0.8)';
+  ctx.fillText(G.slipT > 0 ? 'SLIPSTREAM!' : 'SLIPSTREAM', cx, cy - 7);
+}
+const BLOOM = document.createElement('canvas');
+function drawBloom() {
+  if (FES.lite()) return;
+  const bw = Math.max(32, Math.round(canvas.width / 8)), bh = Math.max(18, Math.round(canvas.height / 8));
+  if (BLOOM.width !== bw || BLOOM.height !== bh) { BLOOM.width = bw; BLOOM.height = bh; }
+  const g = BLOOM.getContext('2d'); g.globalCompositeOperation = 'copy'; g.drawImage(canvas, 0, 0, bw, bh);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(BLOOM, 0, 0); g.drawImage(BLOOM, 0, 0);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.3; ctx.drawImage(BLOOM, 0, 0, canvas.width, canvas.height); ctx.restore();
+}
 function tryNitro() {
   if (G.nitroT > 0 || G.crash > 0) return;
   if (G.nitro < NITRO_COST) { SND.nitroNg(); addPopup('ニトロ不足', W / 2, 300, '#8fa8ff', 22, 0.7); return; }
@@ -789,6 +845,7 @@ function updatePlay(dt) {
   updatePlayer(dt);
   updateCars(dt);
   checkCollisions();
+  updateSlip(dt);
 
   G.crash = Math.max(0, G.crash - dt);
   G.invuln = Math.max(0, G.invuln - dt);
@@ -1505,7 +1562,7 @@ function drawHUD() {
   ctx.font = font(28);
   outlineText(Math.floor(G.dispScore).toLocaleString(), 66, 42, '#fff', 'rgba(0,0,0,0.6)', 5);
   ctx.font = font(15, 800);
-  outlineText(Math.floor(G.distM).toLocaleString() + ' m', 66, 68, '#8ef', 'rgba(0,0,0,0.6)', 4);
+  outlineText(Math.floor(G.distM).toLocaleString() + 'm', 66, 68, '#8ef', 'rgba(0,0,0,0.6)', 4);
   // タイム（中央上）
   const tl = Math.max(0, G.timeLeft);
   const urgent = tl <= 10 && G.state !== 'over';
@@ -1525,7 +1582,7 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; rr(W / 2 - 90, 70, 180, 10, 5); ctx.fill();
   ctx.fillStyle = '#ffd36e'; rr(W / 2 - 90, 70, 180 * prog, 10, 5); ctx.fill();
   ctx.font = font(11, 700); ctx.fillStyle = 'rgba(255,255,255,0.8)';
-  ctx.fillText(`次のチェックポイントまで ${Math.ceil(remain)} m`, W / 2, 90);
+  ctx.fillText(`次のチェックポイントまで${Math.ceil(remain)}m`, W / 2, 90);
   // ハイスコア（右上、ボタンの左）
   ctx.textAlign = 'right';
   ctx.font = font(12, 700); ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -1541,6 +1598,7 @@ function drawHUD() {
   if (touchUsed) drawTouchControls();
   drawSpeedometer(838, 508, 82);
   drawNitroRing(835, 320, 44);
+  drawSlipGauge(835, 392);
 }
 
 /* =====================================================================
@@ -1555,7 +1613,7 @@ function drawTitle() {
   ctx.fillStyle = '#8ef';
   ctx.fillText('N E O N   D R I V E', W / 2, 88);
   ctx.save();
-  ctx.translate(W / 2, 152);
+  ctx.translate(W / 2, 146);
   const sc = 1 + Math.sin(t * 2.2) * 0.02;
   ctx.scale(sc, sc);
   ctx.font = font(76);
@@ -1567,26 +1625,28 @@ function drawTitle() {
   ctx.shadowBlur = 0;
   ctx.restore();
   ctx.font = font(15, 700); ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillText('制限時間内にどこまで走れる? チェックポイントで +20秒 / 追い抜きでスコア&ニトロ', W / 2, 206);
+  ctx.fillText('制限時間内にどこまで走れる？チェックポイントで+20秒 ／ 追い抜きでスコアとニトロ', W / 2, 198);
   ctx.font = font(13, 700); ctx.fillStyle = '#ffd36e';
-  ctx.fillText('道の上の ★コイン +150 ／ 時計 +3 秒 ／ ニトロ缶 +40 を取れ！ ニアミス 3 連続でボーナス', W / 2, 226);
+  ctx.fillText('道の上のコイン +150 ／ 時計 +3秒 ／ ニトロ缶 +40 を取れ！ニアミス3連続でボーナス', W / 2, 217);
+  ctx.fillStyle = '#b9ffda';
+  ctx.fillText('前の車の真後ろを走り続けると、スリップストリームで加速！', W / 2, 235);
 
   // 操作説明 3カラム
   const cols = [
-    { title: 'キーボード', lines: ['← → / A D : ハンドル', '↑ / W : アクセル  ↓ / S : ブレーキ', 'Space : ニトロ   Esc / P : ポーズ'] },
-    { title: 'マウス', lines: ['画面の左右位置でハンドル', 'クリック押しっぱなしでアクセル', '(オート時: クリックでニトロ)'] },
-    { title: 'タッチ', lines: ['左の ◀ ▶ でハンドル', '右下の大きなボタンでアクセル', 'NITRO ボタンでニトロ'] },
+    { title: 'キーボード', lines: ['←→・A D：ハンドル', '↑・W：アクセル ／ ↓・S：ブレーキ', 'Space：ニトロ ／ Esc・P：ポーズ'] },
+    { title: 'マウス', lines: ['画面の左右の位置でハンドル', 'クリック長押しでアクセル', '（オートのときはクリックでニトロ）'] },
+    { title: 'タッチ', lines: ['左の◀ ▶でハンドル', '右下の大きなボタンでアクセル', 'NITROボタンでニトロ'] },
   ];
-  const cw = 296, cy0 = 240;
+  const cw = 296, cy0 = 250;
   cols.forEach((c, i) => {
     const cx = W / 2 + (i - 1) * (cw + 12);
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    rr(cx - cw / 2, cy0, cw, 118, 14); ctx.fill();
+    ctx.fillStyle = 'rgba(10,8,30,0.72)';
+    rr(cx - cw / 2, cy0, cw, 112, 14); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.font = font(15); ctx.fillStyle = ['#5ef2ff', '#ffd36e', '#ff4dd2'][i];
     ctx.fillText(c.title, cx, cy0 + 22);
     ctx.font = font(12.5, 700); ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    c.lines.forEach((l, j) => ctx.fillText(l, cx, cy0 + 48 + j * 21));
+    c.lines.forEach((l, j) => ctx.fillText(l, cx, cy0 + 46 + j * 20));
   });
   // HI-SCORE
   ctx.font = font(15, 800); ctx.fillStyle = '#ffd36e';
@@ -1606,16 +1666,16 @@ function drawTitle() {
   ctx.fillText('スタート', 0, -1);
   ctx.restore();
   ctx.font = font(12, 700); ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText('クリック / タップ / Enter / Space でスタート', W / 2, 466);
+  ctx.fillText('クリック・タップ・Enter・Spaceでスタート', W / 2, 466);
   // オートアクセル切替
   const a = TITLE_AUTO;
   ctx.fillStyle = G.autoAccel ? 'rgba(125,255,110,0.18)' : 'rgba(255,255,255,0.08)';
   rr(a.x, a.y, a.w, a.h, 12); ctx.fill();
   ctx.strokeStyle = G.autoAccel ? '#7dff6e' : 'rgba(255,255,255,0.3)'; ctx.lineWidth = 2; ctx.stroke();
   ctx.font = font(15); ctx.fillStyle = G.autoAccel ? '#7dff6e' : 'rgba(255,255,255,0.85)';
-  ctx.fillText(`オートアクセル: ${G.autoAccel ? 'ON（初心者向け・常時全開）' : 'OFF'}`, a.x + a.w / 2, a.y + a.h / 2);
+  ctx.fillText(`オートアクセル：${G.autoAccel ? 'ON（はじめての人向け・ずっと全開）' : 'OFF'}`, a.x + a.w / 2, a.y + a.h / 2);
   ctx.font = font(11, 700); ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.fillText('← → キー or クリックで切替', W / 2, 528);
+  ctx.fillText('←→キーかクリックで切りかえ', W / 2, 528);
 }
 function drawCountdown() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1656,7 +1716,7 @@ function drawOver() {
   outlineText('TIME UP!', 0, 0, '#ff3b5c', 'rgba(0,0,0,0.75)', 12);
   ctx.restore();
   ctx.font = font(20);
-  outlineText(`${Math.floor(G.distM).toLocaleString()} m 走破!`, W / 2, H / 2 + 40, '#ffd36e', 'rgba(0,0,0,0.7)', 6);
+  outlineText(`${Math.floor(G.distM).toLocaleString()}m走破！`, W / 2, H / 2 + 40, '#ffd36e', 'rgba(0,0,0,0.7)', 6);
 }
 
 /* =====================================================================
@@ -1671,9 +1731,11 @@ function render() {
   renderSprites(pal);
   drawFog(pal);
   if (G.state !== 'title') drawPlayer();
+  drawSlipWind();
   drawParts();
   ctx.restore();
   drawSpeedLines();
+  drawBloom();
   drawPostFx();
   drawUrgency();
   drawPopups();
