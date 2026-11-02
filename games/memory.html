@@ -17,7 +17,7 @@
 /* =====================================================================
    メモリーフラッシュ — 光った順番をおぼえて、同じ順に押す。1 回ごとに 1 つ長くなる。
    20 ラウンドを 4 つの STAGE に分け、STAGE 2 でスピードアップ、STAGE 3 から「逆から押す」回がまざる。
-   ヒント（💡）を 1 回だけ使える。パッドには色と形があるので、形でもおぼえられる。
+   ヒントを 1 回だけ使える。FINAL STAGE の一部の回は、見せたあとでパッドの場所が入れかわる。パッドには色と形があるので、形でもおぼえられる。
    操作: パッドをクリック / タップ。キーボードは QWE / ASD / ZXC か テンキー。H でヒント。Esc / P でポーズ。
    画面: 横長なら 960×540、スマホの縦なら 540×960。
    ===================================================================== */
@@ -36,11 +36,12 @@ const PAD_COLORS = ['#ff4d8d', '#ff9f43', '#ffd36e', '#5cff8d', '#5ee7ff', '#8ea
 const PAD_SHAPES = ['heart', 'tri', 'star', 'square', 'circle', 'diamond', 'moon', 'flower', 'bolt'];
 const NOTES = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.7, 1318.5, 1568];   // ペンタトニック（どの順でもきれい）
 const REVERSE_ROUNDS = new Set([12, 15, 17, 19]);
+const SHUFFLE_ROUNDS = new Set([16, 18, 20]);   // FINAL STAGE: 見せたあとでパッドの場所が入れかわる（色と形でおぼえる）
 const STAGES = [
-  { name: 'STAGE 1', sub: 'まずは ゆっくり', color: '#b06bff' },
+  { name: 'STAGE 1', sub: 'まずはゆっくり', color: '#b06bff' },
   { name: 'STAGE 2', sub: 'スピードアップ！', color: '#5ee7ff' },
-  { name: 'STAGE 3', sub: '「逆から押す」回が まざる', color: '#ff9f43' },
-  { name: 'FINAL STAGE', sub: 'ぜんぶ おぼえられるか！？', color: '#ff4d8d' },
+  { name: 'STAGE 3', sub: '「逆から押す」回がまざる', color: '#ff9f43' },
+  { name: 'FINAL STAGE', sub: 'パッドの場所が入れかわる回も！', color: '#ff4d8d' },
 ];
 const stageOf = r => Math.min(3, Math.floor((Math.max(1, r) - 1) / 5));
 const KEYMAP = { Numpad7: 0, Numpad8: 1, Numpad9: 2, Numpad4: 3, Numpad5: 4, Numpad6: 5, Numpad1: 6, Numpad2: 7, Numpad3: 8, Digit7: 0, Digit8: 1, Digit9: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit1: 6, Digit2: 7, Digit3: 8,
@@ -63,11 +64,20 @@ function fit() {
   ctx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0);
   const topSafe = Math.ceil(60 / s);   // 共通の 🏠🔊 ボタンをよける
   if (PORTRAIT) { PAD = 146; GAP = 16; GX = W / 2 - (PAD * 3 + GAP * 2) / 2; GY = Math.max(topSafe + 150, 280); L.hudTop = topSafe + 10; L.hint = { x: W / 2 - 80, y: GY + PAD * 3 + GAP * 2 + 70, w: 160, h: 48 }; }
-  else { PAD = 118; GAP = 16; GX = W / 2 - (PAD * 3 + GAP * 2) / 2; GY = 118; L.hudTop = Math.max(70, topSafe + 8); L.hint = { x: W - 224 + 25, y: 470, w: 150, h: 44 }; }
+  else { PAD = 110; GAP = 16; GX = W / 2 - (PAD * 3 + GAP * 2) / 2; GY = 108; L.hudTop = Math.max(70, topSafe + 8); L.hint = { x: W - 224 + 25, y: 470, w: 150, h: 44 }; }
   orbs = Array.from({ length: PORTRAIT ? 26 : 34 }, (_, i) => ({ x: Math.random() * W, y: Math.random() * H, r: 1 + Math.random() * 2.5, v: 6 + Math.random() * 14, p: Math.random() * TAU, c: PAD_COLORS[i % N] }));
 }
-addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 60));
-const padRect = i => ({ x: GX + (i % COLS) * (PAD + GAP), y: GY + Math.floor(i / COLS) * (PAD + GAP), w: PAD, h: PAD });
+addEventListener('resize', () => { fit(); if (G) resetSlots(true); }); addEventListener('orientationchange', () => setTimeout(fit, 60));
+const slotRect = k => ({ x: GX + (k % COLS) * (PAD + GAP), y: GY + Math.floor(k / COLS) * (PAD + GAP), w: PAD, h: PAD });
+// パッド i はいまスロット G.slot[i] にいる。G.pos2[i] は動いている途中の場所（入れかえのアニメ）
+const padRect = i => (G && G.pos2 && G.pos2[i]) ? { x: G.pos2[i].x, y: G.pos2[i].y, w: PAD, h: PAD } : slotRect(G && G.slot ? G.slot[i] : i);
+function resetSlots(instant) { G.slot = [...Array(N).keys()]; if (instant || !G.pos2) G.pos2 = G.slot.map(k => { const r = slotRect(k); return { x: r.x, y: r.y }; }); }
+function shuffleSlots() {
+  const perm = [...Array(N).keys()];
+  do { for (let i = N - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [perm[i], perm[j]] = [perm[j], perm[i]]; } } while (perm.filter((v, i) => v === i).length > 2);   // ほとんどのパッドが動くように
+  G.slot = perm;
+}
+const padAtSlot = k => G.slot.indexOf(k);
 const padCenter = i => { const r = padRect(i); return { x: r.x + r.w / 2, y: r.y + r.h / 2 }; };
 
 /* ------------------------------------------------------------ 状態 */
@@ -75,7 +85,7 @@ let G = null;
 function newGame() {
   return { state: 'title', t: 0, round: 0, seq: [], pos: 0, lives: LIVES, score: 0, dispScore: 0, lit: new Array(N).fill(0), press: new Array(N).fill(0), wrong: new Array(N).fill(0),
     showIdx: -1, showT: 0, inputT: 0, msg: null, titleT: 0, countT: 0, countStep: -1, roundStart: 0, over: false, overT: 0, cleared: false,
-    reverse: false, hints: HINTS, hintFlash: 0, perfect: true, streak: 0, bestStreak: 0, stage: 0, stageT: 0, waveT: -1, mistakes: 0, fastHits: 0, lastNote: -1, demoT: 0, resultShown: false, beat: 0 };
+    reverse: false, shuffle: false, shuffles: 0, slot: null, pos2: null, hints: HINTS, hintFlash: 0, perfect: true, streak: 0, bestStreak: 0, stage: 0, stageT: 0, waveT: -1, mistakes: 0, fastHits: 0, lastNote: -1, demoT: 0, resultShown: false, beat: 0 };
 }
 const stepDur = () => Math.max(0.2, (G.stage >= 1 ? 0.5 : 0.62) - G.round * 0.016);   // 見せる速さ（ラウンドが進むと速く）
 const theme = () => STAGES[G.stage].color;
@@ -115,10 +125,10 @@ function bgmStop() { BGM.on = false; }
 
 /* ------------------------------------------------------------ ゲーム進行 */
 function startGame() {
-  if (FES.howto(['👀 光った順番をおぼえる', '👆 同じ順番にパッドをタップ', '💡 ヒントは1回だけ（もう一度見られる）'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (FES.howto(['👀 光った順番をおぼえる', '👆 同じ順番にパッドをタップ', '🎲 最後のほうはパッドの場所が入れかわる回も（色と形でおぼえる）'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false); FES.fever(false); fx.clear(); bgmStop();
   const keep = G ? G.titleT : 0;
-  G = newGame(); G.titleT = keep;
+  G = newGame(); G.titleT = keep; resetSlots(true);
   G.state = 'count'; G.countT = 0; G.countStep = -1; paused = false;
 }
 function beginPlay() { G.round = 0; G.seq = []; nextRound(); }
@@ -130,9 +140,9 @@ function nextRound() {
     G.stage = st; G.stageT = 1.6;
     G.msg = { text: STAGES[st].name, sub: STAGES[st].sub, t: 1.7, color: STAGES[st].color };
     if (G.round > 1) { SND.stage(); fx.flash(STAGES[st].color, 0.25, 0.3); fx.confettiBurst && 0; }
-    if (st === 3) FES.fever(true, 'FINAL STAGE!');
+    if (st === 3) FES.fever(true, null);
   } else {
-    G.msg = { text: `ROUND ${G.round}`, sub: `${START_LEN + G.round - 1} 個`, t: 1.1 };
+    G.msg = { text: `ROUND ${G.round}`, sub: `${START_LEN + G.round - 1}個${SHUFFLE_ROUNDS.has(G.round) ? '・入れかわる回' : ''}`, t: 1.1 };
     FES.sfx('select');
   }
   // 1 つ足す（最初は START_LEN 個）。同じパッドが 3 回続かないように
@@ -142,6 +152,8 @@ function nextRound() {
     G.seq.push(p);
   }
   G.reverse = REVERSE_ROUNDS.has(G.round);
+  G.shuffle = SHUFFLE_ROUNDS.has(G.round);
+  resetSlots(false);
   G.pos = 0; G.state = 'show'; G.showIdx = -1; G.showT = -(G.stageT > 0 ? 1.4 : 0.6);   // 少し間を置いてから見せる
   bgmStop();
   if (G.round === 1) FES.sfx('start');
@@ -156,7 +168,11 @@ function light(i, strong) {
 }
 function beginInput() {
   G.state = 'input'; G.inputT = G.t; G.roundStart = G.t;
-  if (G.reverse) { G.msg = { text: '🔁 逆から 押せ！', sub: '最後に光ったのが 1 番目', t: 1.4, color: '#ff9f43' }; SND.reverse(); }
+  if (G.shuffle) {
+    shuffleSlots(); G.shuffles++;
+    G.msg = { text: 'パッドが入れかわった！', sub: '場所ではなく色と形でおぼえよう', t: 1.6, color: '#ff4d8d' };
+    [0, 0.07, 0.14, 0.21, 0.28].forEach((d, k) => FES.tone({ freq: [400, 600, 500, 700, 900][k], dur: 0.08, type: 'square', vol: 0.08, delay: d })); fx.shake(0.4, 0.3);
+  } else if (G.reverse) { G.msg = { text: '逆から押せ！', sub: '最後に光ったのが1番目', t: 1.4, color: '#ff9f43' }; SND.reverse(); }
   else G.msg = { text: 'おぼえたとおりに！', sub: '', t: 0.9 };
   bgmStart();
 }
@@ -177,7 +193,7 @@ function pressPad(i) {
     G.wrong[i] = 1; G.lives--; G.perfect = false; G.mistakes++; G.streak = 0;
     fx.shake(0.9, 0.35); fx.flash('#ff4d8d', 0.3, 0.2); SND.wrong(); FES.vibrate([40, 30, 40]);
     const wc = padCenter(want); G.lit[want] = 1;   // 正解を光らせて教える
-    fx.text(W / 2, GY - 44, G.lives > 0 ? 'ちがう！ もう一回 見てね' : 'ちがう…', { color: '#ff4d8d', size: PORTRAIT ? 26 : 30, life: 1.2 });
+    fx.text(W / 2, GY - 44, G.lives > 0 ? 'ちがう！もう一回見てね' : 'ちがう…', { color: '#ff4d8d', size: PORTRAIT ? 26 : 30, life: 1.2 });
     fx.ring(wc.x, wc.y, { color: '#fff', r: 20, r1: 90, life: 0.6 });
     bgmStop();
     if (G.lives <= 0) { finish(false); return; }
@@ -189,19 +205,19 @@ function roundClear() {
   const speed = Math.max(0, Math.round((8 - took) * 10)) * G.round;
   G.streak++; G.bestStreak = Math.max(G.bestStreak, G.streak);
   const streakBonus = G.streak >= 3 ? 50 * G.round : 0;
-  const bonus = 100 * G.round + speed + streakBonus + (G.reverse ? 100 * G.round : 0);
+  const bonus = 100 * G.round + speed + streakBonus + (G.reverse || G.shuffle ? 100 * G.round : 0);
   G.score += bonus;
   G.state = 'clear'; G.showT = 0; G.waveT = 0;
-  fx.text(W / 2, GY - 44, `ROUND ${G.round} CLEAR!  +${bonus}`, { color: '#ffd36e', size: PORTRAIT ? 24 : 30, life: 1.1 });
-  if (G.streak >= 3) fx.text(W / 2, GY - 44 + 34, `${G.streak} 連続ノーミス！`, { color: '#ff9ee8', size: 18, life: 1.1 });
+  fx.text(W / 2, GY - 44, `ROUND ${G.round} CLEAR! +${bonus}`, { color: '#ffd36e', size: PORTRAIT ? 24 : 30, life: 1.1 });
+  if (G.streak >= 3) fx.text(W / 2, GY - 44 + 34, `${G.streak}連続ノーミス！`, { color: '#ff9ee8', size: 18, life: 1.1 });
   SND.clear(); fx.flash('#fff', 0.18, 0.2);
   bgmStop();
 }
 function useHint() {
   if (G.state !== 'input' || G.hints <= 0) return;
   G.hints--; G.hintFlash = 1; SND.hint();
-  fx.text(W / 2, GY - 44, '💡 もう一度 見せるよ', { color: '#ffd36e', size: PORTRAIT ? 24 : 28, life: 1.2 });
-  G.pos = 0; G.state = 'show'; G.showIdx = -1; G.showT = -0.5; bgmStop();
+  fx.text(W / 2, GY - 44, 'もう一度見せるよ', { color: '#ffd36e', size: PORTRAIT ? 24 : 28, life: 1.2 });
+  G.pos = 0; G.state = 'show'; G.showIdx = -1; G.showT = -0.5; bgmStop(); resetSlots(false);
 }
 function finish(cleared) {
   G.state = 'over'; G.overT = 0; G.cleared = cleared; FES.fever(false); bgmStop();
@@ -211,14 +227,14 @@ function finish(cleared) {
 }
 function showResult() {
   if (G.resultShown) return; G.resultShown = true;
-  const reached = Math.max(0, G.round - (G.cleared ? 0 : 1));   // クリアしたラウンド数
+  const reached = G.cleared ? MAX_ROUND : Math.max(0, G.round - 1);   // クリアしたラウンド数（全クリアのときは round が 21 になっているので MAX_ROUND）
   if (G.cleared && G.perfect) { G.score += 2000; }
   const grade = reached >= 16 ? 'S' : reached >= 11 ? 'A' : reached >= 7 ? 'B' : reached >= 4 ? 'C' : 'D';
   FES.showResult({
     score: G.score, scoreLabel: 'pt', title: G.cleared ? (G.perfect ? 'PERFECT MEMORY!!' : 'ALL CLEAR!') : 'GAME OVER',
-    subtitle: G.cleared ? `${MAX_ROUND} ラウンド 全クリア！${G.perfect ? ' ノーミス +2000' : ''}` : `ROUND ${reached} までクリア（${Math.max(0, START_LEN + reached - 1)} 個おぼえた）`,
+    subtitle: G.cleared ? `${MAX_ROUND}ラウンド全クリア！${G.perfect ? ' ノーミス +2000' : ''}` : `ROUND ${reached}までクリア（${Math.max(0, START_LEN + reached - 1)}個おぼえた）`,
     grade, titles: { S: '記憶の神', A: '天才的な記憶力', B: 'なかなかの記憶力', C: 'いい感じ', D: 'つぎはもっと！' },
-    stats: [{ label: 'クリアしたラウンド', value: reached }, { label: 'おぼえた数', value: Math.max(0, START_LEN + reached - 1) }, { label: '最長ノーミス', value: G.bestStreak }, { label: 'すばやく押した', value: G.fastHits }],
+    stats: [{ label: 'クリアしたラウンド', value: reached }, { label: 'おぼえた数', value: Math.max(0, START_LEN + reached - 1) }, { label: '最長ノーミス', value: G.bestStreak }, { label: 'すばやく押した', value: G.fastHits }, { label: '入れかわり', value: G.shuffles + '回' }],
   }, () => { startGame(); FES.sfx('start'); });
 }
 
@@ -231,6 +247,7 @@ function update(dt) {
   G.dispScore += (G.score - G.dispScore) * Math.min(1, d * 8);
   G.stageT = Math.max(0, G.stageT - d); G.hintFlash = Math.max(0, G.hintFlash - d * 2); G.beat = Math.max(0, G.beat - d * 2.5);
   if (G.waveT >= 0) { G.waveT += d; if (G.waveT > 1.2) G.waveT = -1; }
+  if (G.pos2 && G.slot) for (let i = 0; i < N; i++) { const r = slotRect(G.slot[i]), q = G.pos2[i]; q.x += (r.x - q.x) * Math.min(1, d * 9); q.y += (r.y - q.y) * Math.min(1, d * 9); }
   for (const o of orbs) { o.y -= o.v * d; o.x += Math.sin(G.t * 0.7 + o.p) * 8 * d; if (o.y < -10) { o.y = H + 10; o.x = Math.random() * W; } }
   if (G.state === 'title') { G.demoT += d; return; }
   if (G.state === 'count') {
@@ -251,7 +268,7 @@ function update(dt) {
   } else if (G.state === 'clear') {
     G.showT += d; if (G.showT > 1.15) nextRound();
   } else if (G.state === 'retry') {
-    G.showT += d; if (G.showT > 1.3) { G.pos = 0; G.state = 'show'; G.showIdx = -1; G.showT = -0.3; G.msg = { text: 'もう一度 見てね', sub: `ライフ ${'❤'.repeat(G.lives)}`, t: 1.0 }; }
+    G.showT += d; if (G.showT > 1.3) { G.pos = 0; G.state = 'show'; G.showIdx = -1; G.showT = -0.3; G.msg = { text: 'もう一度見てね', sub: `ライフのこり${G.lives}`, t: 1.0 }; resetSlots(false); }
   } else if (G.state === 'over') G.overT += d;
 }
 
@@ -317,13 +334,13 @@ function drawPads() {
     ctx.save(); ctx.translate(0, 4); ctx.fillStyle = glow > 0.02 ? '#fff' : hexToRgba(c, 0.75); ctx.shadowColor = c; ctx.shadowBlur = glow > 0.02 ? 24 : 0;
     shapePath(PAD_SHAPES[i], r.w * 0.22); ctx.fill(); ctx.restore();
     ctx.restore();
-    if (G.state !== 'title' && !FES.isTouch()) text(KEY_LABELS[i], r.x + r.w - 20, r.y + r.h - 14, 11, 'rgba(255,255,255,.5)', { w: 700 });
+    if (G.state !== 'title' && !FES.isTouch()) text(KEY_LABELS[G.slot ? G.slot[i] : i], r.x + r.w - 20, r.y + r.h - 14, 11, 'rgba(255,255,255,.5)', { w: 700 });
   }
 }
 function drawProgress() {
   if (!['input', 'show', 'clear', 'retry'].includes(G.state)) return;
   const n = G.seq.length, bw = Math.min(16, (W - 80) / n - 4), x0 = W / 2 - (n * (bw + 4)) / 2;
-  const y = PORTRAIT ? GY + PAD * 3 + GAP * 2 + 28 : H - 46;
+  const y = PORTRAIT ? GY + PAD * 3 + GAP * 2 + 28 : H - 34;
   for (let i = 0; i < n; i++) {
     const k = G.reverse && G.state === 'input' ? n - 1 - i : i;   // 逆順のときは右から埋まる
     const done = G.state === 'input' ? k < G.pos : G.state === 'show' ? i <= G.showIdx : true;
@@ -331,7 +348,7 @@ function drawProgress() {
     ctx.fillStyle = done ? (G.state === 'show' ? PAD_COLORS[G.seq[i]] : '#ffd36e') : cur ? 'rgba(255,255,255,.6)' : 'rgba(255,255,255,.18)';
     rr(x0 + i * (bw + 4), y, bw, cur ? 14 : 10, 4); ctx.fill();
   }
-  const label = G.state === 'show' ? '👀 みて…' : G.state === 'input' ? `👆 ${G.reverse ? '逆から ' : ''}おして！ ${G.pos} / ${n}` : '';
+  const label = G.state === 'show' ? 'みて…' : G.state === 'input' ? `${G.reverse ? '逆から' : ''}おして！ ${G.pos} / ${n}` : '';
   text(label, W / 2, y - 22, 18, G.reverse && G.state === 'input' ? '#ff9f43' : 'rgba(255,255,255,.85)');
   if (G.reverse && G.state === 'input') text('◀', x0 - 16, y + 5, 14, '#ff9f43');
 }
@@ -342,11 +359,22 @@ function drawHintButton() {
   ctx.shadowColor = '#ffd36e'; ctx.shadowBlur = on ? 14 + G.hintFlash * 20 : 0;
   ctx.fillStyle = on ? 'rgba(255,211,110,.18)' : 'rgba(255,255,255,.06)'; rr(b.x, b.y, b.w, b.h, b.h / 2); ctx.fill();
   ctx.shadowBlur = 0; ctx.strokeStyle = on ? '#ffd36e' : 'rgba(255,255,255,.3)'; ctx.lineWidth = 2; ctx.stroke();
-  text(G.hints > 0 ? `💡 ヒント ×${G.hints}` : '💡 ヒント なし', b.x + b.w / 2, b.y + b.h / 2 + 1, 15, on ? '#ffd36e' : 'rgba(255,255,255,.6)');
-  if (!PORTRAIT && !FES.isTouch()) text('H キー', b.x + b.w / 2, b.y + b.h + 14, 11, 'rgba(255,255,255,.45)', { w: 700 });
+  FES.drawIcon(ctx, '💡', b.x + 26, b.y + b.h / 2, 20, on ? '#ffd36e' : '#aaaaaa', on ? '#ffd36e' : null);
+  text(G.hints > 0 ? `ヒント ×${G.hints}` : 'ヒントなし', b.x + b.w / 2 + 12, b.y + b.h / 2 + 1, 15, on ? '#ffd36e' : 'rgba(255,255,255,.6)');
+  if (!PORTRAIT && !FES.isTouch()) text('Hキー', b.x + b.w / 2, b.y + b.h + 14, 11, 'rgba(255,255,255,.45)', { w: 700 });
   ctx.restore();
 }
-function panel(x, y, w, h) { ctx.fillStyle = 'rgba(0,0,0,.35)'; rr(x, y, w, h, 16); ctx.fill(); ctx.strokeStyle = hexToRgba(theme(), 0.35); ctx.lineWidth = 1; ctx.stroke(); }
+function panel(x, y, w, h) { const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, 'rgba(26,20,60,.88)'); g.addColorStop(1, 'rgba(10,8,30,.88)'); ctx.fillStyle = g; rr(x, y, w, h, 16); ctx.fill(); ctx.strokeStyle = hexToRgba(theme(), 0.6); ctx.lineWidth = 1.5; ctx.stroke(); }
+function drawHearts(cx, y, size) {
+  // ライフのハート（絵文字ではなく形で描く）
+  const gap = size * 1.25, x0 = cx - gap * (LIVES - 1) / 2;
+  for (let k = 0; k < LIVES; k++) {
+    ctx.save(); ctx.translate(x0 + k * gap, y); const on = k < G.lives;
+    shapePath('heart', size * 0.5);
+    if (on) { ctx.fillStyle = '#ff4d8d'; ctx.shadowColor = '#ff4d8d'; ctx.shadowBlur = 10; ctx.fill(); } else { ctx.strokeStyle = 'rgba(255,77,141,.5)'; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.restore();
+  }
+}
 function drawHUD() {
   if (G.state === 'title') return;
   const col = theme();
@@ -356,19 +384,19 @@ function drawHUD() {
     text('ROUND', 20 + w / 2, y + 18, 11, 'rgba(255,255,255,.6)'); text(`${Math.max(1, G.round)}/${MAX_ROUND}`, 20 + w / 2, y + 50, 26, '#fff');
     text(STAGES[G.stage].name, 20 + w / 2, y + 76, 11, col);
     text('SCORE', 30 + w + w / 2, y + 18, 11, 'rgba(255,255,255,.6)'); text(Math.round(G.dispScore).toLocaleString(), 30 + w + w / 2, y + 50, 24, '#ffd36e', { glow: 'rgba(255,211,110,.6)' });
-    text(`おぼえる数 ${G.seq.length || START_LEN}`, 30 + w + w / 2, y + 76, 11, '#5ee7ff');
-    text('LIFE', 40 + 2 * w + w / 2, y + 18, 11, 'rgba(255,255,255,.6)'); text('❤'.repeat(Math.max(0, G.lives)) + '♡'.repeat(LIVES - Math.max(0, G.lives)), 40 + 2 * w + w / 2, y + 50, 22, '#ff4d8d');
-    if (G.streak >= 2) text(`${G.streak} 連続`, 40 + 2 * w + w / 2, y + 76, 11, '#ff9ee8');
+    text(`おぼえる数${G.seq.length || START_LEN}`, 30 + w + w / 2, y + 76, 11, '#5ee7ff');
+    text('LIFE', 40 + 2 * w + w / 2, y + 18, 11, 'rgba(255,255,255,.6)'); drawHearts(40 + 2 * w + w / 2, y + 50, 24);
+    if (G.streak >= 2) text(`${G.streak}連続`, 40 + 2 * w + w / 2, y + 76, 11, '#ff9ee8');
   } else {
     const y = L.hudTop;
     panel(24, y, 200, 150);
     text('ROUND', 124, y + 20, 12, 'rgba(255,255,255,.6)'); text(`${Math.max(1, G.round)} / ${MAX_ROUND}`, 124, y + 52, 32, '#fff');
     text(STAGES[G.stage].name, 124, y + 82, 12, col, { glow: col });
-    text('LIFE', 124, y + 108, 12, 'rgba(255,255,255,.6)'); text('❤'.repeat(Math.max(0, G.lives)) + '♡'.repeat(LIVES - Math.max(0, G.lives)), 124, y + 132, 22, '#ff4d8d');
+    text('LIFE', 124, y + 108, 12, 'rgba(255,255,255,.6)'); drawHearts(124, y + 132, 24);
     panel(W - 224, y, 200, 150);
     text('SCORE', W - 124, y + 20, 12, 'rgba(255,255,255,.6)'); text(Math.round(G.dispScore).toLocaleString(), W - 124, y + 54, 32, '#ffd36e', { glow: 'rgba(255,211,110,.6)' });
     text('おぼえる数', W - 124, y + 86, 12, 'rgba(255,255,255,.6)'); text(String(G.seq.length || START_LEN), W - 124, y + 110, 24, '#5ee7ff');
-    if (G.streak >= 2) text(`🔥 ${G.streak} 連続ノーミス`, W - 124, y + 136, 12, '#ff9ee8');
+    if (G.streak >= 2) text(`${G.streak}連続ノーミス`, W - 124, y + 136, 12, '#ff9ee8');
   }
 }
 function drawMsg() {
@@ -391,23 +419,29 @@ function drawTitle() {
   const cx = PORTRAIT ? W / 2 : 600, ty = PORTRAIT ? 330 : 140, S = PORTRAIT ? 0.8 : 1;
   text('MEMORY FLASH', cx, ty - 46 * S, 15 * S, '#b06bff', { w: 700 });
   text('メモリーフラッシュ', cx, ty, 64 * S, '#fff', { glow: '#b06bff', stroke: 'rgba(0,0,0,.5)' });
-  text('— 光った順番を おぼえよう —', cx, ty + 50 * S, 17 * S, 'rgba(255,255,255,.75)', { w: 700 });
+  text('― 光った順番をおぼえよう ―', cx, ty + 50 * S, 17 * S, 'rgba(255,255,255,.75)', { w: 700 });
   text(`HI-SCORE ${FES.getHiScore().toLocaleString()}`, cx, ty + 86 * S, 20 * S, '#ffd36e');
   const bw = PORTRAIT ? W - 40 : 500, bx = cx - bw / 2, by = ty + 110 * S, lh = 27, lines = [
-    ['👀', '光った順番をおぼえて、同じ順番に押そう。形でおぼえても OK'],
-    ['🧠', '1 ラウンドごとに 1 つ長くなる（最初は 3 つ・全 20 ラウンド）'],
-    ['🔁', 'STAGE 3 から「逆から押す」回がまざる。ヒントは 1 回だけ'],
-    ['❤', 'ライフは 3 つ。まちがえても もう一度 見られる'],
+    ['👀', '光った順番をおぼえて、同じ順番に押そう。形でおぼえてもOK', '#5ee7ff'],
+    ['🔢', '1ラウンドごとに1つ長くなる（最初は3つ・全20ラウンド）', '#b06bff'],
+    ['↔', 'STAGE 3から「逆から押す」回がまざる。ヒントは1回だけ', '#ff9f43'],
+    ['🎲', 'FINAL STAGEは、見せたあとパッドの場所が入れかわる回も', '#ff4d8d'],
+    ['heart', 'ライフは3つ。まちがえてももう一度見られる', '#ff4d8d'],
   ];
-  ctx.fillStyle = 'rgba(0,0,0,.4)'; rr(bx, by, bw, lh * lines.length + 16, 16); ctx.fill();
-  lines.forEach(([ic, s], i) => { const y = by + 8 + lh * (i + 0.5); text(ic, bx + 22, y, 15, '#fff'); text(s, bx + 42, y, PORTRAIT ? 12.5 : 14, i === 2 ? '#ffd36e' : 'rgba(255,255,255,.9)', { align: 'left', w: 700 }); });
+  ctx.fillStyle = 'rgba(10,8,30,.78)'; rr(bx, by, bw, lh * lines.length + 16, 16); ctx.fill(); ctx.strokeStyle = 'rgba(176,107,255,.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+  lines.forEach(([ic, s, col], i) => {
+    const y = by + 8 + lh * (i + 0.5);
+    if (ic === 'heart') { ctx.save(); ctx.translate(bx + 22, y); shapePath('heart', 8); ctx.fillStyle = col; ctx.fill(); ctx.restore(); }
+    else FES.drawIcon(ctx, ic, bx + 22, y, 19, col, col);
+    text(s, bx + 42, y, PORTRAIT ? 12.5 : 14, i === 3 ? '#ffd36e' : 'rgba(255,255,255,.9)', { align: 'left', w: 700 });
+  });
   const btnY = by + lh * lines.length + 16 + (PORTRAIT ? 62 : 50);
   const pulse = 1 + Math.sin(t * 4) * 0.04;
   ctx.save(); ctx.translate(cx, btnY); ctx.scale(pulse, pulse);
   ctx.shadowColor = '#b06bff'; ctx.shadowBlur = 24; ctx.fillStyle = '#b06bff'; rr(-130, -30, 260, 60, 30); ctx.fill(); ctx.shadowBlur = 0;
   text('▶ スタート！', 0, 2, 26, '#fff'); ctx.restore();
-  text(PORTRAIT ? 'パッドをタップ' : 'タップ / クリック ・ キー Q W E / A S D / Z X C ・ テンキー ・ H でヒント', cx, btnY + 50, PORTRAIT ? 12 : 13, 'rgba(255,255,255,.6)', { w: 700 });
-  text('タップ / クリック / Enter / Space でスタート', cx, btnY + 70, 12, 'rgba(255,255,255,.45)', { w: 700 });
+  text(PORTRAIT ? 'パッドをタップ' : 'タップ・クリック ／ キーはQWE・ASD・ZXCかテンキー ／ Hでヒント', cx, btnY + 50, PORTRAIT ? 12 : 13, 'rgba(255,255,255,.6)', { w: 700 });
+  text('タップ・クリック・Enter・Spaceでスタート', cx, btnY + 70, 12, 'rgba(255,255,255,.45)', { w: 700 });
 }
 function drawCount() {
   const step = G.countStep, k = (G.countT - step * 0.7) / 0.7;
@@ -428,6 +462,16 @@ function render() {
   if (G.state === 'over') text(G.cleared ? (G.perfect ? 'PERFECT!!' : 'ALL CLEAR!') : 'GAME OVER', W / 2, GY + (PAD * 3 + GAP * 2) / 2, PORTRAIT ? 48 : 60, G.cleared ? '#ffd36e' : '#ff4d8d', { glow: G.cleared ? '#ffd36e' : '#ff4d8d', stroke: 'rgba(0,0,0,.6)' });
   if (G.state === 'title') drawTitle();
   if (G.state === 'count') drawCount();
+  drawBloom();
+}
+const BLOOM = document.createElement('canvas');
+function drawBloom() {
+  if (FES.lite()) return;
+  const bw = Math.max(32, Math.round(canvas.width / 8)), bh = Math.max(18, Math.round(canvas.height / 8));
+  if (BLOOM.width !== bw || BLOOM.height !== bh) { BLOOM.width = bw; BLOOM.height = bh; }
+  const g = BLOOM.getContext('2d'); g.globalCompositeOperation = 'copy'; g.drawImage(canvas, 0, 0, bw, bh);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(BLOOM, 0, 0); g.drawImage(BLOOM, 0, 0);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.32; ctx.drawImage(BLOOM, 0, 0, canvas.width, canvas.height); ctx.restore();
 }
 
 /* ------------------------------------------------------------ 入力 */
@@ -447,8 +491,8 @@ window.addEventListener('keydown', e => {
   if (paused) return;
   if (G.state === 'title') { if (e.code === 'Space' || e.code === 'Enter') { startGame(); FES.sfx('start'); } return; }
   if (e.code === 'KeyH') { useHint(); return; }
-  const i = KEYMAP[e.code];
-  if (i != null) pressPad(i);
+  const k = KEYMAP[e.code];
+  if (k != null) pressPad(G.slot ? padAtSlot(k) : k);   // キーは場所（スロット）。入れかわったらそこにいるパッド
 });
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault(); if (paused) return;
@@ -463,7 +507,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && !pa
 
 /* ------------------------------------------------------------ ループ */
 G = newGame();
-fit();
+fit(); resetSlots(true);
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
