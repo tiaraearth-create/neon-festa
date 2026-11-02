@@ -41,7 +41,13 @@
   }
   .cat:hover { transform: translateY(-2px); border-color: rgba(255,255,255,.5); }
   .cat.sel { border-color: #ffd36e; background: linear-gradient(135deg, rgba(255,211,110,.35), rgba(255,138,61,.3)); box-shadow: 0 0 18px rgba(255,211,110,.5); transform: scale(1.04); }
-  .cat .ci { font-size: 1.25em; }
+  .cat .ci { font-size: 1.25em; display: inline-flex; }
+  .cat .ci .fes-ico { width: 1.15em; height: 1.15em; }
+  .crown .fes-ico { width: 1em; height: 1em; color: #ffd36e; }
+  .howto .fes-ico, .life .fes-ico, #qcat .fes-ico, #cdcat .fes-ico { width: 1.1em; height: 1.1em; vertical-align: -.18em; }
+  /* ゴールデンクエスチョン（配点 3 倍） */
+  #qcard.gold { background: linear-gradient(160deg, rgba(120,80,10,.95), rgba(50,26,4,.97)); border-color: #ffd36e !important; box-shadow: 0 20px 60px rgba(0,0,0,.6), 0 0 60px rgba(255,200,60,.55), inset 0 0 0 1px rgba(255,255,255,.15); }
+  #qcard.gold::before { content: "GOLDEN QUESTION ×3"; position: absolute; left: 50%; top: -14px; transform: translateX(-50%); padding: 2px 14px; border-radius: 999px; background: linear-gradient(135deg, #fff3b0, #ffc83d); color: #3a1a00; font-weight: 900; font-size: clamp(11px, 1.8vmin, 16px); letter-spacing: .1em; white-space: nowrap; box-shadow: 0 0 16px rgba(255,200,60,.9); }
   .howto { font-size: clamp(12px, 2vmin, 18px); opacity: .85; text-align: center; line-height: 1.7; font-weight: 700; }
   .howto kbd { display: inline-block; padding: 0 .45em; border-radius: 6px; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3); font-family: inherit; }
   #start {
@@ -211,16 +217,16 @@
 <div id="app">
   <!-- タイトル -->
   <section id="title" class="screen on">
-    <div class="crown">👑</div>
+    <div class="crown"><span data-ico="👑"></span></div>
     <div class="logo-top">SPEED QUIZ CHAMPION</div>
     <div class="logo">早押しクイズ王</div>
     <div class="hiscore">HI-SCORE<b id="hiscore">0</b></div>
     <div class="cat-label">ジャンルをえらぶ　<span id="pool"></span></div>
     <div class="cats" id="cats"></div>
     <div class="howto">
-      <span class="pc-only">🖱️ クリック / 👆 タップで回答　⌨️ <kbd>1</kbd>〜<kbd>4</kbd> または <kbd>A</kbd>〜<kbd>D</kbd> キー<br></span>
-      10問・各10秒。速く答えるほど高得点！ 連続正解でコンボボーナス。<span class="pc-only"><kbd>Esc</kbd>/<kbd>P</kbd> でポーズ</span><br>
-      🛟 ライフライン: <span class="pc-only"><kbd>F</kbd> </span>50:50（2択にする）／ <span class="pc-only"><kbd>T</kbd> </span>FREEZE（5秒止める）　各1回・使った問題は得点半分
+      <span class="pc-only">クリック・タップで回答 ／ <kbd>1</kbd>〜<kbd>4</kbd>か<kbd>A</kbd>〜<kbd>D</kbd>キー ／ <kbd>Esc</kbd>・<kbd>P</kbd>でポーズ<br></span>
+      10問・各10秒。速く答えるほど高得点！連続正解でコンボボーナス。どこかで配点3倍のゴールデンクエスチョン<br>
+      <span data-ico="🛟"></span> ライフライン：<span class="pc-only"><kbd>F</kbd></span>50:50（2択にする） ／ <span class="pc-only"><kbd>T</kbd></span>FREEZE（5秒止める） ／ 各1回・使った問題は得点半分
     </div>
     <button id="start" type="button">スタート</button>
   </section>
@@ -247,10 +253,10 @@
     <div class="tbar"><div id="timer"><div id="tfill"></div></div><div id="tnum">10.0</div></div>
     <div id="opts"></div>
     <div id="lifes">
-      <button class="life" id="life-half" type="button"><b>½ 50:50</b><span>まちがいを 2 つ消す <kbd>F</kbd></span></button>
-      <button class="life" id="life-freeze" type="button"><b>❄ FREEZE</b><span>5 秒 時間を止める <kbd>T</kbd></span></button>
+      <button class="life" id="life-half" type="button"><b>½ 50:50</b><span>まちがいを2つ消す <kbd>F</kbd></span></button>
+      <button class="life" id="life-freeze" type="button"><b><span data-ico="❄"></span> FREEZE</b><span>5秒 時間を止める <kbd>T</kbd></span></button>
     </div>
-    <div id="last"><div class="l1">ラストクエスチョン！</div><div class="l2">配点 2 倍</div></div>
+    <div id="last"><div class="l1">ラストクエスチョン！</div><div class="l2">配点2倍</div></div>
     <button id="pbtn" type="button" title="ポーズ">❚❚</button>
   </section>
 
@@ -620,14 +626,14 @@ const CATS = {
   general:  { name: '一般常識',     icon: '💡', color: '#ffd36e' },
   science:  { name: '理科',         icon: '🧪', color: '#6ef0c8' },
   social:   { name: '社会・地理',   icon: '🗾', color: '#7fc8ff' },
-  japanese: { name: '日本語・漢字', icon: '✒️', color: '#ff9ac2' },
+  japanese: { name: '日本語・漢字', icon: '✒', color: '#ff9ac2' },
   english:  { name: '英語',         icon: '🔤', color: '#c2a8ff' },
   math:     { name: '算数・数学',   icon: '➗', color: '#ffb35c' },
   sports:   { name: 'スポーツ',     icon: '⚽', color: '#7cff8a' },
   music:    { name: '音楽・芸術',   icon: '🎨', color: '#ff8c8c' },
   trivia:   { name: '雑学',         icon: '🦒', color: '#f5e663' },
   school:   { name: '学校あるある', icon: '🏫', color: '#8ed6ff' },
-  pc:       { name: 'パソコン・IT',  icon: '🖥️', color: '#5ef2ff' },
+  pc:       { name: 'パソコン・IT',  icon: '🖥', color: '#5ef2ff' },
 };
 const CAT_ORDER = ['mix', 'general', 'science', 'social', 'japanese', 'english', 'math', 'sports', 'music', 'trivia', 'school', 'pc'];
 const RECENT_KEY = 'fes:quiz:recent', RECENT_MAX = 40;   // 直前に出た問題は次のプレイで出にくくする
@@ -877,7 +883,7 @@ function renderCats() {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'cat' + (key === S.cat ? ' sel' : ''); b.dataset.key = key;
     b.innerHTML = '<span class="ci"></span><span class="cn"></span>';
-    b.querySelector('.ci').textContent = CATS[key].icon;
+    b.querySelector('.ci').innerHTML = FES.iconSVG(CATS[key].icon);
     b.querySelector('.cn').textContent = CATS[key].name;
     b.addEventListener('click', () => { selectCat(key); FES.sfx('select'); });
     el.cats.appendChild(b);
@@ -892,11 +898,12 @@ function cycleCat(dir) {
   selectCat(CAT_ORDER[(i + dir + CAT_ORDER.length) % CAT_ORDER.length]);
   FES.sfx('select');
 }
+FES.fillIcons();
 function goTitle() {
   S.screen = 'title'; S.bgm = false; S.paused = false;
   FES.pause(false);
   el.hiscore.textContent = fmt(FES.getHiScore());
-  el.pool.textContent = '（全 ' + QUIZ_DATA.STATIC.length + ' 問 ＋ 毎回ちがう計算問題）';
+  el.pool.textContent = '（全' + QUIZ_DATA.STATIC.length + '問＋毎回ちがう計算問題）';
   showScreen('title');
 }
 
@@ -904,7 +911,7 @@ function goTitle() {
    ゲーム開始 / カウントダウン
    ===================================================================== */
 function startGame(cat) {
-  if (FES.howto(['🔢 [1]〜[4]キーかタップで答える', '⏱ 早く答えるほど高得点。連続正解でボーナス', '🛟 50:50とFREEZEは1回ずつ（使った問題は得点半分）'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (FES.howto(['🔢 [1]〜[4]キーかタップで答える', '⏱ 早く答えるほど高得点。連続正解でボーナス', '🏆 金色のゴールデンクエスチョンは配点3倍'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false);
   clearTasks();
   bg.confetti.length = 0;
@@ -915,6 +922,7 @@ function startGame(cat) {
     results: [], fastest: Infinity,
     lifeHalf: true, lifeFreeze: true, freezeT: 0, lifeUsedQ: false, lifeUsed: 0,
     paused: false, bgm: false, bgmAcc: 0, bgmStep: 0, bgmFast: false,
+    goldIdx: 3 + Math.floor(Math.random() * 5), golds: 0,   // ゴールデンクエスチョン（4〜8 問目のどれか 1 つ）
   });
   el.lifeHalf.classList.remove('used'); el.lifeFreeze.classList.remove('used'); el.tbar.classList.remove('frozen');
   el.app.classList.remove('shake');
@@ -925,7 +933,7 @@ function startGame(cat) {
   updateHud();
   if (S.questions.length < 4) { FES.toast('問題が足りません'); goTitle(); return; }
   S.screen = 'count';
-  el.cdcat.textContent = CATS[cat].icon + ' ' + CATS[cat].name;
+  el.cdcat.innerHTML = FES.iconSVG(CATS[cat].icon) + ' ' + CATS[cat].name;
   showScreen('count');
   FES.sfx('start');
   ['3', '2', '1', 'GO!'].forEach((s, i) => later(() => {
@@ -946,7 +954,8 @@ function startGame(cat) {
 function updateHud() {
   const n = S.questions.length || Q_COUNT;
   const isLast = S.questions.length && S.idx === n - 1;
-  el.hudQ.textContent = 'Q' + Math.min(S.idx + 1, n) + '/' + n + (isLast ? '  ×2' : '');
+  const isGold = S.questions.length && S.idx === S.goldIdx;
+  el.hudQ.textContent = 'Q' + Math.min(S.idx + 1, n) + '/' + n + (isLast ? ' ×2' : isGold ? ' ×3' : '');
   el.hudQ.classList.toggle('last', !!isLast);
   el.hudScore.innerHTML = '<small>SCORE</small>' + fmt(S.disp);
   el.hudCombo.textContent = S.combo + ' COMBO';
@@ -966,7 +975,10 @@ function showQuestion() {
   S.freezeT = 0; S.lifeUsedQ = false; S.bgmFast = S.idx === S.questions.length - 1;
   el.tbar.classList.remove('frozen');
   updateHud();
-  el.qcat.textContent = CATS[q.c].icon + ' ' + CATS[q.c].name;
+  el.qcat.innerHTML = FES.iconSVG(CATS[q.c].icon) + ' ' + CATS[q.c].name;
+  const gold = S.idx === S.goldIdx;
+  el.qcard.classList.toggle('gold', gold);
+  if (gold) { FES.sfx('powerup'); later(() => FES.tone({ freq: 1320, slide: 1760, dur: 0.3, type: 'triangle', vol: 0.12 }), 0.2); bg.boost = 1.2; }
   el.qcat.style.color = CATS[q.c].color;
   el.qcard.style.borderColor = CATS[q.c].color;
   el.qdiff.textContent = '★'.repeat(q.d) + '☆'.repeat(3 - q.d);
@@ -984,7 +996,7 @@ function showQuestion() {
     b.innerHTML = '<span class="num"></span><span class="txt"></span><span class="key"></span>';
     b.querySelector('.num').textContent = String(i + 1);
     b.querySelector('.txt').textContent = txt;
-    b.querySelector('.key').textContent = 'KEY ' + (i + 1) + ' / ' + 'ABCD'[i];
+    b.querySelector('.key').textContent = (i + 1) + '・' + 'ABCD'[i] + 'キー';
     b.addEventListener('animationend', () => { if (b.classList.contains('pop')) { b.classList.remove('pop'); b.classList.add('live'); } });
     b.addEventListener('pointerdown', e => { e.preventDefault(); answer(i); });
     b.addEventListener('click', e => { e.preventDefault(); answer(i); });   // pointer 非対応環境の保険
@@ -1019,7 +1031,9 @@ function answer(i) {
     if (S.combo === 5) FES.fever(true);
     const base = PT_BASE + Math.round(Math.max(0, S.timeLeft) * PT_SEC);
     const bonus = S.combo >= 2 ? Math.min(COMBO_MAX, (S.combo - 1) * COMBO_STEP) : 0;
-    const mult = isLast ? 2 : 1;
+    const gold = S.idx === S.goldIdx;
+    const mult = isLast ? 2 : gold ? 3 : 1;
+    if (gold) S.golds++;
     const half = S.lifeUsedQ ? 0.5 : 1;
     const gain = Math.round((base + bonus) * mult * half);
     S.score += gain;
@@ -1072,14 +1086,14 @@ function showFeedback(ok, info) {
   const big = document.createElement('div'); big.className = 'big';
   const sub = document.createElement('div'); sub.className = 'sub';
   if (ok) {
-    big.textContent = info.tier === 2 ? '電光石火！ 正解！' : info.tier === 1 ? '速い！ 正解！' : '正解！';
+    big.textContent = info.tier === 2 ? '電光石火！正解！' : info.tier === 1 ? '速い！正解！' : '正解！';
     sub.textContent = '+' + fmt(info.gain) + ' pt';
     if (info.bonus) { const s = document.createElement('span'); s.className = 'bonus'; s.textContent = S.combo + ' COMBO +' + info.bonus; sub.appendChild(s); }
     if (info.mult > 1) { const s = document.createElement('span'); s.className = 'mult'; s.textContent = '×' + info.mult; sub.appendChild(s); }
     if (info.half < 1) { const s = document.createElement('span'); s.className = 'mult'; s.style.color = '#8ed6ff'; s.textContent = 'ライフライン ×½'; sub.appendChild(s); }
   } else {
     big.textContent = info.timeout ? '時間切れ！' : 'ざんねん！';
-    sub.textContent = '正解は ' + CIRCLED[info.q.ans] + ' ' + info.q.opts[info.q.ans];
+    sub.textContent = '正解は' + CIRCLED[info.q.ans] + '「' + info.q.opts[info.q.ans] + '」';
   }
   el.fb.appendChild(big); el.fb.appendChild(sub);
   el.fb.className = 'show ' + (ok ? 'ok' : 'ng');
@@ -1158,7 +1172,7 @@ function finish() {
     rank: { S: 12000, A: 9000, B: 6000, C: 3000 }, titles: { S: t, A: t, B: t, C: t, D: t },
     stats: [
       { label: '正解数', value: S.correct + '/' + n },
-      { label: 'MAX COMBO', value: S.maxCombo },
+      { label: '最大コンボ', value: S.maxCombo },
       { label: '平均回答時間', value: avg.toFixed(2) + '秒' },
       { label: '最速正解', value: S.fastest === Infinity ? '-' : S.fastest.toFixed(2) + '秒' },
       { label: 'ライフライン', value: S.lifeUsed + '/2' },
