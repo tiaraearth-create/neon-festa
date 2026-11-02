@@ -412,7 +412,7 @@ function newRun() {
 }
 
 function startGame() {
-  FES.howto(['Space / タップ でジャンプ', '↓ / 下スワイプ でスライド', '🪙 小判を続けて取るとコンボ']);
+  if (FES.howto(['⬆ [Space]かタップでジャンプ', '⬇ [↓]か下スワイプでスライド', '🪙 小判を続けて取るとコンボ'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false);
   G = newRun();
   setStage(0);

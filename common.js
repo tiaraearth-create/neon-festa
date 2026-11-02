@@ -259,7 +259,7 @@
   FES.setMuted = function (m) {
     muted = !!m; LS.set('fes:muted', muted);
     if (master) master.gain.value = muted ? 0 : VOL;
-    const b = document.getElementById('fes-mute'); if (b) b.textContent = muted ? '🔇' : '🔊';
+    setBtnIcon(document.getElementById('fes-mute'), muted ? '🔇' : '🔊');
   };
   FES.isMuted = () => muted;
   /** スマホの振動（対応端末のみ。音と一緒に使うと手触りが良くなる） */
@@ -414,18 +414,139 @@
     setTimeout(() => { location.href = href; }, 230);
   };
 
-  /* ------------------------------------------------------------ あそびかたチップ（ゲーム開始のカウントダウン中に数秒だけ出す） */
-  let howtoEl = null, howtoTm = null;
-  /** FES.howto(['🔨 クリックでたたく', '⭐ 金もぐら +500']) / FES.howto(false) で消す */
-  FES.howto = function (hints, ms) {
+  /* ------------------------------------------------------------ あそびかた（スタートの前に、まん中に大きく出す） */
+  let howtoEl = null, howtoTm = null, howtoKey = null, howtoPass = false, howtoShownAt = -1e9;
+  const HOWTO_AUTO = 8, HOWTO_AGAIN_MS = 120000;   // 8 秒で自動スタート／同じ人が 2 分以内にもう一度遊ぶときは出さない
+  /**
+   * ゲームのスタート処理のいちばん最初で:
+   *   function startGame() { if (FES.howto(['🔨 クリックかタップでもぐらをたたく', '⭐ 金もぐらは +500'], 0, startGame, arguments)) return; … }
+   *   → まん中に「あそびかた」を出して true を返す（スタート処理はいったん止める）。
+   *     「OK！ あそぶ」・Enter・Space・8 秒で消えて、もう一度 startGame(…同じ引数) を呼ぶ（そのときは false が返って先へ進む）。
+   *   FES.howto(false) で消す。
+   *   先頭の絵文字（スペースまで）は左の四角いアイコンになる。[Space] のように [ ] でかこむとキーの形で出る。
+   *   書き方のルール: 数字と単位はくっつける（3つ・60秒）／日本語と英字のあいだは空けない／
+   *   いくつかの操作は「・」か「か」でつなぐ（[Space]かタップ）／点数の前（+500）と「／」の前後だけ空ける
+   */
+  /* ネオンの線のアイコン（絵文字のかわり。24×24 の線画。色はゲームの色・光は CSS）
+     d: 線（パス）／ f: 1 のものは中をうすく塗る。キーは今までの絵文字（ゲームのファイルはそのまま書ける） */
+  const ICONS = {
+    '↔': [{ d: 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4' }],
+    '⬆': [{ d: 'M12 20V5M5 11l7-7 7 7' }],
+    '⬇': [{ d: 'M12 4v15M5 13l7 7 7-7' }],
+    '👈': [{ d: 'M20 12H6M11 6l-6 6 6 6' }, { d: 'M3 5v14' }],
+    '👉': [{ d: 'M4 12h14M13 6l6 6-6 6' }, { d: 'M21 5v14' }],
+    '🧱': [{ d: 'M3 5h18v14H3zM3 12h18M9 5v7M15 12v7', f: 1 }],
+    '💥': [{ d: 'M12 2l2.2 5.4L20 6l-3 5L22 14l-5.6.9L17 21l-5-3.3L7 21l.6-6.1L2 14l5-3-3-5 5.8 1.4z', f: 1 }],
+    '🟣': [{ d: 'M12 3c4 5 6.5 8 6.5 11.5a6.5 6.5 0 0 1-13 0C5.5 11 8 8 12 3z', f: 1 }, { d: 'M9 14.5a3 3 0 0 0 3 3' }],
+    '✨': [{ d: 'M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z', f: 1 }, { d: 'M19 14l.9 2.1 2.1.9-2.1.9L19 20l-.9-2.1L16 17l2.1-.9z' }],
+    '🔗': [{ d: 'M10 14.5a4 4 0 0 1 0-5.7l2.8-2.8a4 4 0 0 1 5.7 5.7l-1.6 1.6M14 9.5a4 4 0 0 1 0 5.7l-2.8 2.8a4 4 0 0 1-5.7-5.7l1.6-1.6' }],
+    '🏆': [{ d: 'M7 3h10v5a5 5 0 0 1-10 0z', f: 1 }, { d: 'M7 5H4a3 3 0 0 0 3.5 4.5M17 5h3a3 3 0 0 1-3.5 4.5M12 13v4M8 21h8M9.5 17h5v4h-5z' }],
+    '🔫': [{ d: 'M2 8h15l3 1.5v3L17 14h-6l-1.5 6h-4L7 14H2z', f: 1 }, { d: 'M20 11h2M11 14l1 3' }],
+    '🎯': [{ d: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zM12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 1 0 0-9z' }, { d: 'M12 11a1 1 0 1 0 0 2 1 1 0 1 0 0-2z', f: 1 }],
+    '🏒': [{ d: 'M6 3l8 13h6v3h-8.5L3 4.5z', f: 1 }, { d: 'M4 19.5a3 1.3 0 1 0 6 0 3 1.3 0 1 0-6 0z' }],
+    '🥅': [{ d: 'M3 19V7h18v12M3 7l3 4h12l3-4M6 11v8M18 11v8M10 11v8M14 11v8M6 15h12' }],
+    '🔥': [{ d: 'M12 3c1 4 5.5 5.5 5.5 10.5a5.5 5.5 0 0 1-11 0c0-3 2-4.5 2.5-6.5 1 1 1.5 2 2 3.5 1-2 1.2-4.5 1-7.5z', f: 1 }],
+    '👀': [{ d: 'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z' }, { d: 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6z', f: 1 }],
+    '👆': [{ d: 'M9 12V4.5a1.75 1.75 0 0 1 3.5 0V11M12.5 9.5a1.75 1.75 0 0 1 3.5 0V12M16 11a1.75 1.75 0 0 1 3.5 0v4c0 3.8-2.7 6-6 6h-1c-2.6 0-4.4-1.4-5.6-3.6l-2-3.8a1.6 1.6 0 0 1 2.7-1.7L9 14' }],
+    '💡': [{ d: 'M12 2.5a6.5 6.5 0 0 0-4 11.6c.8.7 1 1.5 1 2.4h6c0-.9.2-1.7 1-2.4a6.5 6.5 0 0 0-4-11.6z', f: 1 }, { d: 'M9 19h6M10 22h4' }],
+    '🔨': [{ d: 'M13 3l7 7-3 3-7-7z', f: 1 }, { d: 'M11.5 8.5L3.6 16.4a2 2 0 0 0 2.8 2.8l7.9-7.9' }],
+    '⭐': [{ d: 'M12 2.8l2.8 5.8 6.4.9-4.6 4.5 1.1 6.4L12 17.4l-5.7 3 1.1-6.4-4.6-4.5 6.4-.9z', f: 1 }],
+    '💣': [{ d: 'M10.5 7.5a7 7 0 1 0 0 14 7 7 0 1 0 0-14z', f: 1 }, { d: 'M15 9l3-3M19 2v2M22 5h-2M20.5 3.5l1-1M7 13a3.5 3.5 0 0 1 3-3' }],
+    '💎': [{ d: 'M6 3h12l4 6-10 12L2 9z', f: 1 }, { d: 'M2 9h20M9 3l-1.5 6L12 21M15 3l1.5 6L12 21' }],
+    '🔢': [{ d: 'M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z', f: 1 }],
+    '⏱': [{ d: 'M12 5a8 8 0 1 0 0 16 8 8 0 1 0 0-16z', f: 1 }, { d: 'M12 9v4l3 2M10 2h4M12 2v3M19 6l1.5-1.5' }],
+    '🛟': [{ d: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8z' }, { d: 'M5.6 5.6l3.6 3.6M18.4 5.6l-3.6 3.6M5.6 18.4l3.6-3.6M18.4 18.4l-3.6-3.6' }],
+    '🚀': [{ d: 'M12 2c4 3.2 5 8 4 12.5H8C7 10 8 5.2 12 2z', f: 1 }, { d: 'M8.2 12.5L5 17h3.5M15.8 12.5L19 17h-3.5M10 18l2 4 2-4M12 7.5a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 1 0 0-3.6z' }],
+    '🏁': [{ d: 'M5 21V3' }, { d: 'M5 4h14l-2.5 4.5L19 13H5z', f: 1 }, { d: 'M9.5 4v9M14 4v9M5 8.5h13' }],
+    '🎹': [{ d: 'M3 5h18v14H3zM8 12v7M12 12v7M16 12v7', f: 1 }, { d: 'M6.5 5h3v7h-3zM10.5 5h3v7h-3zM14.5 5h3v7h-3z' }],
+    '🎵': [{ d: 'M9 18V5l11-2v13' }, { d: 'M6 15a3 3 0 1 0 0 6 3 3 0 1 0 0-6zM17 13a3 3 0 1 0 0 6 3 3 0 1 0 0-6z', f: 1 }],
+    '🪙': [{ d: 'M12 2.5a6.5 9.5 0 1 0 0 19 6.5 9.5 0 1 0 0-19z', f: 1 }, { d: 'M9 8h6M9 12h6M9 16h6' }],
+    '⌨': [{ d: 'M2 6h20v12H2z', f: 1 }, { d: 'M5.5 9.5h1M9 9.5h1M12.5 9.5h1M16 9.5h1M5.5 12.5h1M9 12.5h1M12.5 12.5h1M16 12.5h1M7 15.5h10' }],
+    '✅': [{ d: 'M4 4h16v16H4z', f: 1 }, { d: 'M7.5 12.5l3 3 6-7' }],
+    '⚡': [{ d: 'M13.5 2L4 14h7l-1.5 8L19 10h-7z', f: 1 }],
+    '✸': [{ d: 'M12 21V7M12 21L5 9M12 21l7-12' }, { d: 'M12 3.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3zM4 5.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3zM20 5.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3z', f: 1 }],
+    '🛡': [{ d: 'M12 3l8 3v6c0 5-3.5 8.2-8 9.5-4.5-1.3-8-4.5-8-9.5V6z', f: 1 }, { d: 'M8.5 12l2.5 2.5 4.5-5' }],
+    '🛸': [{ d: 'M7 11a5 4 0 0 1 10 0', f: 1 }, { d: 'M2 13c0-1.7 4.5-3 10-3s10 1.3 10 3-4.5 3-10 3-10-1.3-10-3z', f: 1 }, { d: 'M8 18.5l-1 2.5M12 18.5V21M16 18.5l1 2.5' }],
+    '👑': [{ d: 'M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z', f: 1 }, { d: 'M5 16h14' }],
+    '🏠': [{ d: 'M3 11.5L12 4l9 7.5' }, { d: 'M5.5 10v10h5v-6h3v6h5V10', f: 1 }],
+    '🔊': [{ d: 'M4 9h4l5-4v14l-5-4H4z', f: 1 }, { d: 'M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12' }],
+    '🔇': [{ d: 'M4 9h4l5-4v14l-5-4H4z', f: 1 }, { d: 'M16 9l5 6M21 9l-5 6' }],
+    '⛶': [{ d: 'M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6' }],
+  };
+  const ICON_IMG = {};
+  /** キャンバス用: FES.iconImage('⚡', '#ffe66d') → <img>（SVG を 1 回だけ作って使い回す。読みこみ前は complete=false） */
+  FES.iconImage = function (key, color) {
+    const id = key + color; if (ICON_IMG[id]) return ICON_IMG[id];
+    const parts = ICONS[key]; if (!parts) return null;
+    const paths = parts.map(pt => `<path d="${pt.d}"${pt.f ? ` fill="${color}" fill-opacity=".22"` : ''}/>`).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 26 26" width="104" height="104"><g fill="none" stroke="${color}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;
+    const img = new Image(); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    return (ICON_IMG[id] = img);
+  };
+  /** キャンバスにアイコンを描く（まん中が x, y・大きさ size）。光らせるときは glow に色 */
+  FES.drawIcon = function (ctx, key, x, y, size, color, glow) {
+    const img = FES.iconImage(key, color); if (!img || !img.complete) return false;
+    ctx.save(); if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = size * 0.35; }
+    ctx.drawImage(img, x - size / 2, y - size / 2, size, size); ctx.restore(); return true;
+  };
+  function setBtnIcon(b, key) { if (!b) return; b.textContent = ''; const sv = iconSvg(key); if (sv) b.appendChild(sv); else b.textContent = key; }
+  /** FES.icon('⭐') → 光る線のアイコン（<svg>）。ないときは null */
+  function iconSvg(key) {
+    const parts = ICONS[key]; if (!parts) return null;
+    const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('class', 'fes-ico'); svg.setAttribute('aria-hidden', 'true');
+    for (const pt of parts) { const path = document.createElementNS(NS, 'path'); path.setAttribute('d', pt.d); if (pt.f) path.setAttribute('class', 'f'); svg.appendChild(path); }
+    return svg;
+  }
+  FES.icon = iconSvg;
+  function howtoText(str) {   // [Space] → キーの形。DOM で組み立てる（innerHTML は使わない）
+    const span = el('span', { class: 'tx' });
+    str.split(/(\[[^\]]+\])/).forEach(part => { if (!part) return; const m = part.match(/^\[([^\]]+)\]$/); span.appendChild(m ? el('kbd', { text: m[1] }) : document.createTextNode(part)); });
+    return span;
+  }
+  function howtoClose(go) {
+    clearTimeout(howtoTm); howtoTm = null;
+    if (howtoKey) { global.removeEventListener('keydown', howtoKey, true); howtoKey = null; }
+    const me = howtoEl; howtoEl = null;
+    if (me) { me.classList.add('out'); setTimeout(() => me.remove(), 300); }
+    if (go) { FES.sfx('start'); howtoPass = true; try { go(); } finally { howtoPass = false; } }
+  }
+  FES.howto = function (hints, ms, fn, args) {
     ensureUI();
-    clearTimeout(howtoTm);
-    if (howtoEl) { howtoEl.remove(); howtoEl = null; }
-    if (hints === false || !hints || !hints.length) return;
-    howtoEl = el('div', { class: 'fes-howto' }, [el('div', { class: 'lbl', text: 'あそびかた' })].concat(hints.map((h, i) => el('div', { class: 'chip', style: `animation-delay:${0.12 + i * 0.13}s`, text: h }))));
+    if (hints === false || !hints || !hints.length) { howtoClose(null); return false; }
+    if (howtoPass) return false;               // OK のあとの呼び直し → そのまま始める
+    if (howtoEl) return true;                  // もう出ている（スタートの連打）
+    if (fn && performance.now() - howtoShownAt < HOWTO_AGAIN_MS) return false;   // 同じ人の「もう一度」
+    howtoShownAt = performance.now();
+    const go = fn ? () => fn.apply(null, args ? Array.prototype.slice.call(args) : []) : null;
+    const rows = hints.map((h, i) => {
+      const sp = h.indexOf(' '), head = sp > 0 ? h.slice(0, sp) : '';
+      const isIcon = head && head.length <= 4 && !/[0-9A-Za-z぀-ヿ一-鿿\[]/.test(head);
+      return el('div', { class: 'row', style: `animation-delay:${0.15 + i * 0.1}s` }, [
+        el('span', { class: 'ic' + (isIcon ? '' : ' num') }, [isIcon ? (iconSvg(head) || document.createTextNode(head)) : document.createTextNode(String(i + 1))]), howtoText(isIcon ? h.slice(sp + 1) : h)]);
+    });
+    const auto = fn ? HOWTO_AUTO : (ms || 4500) / 1000;
+    const okBtn = fn ? el('button', { class: 'fes-act ok', type: 'button', text: 'OK！ あそぶ', onclick: e => { e.stopPropagation(); howtoClose(go); } }) : null;
+    howtoEl = el('div', { class: 'fes-howto' + (fn ? ' gate' : ''), style: `--hc:${accentColor()}`, onpointerdown: e => e.stopPropagation() }, [
+      el('div', { class: 'box' }, [
+        el('div', { class: 'hd' }, [el('span', { class: 'en', text: 'HOW TO PLAY' }), el('span', { class: 'tt', text: cfg.title || 'あそびかた' })]),
+        el('div', { class: 'rows' }, rows),
+        okBtn,
+        el('div', { class: 'bar' }, [el('i', { style: `animation-duration:${auto}s` })]),
+        fn ? el('div', { class: 'note', text: `${HOWTO_AUTO}秒たつと自動で始まります（Enter・Spaceでもスタート）` }) : null,
+      ]),
+    ]);
     ui.appendChild(howtoEl);
-    const me = howtoEl;
-    howtoTm = setTimeout(() => { me.classList.add('out'); setTimeout(() => me.remove(), 450); if (howtoEl === me) howtoEl = null; }, ms || 4500);
+    if (fn) {
+      howtoKey = e => {   // 出ているあいだはゲームにキーを渡さない。Enter・Space でスタート
+        e.stopImmediatePropagation();
+        if ((e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') && !e.repeat) { e.preventDefault(); howtoClose(go); }
+      };
+      global.addEventListener('keydown', howtoKey, true);
+      setTimeout(() => { try { okBtn.focus({ preventScroll: true }); } catch (err) { /* 古いブラウザ */ } }, 50);
+    }
+    howtoTm = setTimeout(() => howtoClose(go), auto * 1000);
+    return !!fn;
   };
   FES.sfxNames = Object.keys(SFX);
 
@@ -555,6 +676,8 @@
   #fes-home { left: 10px; }
   #fes-mute { right: 64px; }
   #fes-full { right: 10px; }
+  .fes-btn .fes-ico { width: 22px; height: 22px; stroke: #fff; filter: drop-shadow(0 0 3px rgba(94,231,255,.85)); }
+  .fes-btn .fes-ico .f { fill: rgba(94,231,255,.25); }
   #fes-overlay, .fes-overlay { pointer-events: auto; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     background: rgba(5,5,20,.72); backdrop-filter: blur(8px); animation: fesFade .35s ease-out; }
   @keyframes fesFade { from { opacity: 0 } to { opacity: 1 } }
@@ -654,10 +777,36 @@
   .fes-get-bar i { display: block; height: 100%; border-radius: 99px; background: repeating-linear-gradient(90deg, #5ee7ff 0 14px, #9ff3ff 14px 18px); box-shadow: 0 0 12px rgba(94,231,255,.8); transition: width 1s cubic-bezier(.2,1,.3,1) .5s; }
   .fes-get-note { font-size: 12px; color: rgba(255,255,255,.6); margin-top: 8px; }
   .fes-prize { margin: 10px 0 2px; padding: 10px 14px; border-radius: 14px; font-weight: 900; color: #2a2200; background: linear-gradient(90deg, #ffd36e, #ffb347); animation: fesBump 1.2s ease-in-out infinite; }
-  .fes-howto { position: fixed; left: 50%; bottom: 9vh; transform: translateX(-50%); z-index: 8980; pointer-events: none; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; max-width: min(94vw, 900px); animation: fesFade .3s ease both; }
-  .fes-howto.out { animation: fesFeverOut .4s ease both; }
-  .fes-howto .lbl { width: 100%; text-align: center; font-size: 12px; letter-spacing: .3em; font-weight: 900; color: rgba(255,255,255,.7); text-shadow: 0 2px 8px rgba(0,0,0,.8); }
-  .fes-howto .chip { padding: 9px 16px; border-radius: 999px; background: rgba(8,8,28,.86); border: 1px solid rgba(255,255,255,.28); color: #fff; font-weight: 900; font-size: clamp(14px, 2.2vw, 18px); box-shadow: 0 6px 24px rgba(0,0,0,.5); animation: fesPop .5s cubic-bezier(.2,1.4,.4,1) both; white-space: nowrap; }
+  .fes-howto { --hc: #5ee7ff; position: fixed; inset: 0; z-index: 8980; display: grid; place-items: center; padding: 16px; pointer-events: none; }
+  .fes-howto.gate { pointer-events: auto; background: radial-gradient(ellipse at center, rgba(6,4,24,.72), rgba(2,2,12,.88)); animation: fesFade .25s ease both; }
+  .fes-howto.out { animation: fesHowOut .3s ease both; }
+  @keyframes fesHowOut { from { opacity: 1 } to { opacity: 0 } }
+  .fes-howto .box { width: min(94vw, 620px); padding: 20px 22px 16px; border-radius: 20px;
+    background: linear-gradient(180deg, rgba(20,14,52,.98), rgba(8,8,26,.98)); border: 2px solid var(--hc);
+    box-shadow: 0 0 30px color-mix(in srgb, var(--hc) 45%, transparent), inset 0 0 24px color-mix(in srgb, var(--hc) 14%, transparent), 0 20px 60px rgba(0,0,0,.7);
+    animation: fesHowIn .45s cubic-bezier(.2,1.3,.4,1) both; }
+  @keyframes fesHowIn { from { opacity: 0; transform: translateY(26px) scale(.92) } to { opacity: 1; transform: none } }
+  .fes-howto .hd { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, var(--hc) 40%, transparent); }
+  .fes-howto .en { font-family: Consolas,"Courier New",monospace; font-size: 13px; font-weight: 900; letter-spacing: .3em; color: var(--hc); text-shadow: 0 0 10px var(--hc); }
+  .fes-howto .tt { font-size: clamp(22px, 4.6vw, 30px); font-weight: 900; color: #fff; text-shadow: 0 0 14px color-mix(in srgb, var(--hc) 70%, transparent); }
+  .fes-howto .rows { display: grid; gap: 10px; }
+  .fes-howto .row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,.05); animation: fesHowRow .4s cubic-bezier(.2,1.2,.4,1) both; }
+  @keyframes fesHowRow { from { opacity: 0; transform: translateX(-20px) } to { opacity: 1; transform: none } }
+  .fes-howto .ic { flex: none; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 11px; font-size: 23px; line-height: 1;
+    background: color-mix(in srgb, var(--hc) 18%, rgba(0,0,0,.4)); border: 1px solid color-mix(in srgb, var(--hc) 60%, transparent); }
+  .fes-ico { width: 26px; height: 26px; fill: none; stroke: var(--hc, #5ee7ff); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 3px var(--hc, #5ee7ff)); overflow: visible; }
+  .fes-ico .f { fill: color-mix(in srgb, var(--hc, #5ee7ff) 22%, transparent); }
+  .fes-lite .fes-ico { filter: none; }
+  .fes-howto .ic.num { font-family: Consolas,"Courier New",monospace; font-size: 19px; font-weight: 900; color: var(--hc); }
+  .fes-howto .tx { color: #fff; font-weight: 800; font-size: clamp(15px, 3.4vw, 20px); line-height: 1.5; text-align: left; }
+  .fes-howto kbd { display: inline-block; min-width: 1.75em; margin: 0 .12em; padding: 0 .4em; border-radius: 7px; font: 900 .86em Consolas,"Courier New",monospace; text-align: center; color: #fff;
+    background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.6); border-bottom-width: 3px; vertical-align: .08em; }
+  .fes-howto .ok { display: block; width: min(100%, 320px); margin: 16px auto 0; padding: 14px 20px; font-size: clamp(18px, 3.6vw, 22px); }
+  .fes-howto .bar { height: 4px; margin: 14px auto 0; width: min(100%, 320px); border-radius: 99px; background: rgba(255,255,255,.12); overflow: hidden; }
+  .fes-howto .bar i { display: block; height: 100%; background: var(--hc); box-shadow: 0 0 8px var(--hc); transform-origin: left; animation: fesHowBar linear both; }
+  @keyframes fesHowBar { from { transform: scaleX(1) } to { transform: scaleX(0) } }
+  .fes-howto .note { margin-top: 8px; text-align: center; font-size: 12px; font-weight: 700; color: rgba(255,255,255,.55); }
+  .fes-lite .fes-howto .box { box-shadow: 0 12px 34px rgba(0,0,0,.7); }
   .fes-wipe { position: fixed; inset: 0; z-index: 9950; pointer-events: none; background: #07071a; }
   .fes-wipe.out { animation: fesWipeOut .45s ease both; }
   .fes-wipe.in { pointer-events: auto; animation: fesWipeIn .22s ease both; }
@@ -753,7 +902,6 @@
   .fes-lite .fes-count .n, .fes-lite .fes-count .n.go { text-shadow: .06em .06em 0 rgba(0,0,0,.4); }
   .fes-lite .fes-card, .fes-lite .fes-act { box-shadow: 0 5px 0 rgba(0,0,0,.5); }
   .fes-toast { border-radius: 12px; background: rgba(8,6,24,.92); border-color: rgba(160,140,255,.4); box-shadow: 0 0 20px rgba(139,107,255,.35); }
-  .fes-howto .chip { border-radius: 10px; border-color: rgba(94,231,255,.45); box-shadow: 0 0 16px rgba(94,231,255,.25), 0 6px 24px rgba(0,0,0,.5); }
   `;
 
   /* ------------------------------------------------------------ UI */
@@ -784,9 +932,9 @@
     const build = () => {
       ensureUI();
       if (cfg.buttons !== false) {
-        ui.appendChild(el('a', { id: 'fes-home', class: 'fes-btn', href: '../index.html', title: 'ホームへ', text: '🏠', onclick: () => FES.sfx('select') }));
-        ui.appendChild(el('div', { id: 'fes-mute', class: 'fes-btn', title: 'ミュート', text: muted ? '🔇' : '🔊', onclick: () => { FES.setMuted(!muted); if (!muted) FES.sfx('select'); } }));
-        if (document.documentElement.requestFullscreen) ui.appendChild(el('div', { id: 'fes-full', class: 'fes-btn', title: '全画面', text: '⛶', onclick: FES.toggleFullscreen }));
+        const bh = el('a', { id: 'fes-home', class: 'fes-btn', href: '../index.html', title: 'ホームへ', onclick: () => FES.sfx('select') }); setBtnIcon(bh, '🏠'); ui.appendChild(bh);
+        const bm = el('div', { id: 'fes-mute', class: 'fes-btn', title: 'ミュート', onclick: () => { FES.setMuted(!muted); if (!muted) FES.sfx('select'); } }); setBtnIcon(bm, muted ? '🔇' : '🔊'); ui.appendChild(bm);
+        if (document.documentElement.requestFullscreen) { const bf = el('div', { id: 'fes-full', class: 'fes-btn', title: '全画面', onclick: FES.toggleFullscreen }); setBtnIcon(bf, '⛶'); ui.appendChild(bf); }
       }
       // 最初の操作で音を解放
       const unlock = () => { ensureAudio(); };

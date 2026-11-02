@@ -904,7 +904,7 @@ function goTitle() {
    ゲーム開始 / カウントダウン
    ===================================================================== */
 function startGame(cat) {
-  FES.howto(['1〜4 キー / タップ で答える', '⏱ 早く答えるほど高得点・連続正解でボーナス', '🛟 ライフライン 50:50 と FREEZE は各 1 回（使った問題は得点半分）']);
+  if (FES.howto(['🔢 [1]〜[4]キーかタップで答える', '⏱ 早く答えるほど高得点。連続正解でボーナス', '🛟 50:50とFREEZEは1回ずつ（使った問題は得点半分）'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false);
   clearTasks();
   bg.confetti.length = 0;

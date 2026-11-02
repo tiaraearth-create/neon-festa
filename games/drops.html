@@ -168,7 +168,7 @@ function updateFx(dt) {
 
 /* ---------------------------------------------------------------- 進行 */
 function startGame() {
-  FES.howto(['🟣 ドロップをなぞって動かす（4 秒）', '3 つそろえると消えて 属性攻撃', '🔗 コンボが多いほど ダメージアップ']);
+  if (FES.howto(['🟣 ドロップをなぞって動かす（4秒間）', '✨ 3つそろうと消えて、その色の属性で攻撃', '🔗 コンボが多いほどダメージアップ'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false);
   G.state = 'countdown'; G.cdT = 0; G.cdStep = -1; G.paused = false;
   G.grid = makeGrid(); G.phase = 'idle'; G.hold = null; G.moved = false; G.moveT = 0;

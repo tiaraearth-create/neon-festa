@@ -803,7 +803,7 @@ const BGM = {
 
 /* ------------------------------------------------------------ 進行 */
 function startGame() {
-  FES.howto(['← → / マウス でパドルを動かす', '🧱 ブロックを全部こわす・最後はボス「ネオンコア」', '💥 パドルを速く動かしながら打つと SMASH（2 ダメージ）']);
+  if (FES.howto(['↔ [←][→]かマウスでパドルを動かす', '🧱 ブロックを全部こわす。最後はボス「ネオンコア」', '💥 パドルを速く動かしながら打つとSMASH（2ダメージ）'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   if (resultTimer) { clearTimeout(resultTimer); resultTimer = null; }
   FES.hideResult(); FES.pause(false);
   G = newGame();

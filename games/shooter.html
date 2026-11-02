@@ -1398,7 +1398,7 @@ function startGame() {
   beginPlay();
 }
 function beginPlay() {
-  FES.howto(['矢印 / マウス / タッチ で移動（自動で撃つ）', 'Shift / ボタン でボム', '💥 敵の近くで倒すと CLOSE ボーナス']);
+  if (FES.howto(['🚀 矢印・マウス・タッチで移動（弾は自動で出る）', '💣 [Shift]か画面のボタンでボム', '💥 敵の近くで倒すとCLOSEボーナス'], 0, beginPlay, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   S = newState();
   S.phase = 'count'; S.countT = 0; S.countStep = -1;
   input.mouseMoved = false; input.dx = 0; input.dy = 0; input.touchId = null;

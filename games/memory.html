@@ -115,7 +115,7 @@ function bgmStop() { BGM.on = false; }
 
 /* ------------------------------------------------------------ ゲーム進行 */
 function startGame() {
-  FES.howto(['👀 光った順番を おぼえる', '👆 同じ順番に パッドをタップ', '💡 ヒントは 1 回だけ（もう一度 見られる）'], 3000);
+  if (FES.howto(['👀 光った順番をおぼえる', '👆 同じ順番にパッドをタップ', '💡 ヒントは1回だけ（もう一度見られる）'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false); FES.fever(false); fx.clear(); bgmStop();
   const keep = G ? G.titleT : 0;
   G = newGame(); G.titleT = keep;
