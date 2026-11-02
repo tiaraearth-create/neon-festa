@@ -26,6 +26,7 @@ const GRAVITY = 2600, JUMP_V = 860, JUMP2_V = 720, HOLD_TIME = 0.2, FALL_V = 150
 const PX_PER_M = 20, BASE_SPEED = 340, MAX_SPEED = 880;
 const STAGE_LEN = 800;                 // m ごとにステージ切替
 const STRIDE = 44;                     // 走りアニメ 1 サイクルの距離(px)
+const SHURIKEN_CD = 2.0, SHURIKEN_V = 1300;   // 手裏剣: 2 段ジャンプのあと空中でもう一度押すと投げる（前の障害物をこわす）
 const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
 const { clamp, lerp, rand, randInt, pick } = FES;
 
@@ -407,12 +408,13 @@ function newRun() {
     obstacles: [], coinList: [], items: [], particles: [], popups: [], trail: [], trailT: 0,
     spawnAt: world.x + W + 320, nextPower: world.x + 4200, lastKind: '', nextMile: 500,
     magnet: 0, star: 0, x2: 0, shield: 0, inv: 0, close: 0, bonusPts: 0, bonusUntil: -1, shake: 0, flash: 0, slow: 0, deadT: 0,
+    myStars: [], shurikenCD: 0, throws: 0, starKills: 0,
     player: { y: GROUND_Y, vy: 0, onGround: true, jumps: 0, holdT: 0, sliding: false, slideT: 0, spin: 0, falling: false, fastFall: false, dead: false, cause: '', rot: 0, dx: 0, landT: 0, bounces: 0 }
   };
 }
 
 function startGame() {
-  if (FES.howto(['⬆ [Space]かタップでジャンプ', '⬇ [↓]か下スワイプでスライド', '🪙 小判を続けて取るとコンボ'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (FES.howto(['⬆ [Space]かタップでジャンプ（空中でもう一度で2段ジャンプ）', '✴ 2段ジャンプのあと、もう一度押すと手裏剣で障害物をこわす', '⬇ [↓]か下スワイプでスライド'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false);
   G = newRun();
   setStage(0);
@@ -435,6 +437,48 @@ function onJumpDown() {
     FES.tone({ freq: 520, slide: 1100, dur: 0.16, type: 'square', vol: 0.2 });
     spawnParticle({ x: PLAYER_X, y: p.y - 30, shape: 'ring', color: 'rgba(255,255,255,.9)', size: 40, max: 0.35, follow: 0.6 });
     for (let i = 0; i < 6; i++) spawnParticle({ x: PLAYER_X + rand(-14, 14), y: p.y - 10 + rand(-6, 6), vx: rand(-60, 60), vy: rand(40, 140), shape: 'circle', color: 'rgba(255,255,255,.8)', size: rand(3, 6), max: 0.4, follow: 0.4 });
+  } else if (p.jumps >= 2 && !p.falling) {
+    if (G.shurikenCD <= 0) throwShuriken(); else FES.tone({ freq: 300, dur: 0.05, type: 'square', vol: 0.06 });
+  }
+}
+function throwShuriken() {
+  const p = G.player;
+  G.shurikenCD = SHURIKEN_CD; G.throws++;
+  G.myStars.push({ x: world.x + PLAYER_X + 24, y: p.y - 40, rot: 0, life: 1.0 });
+  FES.tone({ freq: 2000, slide: 700, dur: 0.12, type: 'square', vol: 0.12 }); FES.noise({ dur: 0.12, freq: 4000, slide: 1500, vol: 0.1, filter: 'highpass' });
+  spawnParticle({ x: PLAYER_X + 24, y: p.y - 40, shape: 'ring', color: 'rgba(200,230,255,.9)', size: 30, max: 0.25 });
+}
+function updateMyStars(dt) {
+  if (G.shurikenCD > 0) G.shurikenCD = Math.max(0, G.shurikenCD - dt);
+  for (let i = G.myStars.length - 1; i >= 0; i--) {
+    const st = G.myStars[i];
+    st.x += (SHURIKEN_V + G.speed) * dt; st.rot += dt * 30; st.life -= dt;
+    let sx = st.x - world.x;
+    if (st.life <= 0 || sx > W + 40) { G.myStars.splice(i, 1); continue; }
+    // いちばん近い前の障害物に向かって曲がる（空中から投げても当たる）
+    let tgt = null, best = 1e9;
+    for (const o of G.obstacles) { if (o.type === 'pit') continue; const ox = o.x - world.x + o.hx + o.hw / 2; if (ox > sx - 10 && ox - sx < best) { best = ox - sx; tgt = o; } }
+    if (tgt) st.y += (tgt.hy + tgt.hh / 2 - st.y) * Math.min(1, dt * 9);
+    for (let j = G.obstacles.length - 1; j >= 0; j--) {
+      const o = G.obstacles[j]; if (o.type === 'pit') continue;
+      const hb = { x: o.x - world.x + o.hx, y: o.hy, w: o.hw, h: o.hh };
+      if (!circleBox(sx, st.y, 18, hb)) continue;
+      destroyObstacle(o, j); G.starKills++; G.bonusPts += 100;
+      popup('手裏剣！ +100', sx, st.y - 50, { size: 22, color: '#bfe6ff', max: 0.8 });
+      G.myStars.splice(i, 1); break;
+    }
+  }
+}
+function drawMyStars() {
+  for (const st of G.myStars) {
+    const sx = st.x - world.x;
+    ctx.save(); ctx.translate(sx, st.y);
+    ctx.strokeStyle = 'rgba(190,230,255,.35)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-60, 0); ctx.lineTo(-14, 0); ctx.stroke();   // 風の線
+    ctx.rotate(st.rot);
+    ctx.fillStyle = '#c8d4e8'; ctx.strokeStyle = '#3a4560'; ctx.lineWidth = 2;
+    ctx.beginPath(); for (let k = 0; k < 8; k++) { const r = k % 2 ? 5 : 20, a = k * Math.PI / 4; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#3a4560'; ctx.beginPath(); ctx.arc(0, 0, 3, 0, TAU); ctx.fill();
+    ctx.restore();
   }
 }
 function onJumpUp() { input.jumpHeld = false; }
@@ -780,8 +824,8 @@ function showResultScreen() {
   FES.showResult({
     score: G.score, scoreLabel: 'pt', title: 'GAME OVER',
     rank: { S: 5000, A: 3500, B: 2000, C: 800 }, titles: { S: '伝説の忍者', A: '上忍', B: '中忍', C: '下忍', D: '見習い忍者' },
-    subtitle: `${Math.floor(G.dist)} m 走破 — ${causeText}`,
-    stats: [{ label: '距離', value: Math.floor(G.dist) + ' m' }, { label: '小判', value: G.coins }, { label: 'ギリギリ', value: G.close }, { label: '最高速度', value: kmh + ' km/h' }, { label: 'MAX COMBO', value: G.comboMax }, { label: '到達ステージ', value: STAGE_NAMES[world.stage] }],
+    subtitle: `${Math.floor(G.dist)}m走破 ― ${causeText}`,
+    stats: [{ label: '距離', value: Math.floor(G.dist) + 'm' }, { label: '小判', value: G.coins }, { label: 'ギリギリ', value: G.close }, { label: '手裏剣でこわした', value: G.starKills }, { label: '最高速度', value: kmh + 'km/h' }, { label: '最大コンボ', value: G.comboMax }, { label: '到達ステージ', value: STAGE_NAMES[world.stage] }],
   }, () => startGame());
 }
 function updatePlay(dt) {
@@ -794,6 +838,7 @@ function updatePlay(dt) {
   while (G.spawnAt < world.x + W + 420) spawnChunk();
   updatePlayer(dt); if (mode !== 'play') return;
   updateObstacles(dt); if (mode !== 'play') return;
+  updateMyStars(dt);
   updateCoins(dt); updateItems(dt); updateParticles(dt);
   for (const k of ['magnet', 'star', 'x2']) if (G[k] > 0) { G[k] -= dt; if (G[k] <= 0) { G[k] = 0; FES.sfx('tick'); } }
   if (G.inv > 0) G.inv -= dt;
@@ -1054,7 +1099,7 @@ function drawCoinIcon(x, y, s) {
 }
 function drawHUD() {
   const px = W / 2 - 240, py = 8, pw = 480, ph = 60;
-  roundRect(px, py, pw, ph, 18); ctx.fillStyle = 'rgba(8,8,30,.55)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 1.5; ctx.stroke();
+  { const hg = ctx.createLinearGradient(0, py, 0, py + ph); hg.addColorStop(0, 'rgba(30,22,64,.95)'); hg.addColorStop(1, 'rgba(12,10,34,.95)'); roundRect(px, py, pw, ph, 18); ctx.fillStyle = hg; ctx.fill(); ctx.strokeStyle = 'rgba(255,213,110,.55)'; ctx.lineWidth = 2; ctx.stroke(); }
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `700 12px ${FONT}`; ctx.fillText('DISTANCE', px + 20, py + 15);
   ctx.fillStyle = '#fff'; ctx.font = `900 30px ${FONT}`; const dTxt = String(Math.floor(G.dist)); ctx.fillText(dTxt, px + 20, py + 39);
@@ -1078,19 +1123,24 @@ function drawHUD() {
   // コンボ
   if (G.combo >= 2 && G.comboT > 0 && !G.player.dead) {
     const s = 1 + 0.35 * Math.max(0, (G.comboT - 0.75) / 0.25);
-    ctx.save(); ctx.translate(PLAYER_X + 10, G.player.y - 100); ctx.scale(s, s); ctx.textAlign = 'center';
+    ctx.save(); ctx.translate(PLAYER_X + 10, Math.max(96, G.player.y - 100)); ctx.scale(s, s); ctx.textAlign = 'center';
     outlinedText(`${G.combo} COMBO`, 0, 0, 20, G.combo >= 10 ? '#ff9de2' : '#ffe36e', 900); ctx.restore();
   }
+  // 手裏剣のじゅんび（空中で 3 回目のジャンプ）
+  { const sx0 = W / 2 - 100, sy0 = H - 32, ready = G.shurikenCD <= 0;
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.beginPath(); ctx.arc(sx0, sy0, 16, 0, TAU); ctx.fill();
+    ctx.strokeStyle = ready ? '#bfe6ff' : 'rgba(255,255,255,.25)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(sx0, sy0, 16, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - G.shurikenCD / SHURIKEN_CD)); ctx.stroke();
+    ctx.save(); ctx.translate(sx0, sy0); ctx.rotate(ready ? world.time * 3 : 0); ctx.fillStyle = ready ? '#e6f4ff' : 'rgba(255,255,255,.35)'; ctx.beginPath(); for (let k = 0; k < 8; k++) { const r = k % 2 ? 3 : 10, a = k * Math.PI / 4; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill(); ctx.restore(); }
   // 速度
   const kmh = Math.round(G.speed / PX_PER_M * 3.6);
-  ctx.textAlign = 'center'; ctx.font = `900 16px ${FONT}`; outlinedText(`${kmh} km/h`, W / 2, H - 18, 16, '#fff', 900);
+  ctx.textAlign = 'center'; ctx.font = `900 16px ${FONT}`; outlinedText(`${kmh}km/h`, W / 2, H - 18, 16, '#fff', 900);
   const sf = clamp((G.speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 0, 1);
   roundRect(W / 2 - 60, H - 40, 120, 8, 4); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
   roundRect(W / 2 - 60, H - 40, 120 * Math.max(0.03, sf), 8, 4); ctx.fillStyle = sf > 0.75 ? '#ff5f7e' : sf > 0.4 ? '#ffd23f' : '#7ee8a0'; ctx.fill();
   // 操作ヒント（タッチ端末はタップ、それ以外はキー）
   ctx.font = `700 13px ${FONT}`;
-  ctx.textAlign = 'left'; roundRect(14, H - 34, 150, 24, 12); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText(touchUsed ? '◀ 左タップ：ジャンプ' : 'Space / ↑：ジャンプ', 22, H - 22);
-  ctx.textAlign = 'right'; roundRect(W - 164, H - 34, 150, 24, 12); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText(touchUsed ? '右タップ：スライド ▶' : '↓ / S：スライド', W - 22, H - 22);
+  ctx.textAlign = 'left'; roundRect(14, H - 34, 150, 24, 12); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText(touchUsed ? '◀ 左タップ：ジャンプ' : 'Space・↑：ジャンプ', 22, H - 22);
+  ctx.textAlign = 'right'; roundRect(W - 164, H - 34, 150, 24, 12); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText(touchUsed ? '右タップ：スライド ▶' : '↓・S：スライド', W - 22, H - 22);
   // ポーズボタン
   roundRect(PAUSE_BTN.x, PAUSE_BTN.y, PAUSE_BTN.w, PAUSE_BTN.h, 12); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.fillRect(PAUSE_BTN.x + 18, PAUSE_BTN.y + 12, 6, 18); ctx.fillRect(PAUSE_BTN.x + 30, PAUSE_BTN.y + 12, 6, 18);
@@ -1124,19 +1174,20 @@ function drawTitle() {
   ctx.restore();
   ctx.font = `700 15px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText('— ENDLESS RUNNER —', W / 2, 170);
   // 操作説明パネル
-  roundRect(W / 2 - 300, 196, 600, 118, 16); ctx.fillStyle = 'rgba(8,8,30,.62)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 1.5; ctx.stroke();
+  roundRect(W / 2 - 320, 202, 640, 118, 16); ctx.fillStyle = 'rgba(8,8,30,.72)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 1.5; ctx.stroke();
   ctx.font = `700 16px ${FONT}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
   const lines = [
-    ['ジャンプ', 'Space / ↑ / W / クリック　（長押しで高く、空中でもう一度で 2 段ジャンプ）'],
-    ['スライド', '↓ / S / 画面右半分クリック　（低い鳥居・看板・高い手裏剣をくぐる）'],
-    ['タッチ', '画面の左半分タップ＝ジャンプ　右半分タップ or 下スワイプ＝スライド'],
-    ['ポーズ', 'Esc / P'],
+    ['ジャンプ', 'Space・↑・W・クリック（長押しで高く、空中でもう一度で2段ジャンプ）'],
+    ['手裏剣', '2段ジャンプのあと、空中でもう一度押す（前の障害物をこわす）'],
+    ['スライド', '↓・S・画面の右半分クリック（低い鳥居・看板・高い手裏剣をくぐる）'],
+    ['タッチ', '左半分タップでジャンプ ／ 右半分タップか下スワイプでスライド ／ ポーズ：Esc・P'],
   ];
-  lines.forEach((l, i) => { ctx.fillStyle = '#ffe36e'; ctx.fillText(l[0], W / 2 - 280, 220 + i * 25); ctx.fillStyle = '#fff'; ctx.fillText(l[1], W / 2 - 200, 220 + i * 25); });
+  ctx.font = `700 15px ${FONT}`;
+  lines.forEach((l, i) => { ctx.fillStyle = i === 1 ? '#bfe6ff' : '#ffe36e'; ctx.fillText(l[0], W / 2 - 300, 223 + i * 26); ctx.fillStyle = '#fff'; ctx.fillText(l[1], W / 2 - 220, 223 + i * 26); });
   ctx.textAlign = 'center';
   // HI-SCORE
   const hi = FES.getHiScore();
-  outlinedText(`HI-SCORE  ${hi.toLocaleString()} pt`, W / 2, 338, 20, '#ffd56e', 900);
+  outlinedText(`HI-SCORE  ${hi.toLocaleString()} pt`, W / 2, 340, 20, '#ffd56e', 900);
   // スタートボタン
   const s = 1 + Math.sin(world.time * 4) * 0.04;
   ctx.save(); ctx.translate(W / 2, 388); ctx.scale(s, s);
@@ -1145,21 +1196,38 @@ function drawTitle() {
   roundRect(-130, -30, 260, 52, 26); ctx.fillStyle = bg; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 2; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = `900 26px ${FONT}`; ctx.fillText('スタート！', 0, -4);
   ctx.restore();
-  ctx.font = `700 13px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillText('クリック / タップ / Enter / Space でスタート', W / 2, 428);
-  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText('スコア ＝ 距離(m) ＋ 小判 × 10 ＋ ギリギリ 50　　一発アウト！ おまもり（守）で 1 回だけセーフ', W / 2, 470);
-  ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillText('障害物すれすれでかわすと「ギリギリ！」　ステージが変わると 小判タイム', W / 2, 492);
+  ctx.font = `700 13px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillText('クリック・タップ・Enter・Spaceでスタート', W / 2, 428);
+  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText('スコア＝距離（m）＋小判×10＋ギリギリ50＋手裏剣100 ／ 一発アウト！ おまもり（守）で1回だけセーフ', W / 2, 470);
+  ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillText('障害物すれすれでかわすと「ギリギリ！」 ／ ステージが変わると小判タイム', W / 2, 492);
 }
 
 /* ------------------------------------------------------------ メイン描画 */
+function drawSpeedLines() {
+  const sf = clamp((G.speed - 520) / (MAX_SPEED - 520), 0, 1);
+  if (sf <= 0 || mode !== 'play') return;
+  ctx.save(); ctx.strokeStyle = `rgba(255,255,255,${0.15 + 0.3 * sf})`; ctx.lineWidth = 2;
+  for (let i = 0; i < 9; i++) { const y = 60 + ((i * 73 + Math.floor(world.time * 40) * 37) % 380), x = W - ((world.time * 1800 + i * 211) % (W + 200)); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 80 + sf * 80, y); ctx.stroke(); }
+  ctx.restore();
+}
+function drawSunRays() {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 4; i++) {
+    const a = -0.35 + i * 0.22 + Math.sin(world.time * 0.2 + i) * 0.03, x0 = W * 0.78, y0 = 40;
+    const g = ctx.createLinearGradient(x0, y0, x0 - Math.sin(a) * 600, y0 + Math.cos(a) * 600); g.addColorStop(0, 'rgba(255,240,200,.10)'); g.addColorStop(1, 'rgba(255,240,200,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 - Math.sin(a - 0.05) * 700, y0 + Math.cos(a - 0.05) * 700); ctx.lineTo(x0 - Math.sin(a + 0.05) * 700, y0 + Math.cos(a + 0.05) * 700); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
 function render() {
   const pal = world.pal;
   ctx.save();
   if (G && G.shake > 0.4) ctx.translate(rand(-G.shake, G.shake), rand(-G.shake, G.shake));
   drawSky(pal);
+  if (world.stage !== 2) drawSunRays();   // 夜の城下町では出さない
   drawLayer(0, pal); drawLayer(1, pal); drawLayer(2, pal);
   drawGround(pal);
   drawLayer(3, pal);
-  if (G) { drawWorldObjects(pal); drawTrail(); drawPlayer(); drawParticles(); }
+  if (G) { drawWorldObjects(pal); drawTrail(); drawPlayer(); drawMyStars(); drawParticles(); drawSpeedLines(); }
   else {
     ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(PLAYER_X, GROUND_Y + 3, 26, 6, 0, 0, TAU); ctx.fill();
     drawCat(PLAYER_X, GROUND_Y, { pose: 'run', frame: (world.x / STRIDE) % 1, t: world.time });
