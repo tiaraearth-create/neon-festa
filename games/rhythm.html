@@ -132,13 +132,13 @@
     </div>
     <div class="row tight">
       <button class="btn mini" id="autoBtn">▶ TAS再生（オートプレイ）</button>
-      <button class="btn mini" id="calibBtn">⚙ タイミング調整</button>
+      <button class="btn mini" id="calibBtn"><span data-ico="⚙"></span>タイミング調整</button>
       <span class="offset-now" id="offsetNow">オフセット +0ms</span>
-      <span class="offset-now lite-hint hidden" id="liteHint" title="軽量表示（パーティクルや光を減らしています）">🐢 軽量表示</span>
+      <span class="offset-now lite-hint hidden" id="liteHint" title="軽量表示（パーティクルや光を減らしています）"><span data-ico="🐢"></span>軽量表示</span>
     </div>
     <div class="howto">
-      ⌨ <b class="k0">D</b><b class="k1">F</b><b class="k2">J</b><b class="k3">K</b> または <b class="k0">←</b><b class="k1">↓</b><b class="k2">↑</b><b class="k3">→</b> でノーツをたたけ！ 帯のノーツは<b>押しっぱなし</b>！<br>
-      📱 スマホ・タブレットは画面下の4つのボタンをタップ（長押しでホールド）<br>
+      <span data-ico="⌨"></span><b class="k0">D</b><b class="k1">F</b><b class="k2">J</b><b class="k3">K</b> または <b class="k0">←</b><b class="k1">↓</b><b class="k2">↑</b><b class="k3">→</b> でノーツをたたけ！ 帯のノーツは<b>押しっぱなし</b>！<br>
+      <span data-ico="📱"></span>スマホ・タブレットは画面下の4つのボタンをタップ（長押しでホールド）<br>
       ↑↓ 曲 ／ ←→ 難易度 ／ Tab ジャンル ／ R おまかせ ／ M フル・ミニ切替 ／ Enter・Space スタート ／ Esc・P ポーズ
     </div>
   </div>
@@ -146,7 +146,7 @@
 
 <div id="calib" class="ov hidden">
   <div class="panel" id="calPanel">
-    <div class="cal-title">⚙ タイミング調整</div>
+    <div class="cal-title"><span data-ico="⚙"></span>タイミング調整</div>
     <div class="cal-desc">メトロノーム（120 BPM）の音に合わせて <b>8回</b> タップ or キー（D F J K / Space）<br><span style="opacity:.7">最初の2回は練習として数えません</span></div>
     <div class="cal-pulse" id="calPulse"><span id="calCount">0 / 8</span></div>
     <div class="cal-result" id="calResult">音に合わせてタップしてください</div>
@@ -185,6 +185,7 @@
 <script>
 'use strict';
 FES.init({ id: 'rhythm', title: 'リズムスターズ' });
+FES.fillIcons();   // HTML の <span data-ico> に自作アイコンを入れる
 
 /* =====================================================================
    定数
@@ -240,7 +241,8 @@ const extLength = def => (MINI && hasMini(def)) ? def.ext.mini : def.ext.length;
 const MAX_SCORE = 1000000;
 const OFFSET_KEY = 'fes:rhythm:offset';
 const VOFF_KEY = 'fes:rhythm:voff';      // ノーツ表示オフセット（ms、+ で早く表示）
-const HOLD_MISS_GAUGE = 0.35;     // ホールド途中の MISS はゲージ減を軽く
+const HOLD_MISS_GAUGE = 0.35;
+const STAR_EVERY = 16;            // スターノーツ: タップノーツ 16 個に 1 個。PERFECT・GREAT で取るとゲージ回復（点数は変えない）     // ホールド途中の MISS はゲージ減を軽く
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
 const comboMult = c => 1 + Math.min(Math.floor(c / 10), 10) * 0.1;
 
@@ -1507,6 +1509,7 @@ const LITE = () => liteSetting || G.autoLite;
 const BGC = { key: '', g: null, rgBase: '', rg: {} };   // 背景グラデーションのキャッシュ（毎フレーム作らない）
 const PERF = { sum: 0, n: 0, toasted: false };          // フレーム時間の計測（自動軽量化用）
 const FX = {
+  pillars: [], starFx: [],   // たたいたレーンの光の柱・スターを取ったときの光
   particles: [], rings: [], texts: [], bolts: [], streaks: [],
   flash: new Array(MAX_LANES).fill(0), press: new Array(MAX_LANES).fill(0),
   judge: null, comboPop: 0, shake: 0, count: null, gaugeFlash: 0, streakTimer: 1.5, deltas: [],
@@ -1692,7 +1695,7 @@ function buildCards() {
     card.style.setProperty('--c', def.hex); card.style.setProperty('--cr', def.color.join(','));
     card.innerHTML = `<div class="sel-mark"></div><div class="cr none" data-r></div><div class="cl" data-lv></div><div class="cg">${def.genre}</div><div class="cn">${def.name}</div>` +
       `<div class="cm" data-len>${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(SONG_DATA[i].length)}</div><div class="cs" data-s></div><div class="ch" data-h></div>` +
-      (def.tas ? '<div class="skull">☠ 人力クリア不可</div>' : '') + (def.sudden ? '<div class="skull sudden">⚡ 急変注意</div>' : '') + (def.ext ? '<div class="skull ext">🎧 リミックス曲</div>' : '');
+      (def.tas ? `<div class="skull">${FES.iconSVG('☠')}人力クリア不可</div>` : '') + (def.sudden ? `<div class="skull sudden">${FES.iconSVG('⚡')}急変注意</div>` : '') + (def.ext ? `<div class="skull ext">${FES.iconSVG('🎧')}リミックス曲</div>` : '');
     card.addEventListener('click', () => { if (G.state !== 'title') return; if (G.songIdx === i) startGame(); else { setSong(i); FES.sfx('select'); } });
     box.appendChild(card);
   });
@@ -1708,12 +1711,12 @@ function refreshCards() {
     const hi = FES.getHiScore(def.rankId || DIFFS[di].rankId);
     const s = card.querySelector('[data-s]'), h = card.querySelector('[data-h]'), lenEl = card.querySelector('[data-len]');
     if (lenEl && def.ext) lenEl.textContent = `${def.bpmLabel || def.bpm} BPM ・ ${fmtLen(extLength(def))}${(MINI && hasMini(def)) ? '（ミニ）' : ''}`;
-    if (s) s.textContent = `${def.tas ? 'TAS ／ ' : ''}♪ ${st.notes} ノーツ ／ ロング ${st.holds}`;
+    if (s) s.textContent = `${def.tas ? 'TAS ／ ' : ''}♪ ${st.notes}ノーツ ／ ロング${st.holds}`;
     if (h) h.textContent = `HI-SCORE ${hi.toLocaleString()}`;
     // むずかしさ（Lv）: ノーツの密度から。ランク: その難易度のベスト
     const lvEl = card.querySelector('[data-lv]'), rEl = card.querySelector('[data-r]');
     const len = def.ext ? extLength(def) : SONG_DATA[i].length;
-    if (lvEl) lvEl.textContent = def.tas ? 'Lv ☠' : `Lv ${levelOf(st, len)}`;
+    if (lvEl) lvEl.textContent = def.tas ? 'Lv ∞' : `Lv ${levelOf(st, len)}`;
     const best = FES.bestGrade ? FES.bestGrade(def.rankId || DIFFS[di].rankId) : null;
     if (rEl) { rEl.className = 'cr ' + (best || 'none'); rEl.textContent = best || ''; }
     card.classList.toggle('hide', !FILTERS[filterIdx].test(def));
@@ -1741,7 +1744,7 @@ function buildTabs() {
     b.addEventListener('click', () => { if (G.state !== 'title') return; setFilter(i); FES.sfx('select'); });
     box.appendChild(b);
   });
-  const r = document.createElement('button'); r.className = 'rnd'; r.textContent = '🎲 おまかせ';
+  const r = document.createElement('button'); r.className = 'rnd'; r.innerHTML = FES.iconSVG('🎲') + 'おまかせ';
   r.addEventListener('click', () => { if (G.state !== 'title') return; randomSong(); });
   box.appendChild(r);
 }
@@ -1763,7 +1766,7 @@ function randomSong() {
   const pick = cand[Math.floor(Math.random() * cand.length)];
   setSong(pick); FES.sfx('coin');
   const card = $('songs').children[pick]; if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  FES.toast(`🎲 ${SONGS[pick].name}`, 1200);
+  FES.toast(`おまかせ: ${SONGS[pick].name}`, 1200);
 }
 function setSong(i) {
   G.songIdx = (i + SONGS.length) % SONGS.length;
@@ -1793,20 +1796,22 @@ function resetGame() {
   setLanes(4, 0, false);
   const chart = buildChart(G.song, G.diff);
   G.notes = chart.notes; G.maxRaw = chart.maxRaw; G.points = chart.points; G.holds = [];
+  G.stars = 0; G.starHits = 0;
+  { let k = 0; for (const n of G.notes) { n.star = false; if (n.type === 'hold' || n.chord) continue; if (++k % STAR_EVERY === STAR_EVERY / 2) { n.star = true; G.stars++; } } }
   G.laneChanges = chart.laneChanges || []; G.laneChgIdx = 0; G.warnIdx = 0; G.themeIdx = 0; G.frozen = false;
   G.nextIdx = 0; G.drawIdx = 0; G.visIdx = 0;
   G.raw = 0; G.score = 0; G.dispScore = 0; G.combo = 0; G.maxCombo = 0; G.gauge = 60;
   G.counts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };
   G.failed = false; G.fever = 0; G.feverAmt = 0; G.countStage = 0; G.readyUntil = 0; G.endAt = 0; G.devSum = 0; G.devN = 0; G.lastSec = '';
   FX.deltas.length = 0;
-  FX.particles.length = 0; FX.rings.length = 0; FX.texts.length = 0; FX.bolts.length = 0;
+  FX.particles.length = 0; FX.rings.length = 0; FX.texts.length = 0; FX.bolts.length = 0; FX.pillars.length = 0; FX.starFx.length = 0;
   FX.flash.fill(0); FX.press.fill(0); FX.judge = null; FX.comboPop = 0; FX.shake = 0; FX.count = null; FX.gaugeFlash = 0;
   VIS.kick = VIS.snare = VIS.hat = VIS.bass = VIS.lead = 0; VIS.bands.fill(0);
   pointers.clear(); keysDown.clear();
 }
 function startGame(auto) {
   FES.hideResult();
-  if (!auto && FES.howto(['🎹 [D][F][J][K]かタップでノーツをたたく', '🎵 線にぴったりでPERFECT', '🔥 コンボをつなぐとフィーバー'], 5000, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (!auto && FES.howto(['🎹 [D][F][J][K]かタップでノーツをたたく（帯は押しっぱなし）', '🎵 線にぴったりでPERFECT。50コンボでフィーバー', '⭐ 金色のスターノーツを取るとゲージ回復'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   $('title').classList.add('hidden');
   $('pause').classList.add('hidden');
   $('calib').classList.add('hidden');
@@ -1875,11 +1880,12 @@ function finishGame() {
   const fc = !G.failed && c.MISS === 0;
   const allP = fc && c.GREAT === 0 && c.GOOD === 0;
   const diffLabel = isTas() ? 'TAS' : DIFFS[G.diff].label;
-  const sub = `${SONGS[G.songIdx].name} ／ ${diffLabel} ／ ランク ${rank}${allP ? ' ・ ALL PERFECT!!' : fc ? ' ・ フルコンボ！' : ''}`;
+  const allStar = G.stars > 0 && G.starHits === G.stars;
+  const sub = `${SONGS[G.songIdx].name} ／ ${diffLabel} ／ ランク${rank}${allP ? ' ・ ALL PERFECT!!' : fc ? ' ・ フルコンボ！' : ''}${allStar ? ' ・ ALL STARS!' : ''}`;
   const stats = [
     { label: 'PERFECT', value: c.PERFECT }, { label: 'GREAT', value: c.GREAT },
     { label: 'GOOD', value: c.GOOD }, { label: 'MISS', value: c.MISS },
-    { label: 'MAX COMBO', value: G.maxCombo },
+    { label: '最大コンボ', value: G.maxCombo }, { label: 'STAR', value: `${G.starHits}/${G.stars}` },
     { label: '精度', value: Math.round((c.PERFECT + c.GREAT * 0.7 + c.GOOD * 0.4) / (G.points || 1) * 100) + '%' },
   ];
   if (G.devN >= 5) { const avg = Math.round(G.devSum / G.devN * 1000); stats.push({ label: '平均ズレ', value: (avg > 0 ? '+' : '') + avg + 'ms' + (avg > 25 ? ' おそい' : avg < -25 ? ' はやい' : '') }); }
@@ -1962,6 +1968,15 @@ function releaseLane(lane) {
     }
   }
 }
+function starHit(n, now) {
+  G.starHits++; G.gauge = Math.min(100, G.gauge + 4);
+  const l = effLane(n), x = laneCenter(l, L.judgeY);
+  FX.starFx.push({ x, y: L.judgeY, t: now });
+  for (let i = 0; i < (LITE() ? 6 : 14); i++) { const a = Math.random() * 6.2832, sp = 140 + Math.random() * 260; FX.particles.push({ x, y: L.judgeY, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, age: 0, life: 0.6, s: 7, c: [255, 214, 80], sq: false }); }
+  capFX();
+  FX.texts.push({ text: G.starHits === G.stars ? 'ALL STARS!!' : 'STAR!', t: now, color: '#ffd23f' });
+  [0, 4, 7, 12].forEach((k, i) => FES.tone({ freq: 1047 * Math.pow(2, k / 12), dur: 0.09, delay: i * 0.035, type: 'triangle', vol: 0.12 }));
+}
 function applyJudge(n, j, delta) {
   n.state = j === 'MISS' ? 2 : 1; n.judge = j;
   G.counts[j]++;
@@ -1977,6 +1992,7 @@ function applyJudge(n, j, delta) {
     else if (j === 'GREAT') FES.tone({ freq: 1175, dur: 0.06, type: 'triangle', vol: 0.2 });
     else FES.tone({ freq: 784, dur: 0.07, type: 'triangle', vol: 0.18 });
     spawnHit(effLane(n), j);
+    if (n.star && (j === 'PERFECT' || j === 'GREAT')) starHit(n, now);
   }
   if (n.type === 'hold') {
     n.holding = j !== 'MISS'; n.broken = j === 'MISS'; n.tickIdx = 0;
@@ -2021,6 +2037,8 @@ function processHolds(st, now) {
   H.length = w;
 }
 function spawnHit(lane, j) {
+  for (let i = FX.pillars.length - 1; i >= 0; i--) if (FX.pillars[i].lane === lane) FX.pillars.splice(i, 1);   // 1 レーンに 1 本（重ねると白くなりすぎる）
+  FX.pillars.push({ lane, t: performance.now() / 1000, j });
   const x = laneCenter(lane, L.judgeY), y = L.judgeY;
   const col = laneRGB(lane), jc = JUDGES[j].rgb;
   const lite = LITE();
@@ -2244,9 +2262,11 @@ function render(now) {
   drawBackground(st, now);
   drawLanes(frozen ? 0 : now);
   if (G.state !== 'title' && G.state !== 'calib') { const vst = st + G.voff / 1000; drawHolds(vst, now); drawNotes(vst, now); }
+  drawPillars(now);
   drawEffects(now);
   drawPads(frozen ? 0 : now);
   ctx.restore();
+  if (!frozen && G.state !== 'title' && G.state !== 'calib') drawBloom();
   if (frozen) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, L.W, L.H);
     glowText('…', L.cx, L.topY + (L.judgeY - L.topY) * 0.42, Math.min(90, L.botW * 0.2), 'rgba(255,255,255,0.85)', '#fff', 900, 10);
@@ -2535,6 +2555,8 @@ function drawNotes(st, now) {
       rr(nx, y - h / 2, nw, h, h / 2); ctx.fill();
       ctx.strokeStyle = `rgba(255,255,255,${0.6 * alpha})`; ctx.lineWidth = 1; ctx.stroke();
     } else {
+      if (n.star && n.state === 0) c = [255, 214, 80];
+      if (!LITE()) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawGlow(c, nx + nw / 2, y, nw * 0.75, h * (n.star ? 2.6 : 1.8), (n.star ? 0.6 : 0.32) * alpha); ctx.restore(); }
       ctx.fillStyle = rgba(c, (active ? 0.4 : 0.22) * alpha);
       rr(nx - 4, y - h, nw + 8, h * 2, h); ctx.fill();
       const gg = ctx.createLinearGradient(0, y - h / 2, 0, y + h / 2);
@@ -2542,6 +2564,8 @@ function drawNotes(st, now) {
       ctx.fillStyle = gg;
       rr(nx, y - h / 2, nw, h, h / 2); ctx.fill();
       ctx.strokeStyle = `rgba(255,255,255,${0.7 * alpha})`; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = `rgba(255,255,255,${0.55 * alpha})`; rr(nx + h * 0.4, y - h * 0.36, nw - h * 0.8, Math.max(1.5, h * 0.16), h * 0.08); ctx.fill();   // つや
+      if (n.star && n.state === 0) { ctx.save(); ctx.globalAlpha = alpha; FES.drawIcon(ctx, '⭐', nx + nw / 2, y, h * 1.5 + 6, '#ffffff', '#ffd23f'); ctx.restore(); }
     }
     if (n.type === 'hold' && n.state === 0) {
       // ホールド頭の印（中央の白いバー）
@@ -2551,6 +2575,39 @@ function drawNotes(st, now) {
   }
 }
 
+/* 加算の光（1 回だけ作って貼る） */
+const GLOWS = {};
+function glowOf(rgb) { const key = rgb.join(','); if (GLOWS[key]) return GLOWS[key]; const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, `rgba(${key},1)`); gr.addColorStop(0.35, `rgba(${key},.45)`); gr.addColorStop(1, `rgba(${key},0)`); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return (GLOWS[key] = c); }
+function drawGlow(rgb, x, y, rx, ry, a) { ctx.globalAlpha = a; ctx.drawImage(glowOf(rgb), x - rx, y - ry, rx * 2, ry * 2); }
+/* ブルーム: 画面を小さくコピーして、明るいところだけ重ねる */
+const BLOOM = document.createElement('canvas');
+function drawBloom() {
+  if (LITE()) return;
+  const bw = Math.max(32, Math.round(canvas.width / 8)), bh = Math.max(18, Math.round(canvas.height / 8));
+  if (BLOOM.width !== bw || BLOOM.height !== bh) { BLOOM.width = bw; BLOOM.height = bh; }
+  const g = BLOOM.getContext('2d'); g.globalCompositeOperation = 'copy'; g.drawImage(canvas, 0, 0, bw, bh);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(BLOOM, 0, 0); g.drawImage(BLOOM, 0, 0);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.38 - G.feverAmt * 0.12; ctx.drawImage(BLOOM, 0, 0, L.W, L.H); ctx.restore();
+}
+function drawPillars(now) {
+  if (!FX.pillars.length) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = FX.pillars.length - 1; i >= 0; i--) {
+    const p = FX.pillars[i], age = now - p.t; if (age > 0.28 || age < 0) { if (age > 0.28) FX.pillars.splice(i, 1); continue; }
+    if (p.lane >= LANES) continue;
+    const k = 1 - age / 0.28, c = laneRGB(p.lane), top = L.judgeY - (L.judgeY - L.topY) * (0.35 + 0.3 * k);
+    const a = laneX(p.lane, top), b = laneX(p.lane, L.judgeY), gg = ctx.createLinearGradient(0, top, 0, L.judgeY);
+    gg.addColorStop(0, rgba(c, 0)); gg.addColorStop(1, rgba(c, (p.j === 'PERFECT' ? 0.3 : 0.2) * k));
+    ctx.fillStyle = gg; ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.moveTo(a[0], top); ctx.lineTo(a[1], top); ctx.lineTo(b[1], L.judgeY); ctx.lineTo(b[0], L.judgeY); ctx.closePath(); ctx.fill();
+    drawGlow(c, (b[0] + b[1]) / 2, L.judgeY, (b[1] - b[0]) * 0.8, 22, 0.45 * k);
+  }
+  for (let i = FX.starFx.length - 1; i >= 0; i--) {
+    const f = FX.starFx[i], age = now - f.t; if (age > 0.5) { FX.starFx.splice(i, 1); continue; }
+    const k = 1 - age / 0.5; drawGlow([255, 214, 80], f.x, f.y, 90 * (0.6 + age), 60 * (0.6 + age), k);
+  }
+  ctx.restore();
+}
 function drawEffects(now) {
   const P = FX.particles;
   for (let i = 0; i < P.length; i++) {
@@ -2567,7 +2624,8 @@ function drawEffects(now) {
   }
   if (G.state === 'title' || G.state === 'calib') return;
   const jy = L.judgeY - (L.judgeY - L.topY) * 0.30;
-  if (FX.judge) {
+  const counting = FX.count && (G.state === 'countin' || G.state === 'play') && now - FX.count.t < 0.6;   // 3・2・1・GO! が出ているあいだは、コンボと判定の文字を出さない
+  if (FX.judge && !counting) {
     const age = now - FX.judge.t;
     if (age < 0.7) {
       const sc = age < 0.08 ? 1.5 - age / 0.08 * 0.5 : 1;
@@ -2603,7 +2661,7 @@ function drawEffects(now) {
     }
     fillText('EARLY', mx - 6, my, 9, 'rgba(127,184,255,0.6)', 800, 'right'); fillText('LATE', mx + mw + 6, my, 9, 'rgba(255,162,107,0.6)', 800, 'left');
   }
-  if (G.combo >= 3) {
+  if (G.combo >= 3 && !counting) {
     const cy = L.judgeY - (L.judgeY - L.topY) * 0.52;
     const sc = 1 + FX.comboPop * 0.28;
     const size = Math.min(72, L.botW * 0.15) * sc;
@@ -2618,7 +2676,8 @@ function drawEffects(now) {
     const a = age < 0.15 ? age / 0.15 : age > 0.9 ? Math.max(0, 1 - (age - 0.9) / 0.4) : 1;
     const sc = age < 0.15 ? 0.6 + age / 0.15 * 0.5 : 1.1 - Math.min(0.1, (age - 0.15) * 0.3);
     ctx.save(); ctx.globalAlpha = a;
-    glowText(t.text, L.cx, L.topY + (L.judgeY - L.topY) * 0.14 - age * 25, Math.min(40, L.botW * 0.085) * sc, t.color, t.color);
+    const fs = Math.min(40, L.botW * 0.085), stack = (FX.texts.length - 1 - i) * fs * 1.1;   // 新しい文字が出たら前の文字は上へ
+    glowText(t.text, L.cx, L.topY + (L.judgeY - L.topY) * 0.14 - age * 25 - stack, fs * sc, t.color, t.color);
     ctx.restore();
   }
 }
@@ -2649,6 +2708,7 @@ function drawPads(now) {
 function drawHUD(now) {
   const W = L.W;
   const hudW = Math.min(360, W - 150);
+  { const pw = Math.min(260, W * 0.5); rr(L.cx - pw / 2, 4, pw, 56, 14); const pg = ctx.createLinearGradient(0, 4, 0, 60); pg.addColorStop(0, 'rgba(26,16,60,.85)'); pg.addColorStop(1, 'rgba(8,6,26,.85)'); ctx.fillStyle = pg; ctx.fill(); ctx.strokeStyle = rgba(theme.glow, 0.55); ctx.lineWidth = 1.5; ctx.stroke(); }
   fillText('SCORE', L.cx, 16, 11, 'rgba(255,255,255,0.65)', 800);
   ctx.font = `900 ${Math.min(36, W * 0.07)}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff'; ctx.fillText(Math.floor(G.dispScore).toLocaleString(), L.cx, 42);
@@ -2668,6 +2728,7 @@ function drawHUD(now) {
   ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(gx + hudW * 0.7 - 1, gy - 3, 2, gh + 6);
   fillText('GAUGE', gx - 6, gy + gh / 2, 10, 'rgba(255,255,255,0.7)', 800, 'right');
   if (G.song.def.nofail) fillText('NO FAIL', gx + hudW + 6, gy + gh / 2, 10, 'rgba(255,120,160,0.9)', 900, 'left');
+  else if (G.stars > 0) { FES.drawIcon(ctx, '⭐', gx + hudW + 14, gy + gh / 2, 16, '#ffd23f', null); fillText(`${G.starHits}/${G.stars}`, gx + hudW + 25, gy + gh / 2, 11, '#ffd23f', 900, 'left'); }
   if (G.auto) {
     const k = 0.55 + 0.45 * Math.sin(now * 6);
     ctx.font = `900 12px ${FONT}`;
@@ -2681,7 +2742,7 @@ function drawHUD(now) {
   const py = gy + gh + 8;
   ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(gx, py, hudW, 3);
   ctx.fillStyle = DIFFS[G.diff].color; ctx.fillRect(gx, py, hudW * prog, 3);
-  const d = isTas() ? { label: '☠ TAS', color: '#ff2878' } : DIFFS[G.diff];
+  const d = isTas() ? { label: 'TAS', color: '#ff2878' } : DIFFS[G.diff];
   ctx.font = `900 11px ${FONT}`;
   const bw = ctx.measureText(d.label).width + 18;
   rr(gx + hudW - bw, py + 9, bw, 18, 9); ctx.fillStyle = d.color; ctx.fill();

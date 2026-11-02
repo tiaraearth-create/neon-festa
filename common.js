@@ -472,7 +472,20 @@
     '🔊': [{ d: 'M4 9h4l5-4v14l-5-4H4z', f: 1 }, { d: 'M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12' }],
     '🔇': [{ d: 'M4 9h4l5-4v14l-5-4H4z', f: 1 }, { d: 'M16 9l5 6M21 9l-5 6' }],
     '⛶': [{ d: 'M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6' }],
+    '⚙': [{ d: 'M12 5.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 1 0 0-13z', f: 1 }, { d: 'M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 1 0 0-5zM12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22M4.9 4.9l2.5 2.5M16.6 16.6l2.5 2.5M4.9 19.1l2.5-2.5M16.6 7.4l2.5-2.5' }],
+    '🐢': [{ d: 'M4 15a7.5 6.5 0 0 1 15 0z', f: 1 }, { d: 'M3 15h17M7 15v3.5M16 15v3.5M8 12l3.5-3 3.5 3M19 12.5h1.5a1.5 1.5 0 0 1 0 3H19' }],
+    '📱': [{ d: 'M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z', f: 1 }, { d: 'M11 18.5h2' }],
+    '☠': [{ d: 'M12 3a7 7 0 0 0-7 7c0 2.5 1.3 4.2 3 5.2V19h8v-3.8c1.7-1 3-2.7 3-5.2a7 7 0 0 0-7-7z', f: 1 }, { d: 'M9 9.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3zM15 9.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3zM10.5 19v2M13.5 19v2' }],
+    '🎧': [{ d: 'M4 15v-3a8 8 0 0 1 16 0v3' }, { d: 'M3.5 14h3.5v6.5H3.5zM17 14h3.5v6.5H17z', f: 1 }],
+    '🎲': [{ d: 'M4 4h16v16H4z', f: 1 }, { d: 'M8 7.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1zM16 7.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1zM12 11.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1zM8 15.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1zM16 15.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1z' }],
   };
+  /** 文字の中に入れる用: FES.iconSVG('🎲') → '<svg …>'（文字の色で描く。HTML 文字列を組み立てるところで使う） */
+  FES.iconSVG = function (key) {
+    const parts = ICONS[key]; if (!parts) return '';
+    return `<svg class="fes-ico inl" viewBox="0 0 24 24" aria-hidden="true">${parts.map(pt => `<path d="${pt.d}"${pt.f ? ' class="f"' : ''}/>`).join('')}</svg>`;
+  };
+  /** HTML に <span data-ico="⚙"></span> と書いておくと、そこにアイコンが入る */
+  FES.fillIcons = function (root) { (root || document).querySelectorAll('[data-ico]').forEach(e => { if (!e.firstChild) e.innerHTML = FES.iconSVG(e.getAttribute('data-ico')); }); };
   const ICON_IMG = {};
   /** キャンバス用: FES.iconImage('⚡', '#ffe66d') → <img>（SVG を 1 回だけ作って使い回す。読みこみ前は complete=false） */
   FES.iconImage = function (key, color) {
@@ -797,6 +810,8 @@
   .fes-ico { width: 26px; height: 26px; fill: none; stroke: var(--hc, #5ee7ff); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 3px var(--hc, #5ee7ff)); overflow: visible; }
   .fes-ico .f { fill: color-mix(in srgb, var(--hc, #5ee7ff) 22%, transparent); }
   .fes-lite .fes-ico { filter: none; }
+  .fes-ico.inl { width: 1.15em; height: 1.15em; stroke: currentColor; filter: none; vertical-align: -.2em; margin-right: .15em; }
+  .fes-ico.inl .f { fill: currentColor; fill-opacity: .22; }
   .fes-howto .ic.num { font-family: Consolas,"Courier New",monospace; font-size: 19px; font-weight: 900; color: var(--hc); }
   .fes-howto .tx { color: #fff; font-weight: 800; font-size: clamp(15px, 3.4vw, 20px); line-height: 1.5; text-align: left; }
   .fes-howto kbd { display: inline-block; min-width: 1.75em; margin: 0 .12em; padding: 0 .4em; border-radius: 7px; font: 900 .86em Consolas,"Courier New",monospace; text-align: center; color: #fff;
