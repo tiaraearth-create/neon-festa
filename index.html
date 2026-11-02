@@ -848,7 +848,7 @@ function buildSlides() {
     const r = [];
     gameIds(g).forEach(x => FES.getRanking(x.id).forEach(e => r.push({ ...e, label: x.label })));
     r.sort((a, b) => b.score - a.score);
-    const top = r.slice(0, 3).map((e, i) => `<div><b>${['🥇', '🥈', '🥉'][i]}</b>${esc(e.name)} ${e.score.toLocaleString()}${e.label ? `<span>${esc(e.label)}</span>` : ''}</div>`).join('');
+    const top = r.slice(0, 3).map((e, i) => `<div><b>${i + 1}位</b>${esc(e.name)} ${e.score.toLocaleString()}${e.label ? `<span>${esc(e.label)}</span>` : ''}</div>`).join('');
     add(`<div class="big-icon">${g.icon}</div><div class="genre-pill" style="--accent:${g.accent}">${esc(g.genre)}</div><div class="big-title">${esc(g.title)}</div><div class="desc">${esc(g.desc)}</div>${top ? `<div class="top3">${top}</div>` : '<div class="top3"><div>まだ記録なし。1番乗りを狙おう！</div></div>'}`);
   });
   const hall = FES.stampHall().slice().sort((a, b) => a.timeMs - b.timeMs).slice(0, 3);

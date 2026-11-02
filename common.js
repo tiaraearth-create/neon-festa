@@ -493,14 +493,75 @@
     '🦒': [{ d: 'M4 5h16v11h-9l-5 4v-4H4z', f: 1 }, { d: 'M12 8v4M12 14v.4' }],
     '🏫': [{ d: 'M5 21V10l7-5 7 5v11z', f: 1 }, { d: 'M3 21h18M10 21v-5h4v5M12 5V2h3.5v2H12M10.5 11h3' }],
     '🖥': [{ d: 'M3 4h18v12H3z', f: 1 }, { d: 'M9 20h6M12 16v4' }],
+    '🐱': [{ d: 'M4 10V3.5l4.5 3.5h7L20 3.5V10a8 8 0 0 1-16 0z', f: 1 }, { d: 'M9 11v1M15 11v1M12 14.5l-1 .8M12 14.5l1 .8M1.5 13h4M18.5 13h4' }],
+    '🐶': [{ d: 'M7 6a6 6 0 0 1 10 0c1.5 1.5 2 4 2 6a7 7 0 0 1-14 0c0-2 .5-4.5 2-6z', f: 1 }, { d: 'M7 6L3 9l2 5M17 6l4 3-2 5M9.5 12v.5M14.5 12v.5M11 15.5h2' }],
+    '🐰': [{ d: 'M9 9.5V3a1.5 1.5 0 0 1 3 0v6.5M12 9.5V3a1.5 1.5 0 0 1 3 0v6.5' }, { d: 'M12 9a6 6 0 1 0 0 12 6 6 0 1 0 0-12z', f: 1 }, { d: 'M10 14v.5M14 14v.5M11.3 17h1.4' }],
+    '🐻': [{ d: 'M6.5 3.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 1 0 0-5zM17.5 3.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 1 0 0-5zM12 5a8 8 0 1 0 0 16 8 8 0 1 0 0-16z', f: 1 }, { d: 'M10 15.5a2 1.6 0 1 0 4 0 2 1.6 0 1 0-4 0M9.5 11v.5M14.5 11v.5' }],
+    '🐼': [{ d: 'M6.5 3.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 1 0 0-5zM17.5 3.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 1 0 0-5zM12 5a8 8 0 1 0 0 16 8 8 0 1 0 0-16z' }, { d: 'M7.5 10.5l2.5-1.5.8 3-2.6.8zM16.5 10.5l-2.5-1.5-.8 3 2.6.8zM11 15.5h2l-1 1.2z', f: 1 }],
+    '🦊': [{ d: 'M3 3.5l5 4.5h8l5-4.5-1 8.5-8 9-8-9z', f: 1 }, { d: 'M9.5 12.5v.5M14.5 12.5v.5M11.5 17.5h1' }],
+    '🐧': [{ d: 'M12 3c4 0 6 4 6 9s-2 9-6 9-6-4-6-9 2-9 6-9z', f: 1 }, { d: 'M12 9.5c2 0 3 2.5 3 5.5s-1.3 4.5-3 4.5-3-1-3-4.5 1-5.5 3-5.5zM10.5 7v.4M13.5 7v.4M11 8.5h2l-1 1.2zM9 21h2M13 21h2' }],
+    '🦁': [{ d: 'M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8' }, { d: 'M12 6a6 6 0 1 0 0 12 6 6 0 1 0 0-12z', f: 1 }, { d: 'M10 11v.5M14 11v.5M11 14.5h2' }],
+    '🐬': [{ d: 'M2.5 15c3-6 9-9 15-8l3-3-.5 4c1.5 1.5 1.5 4-1 5-3 1.2-7 1-10 3l-1.5 3-.5-3.5c-1.5.5-3 .5-4.5-.5z', f: 1 }, { d: 'M16 10v.3' }],
+    '🐲': [{ d: 'M3 14l4-6 3 1 2-5 2 4 4-1-1 5 4 3-5 2-2 4-4-1-3 2-1-4-3-1z', f: 1 }, { d: 'M14 11v.6M16.5 15h-3' }],
+    '🏗': [{ d: 'M3 21h18M6 21V5h2v16M8 5h12M8 5l4 3M18 5v6' }, { d: 'M16 11h4v4h-4z', f: 1 }],
+    '🏎': [{ d: 'M2 16l2-4h5l2-3h5l3 3h3v4z', f: 1 }, { d: 'M6 15a2 2 0 1 0 0 4 2 2 0 1 0 0-4zM18 15a2 2 0 1 0 0 4 2 2 0 1 0 0-4z' }],
+    '❓': [{ d: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18z', f: 1 }, { d: 'M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 16.5v.5' }],
+    '🧠': [{ d: 'M12 5a3 3 0 0 0-5.5 1A3 3 0 0 0 4 10a3 3 0 0 0 1 5 3 3 0 0 0 3 4 3 3 0 0 0 4 0 3 3 0 0 0 4 0 3 3 0 0 0 3-4 3 3 0 0 0 1-5 3 3 0 0 0-2.5-4A3 3 0 0 0 12 5z', f: 1 }, { d: 'M12 5v14M8 10h2M14 10h2M8 14h2M14 14h2' }],
+    '🧩': [{ d: 'M4 8h4.2a2 2 0 1 1 3.6 0H16v4.2a2 2 0 1 1 0 3.6V20H4z', f: 1 }],
+    '🏭': [{ d: 'M3 21V11l5 3v-3l5 3V7h3l1-4h2l1 4v14z', f: 1 }, { d: 'M7 18h2M12 18h2' }],
+    '🎟': [{ d: 'M3 7h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z', f: 1 }, { d: 'M9 7.5v2M9 11v2M9 14.5v2' }],
+    '🏅': [{ d: 'M8 2l2.5 6.5M16 2l-2.5 6.5' }, { d: 'M12 8.5a6 6 0 1 0 0 12 6 6 0 1 0 0-12z', f: 1 }, { d: 'M12 11.3l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z' }],
+    '🎁': [{ d: 'M3 9h18v4H3zM5 13h14v8H5z', f: 1 }, { d: 'M12 9v12M12 9c-2-4-6-4-6-1.5S10 9 12 9c2 0 6 1 6-1.5S14 5 12 9' }],
+    '📜': [{ d: 'M6 4h11a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H8a2 2 0 0 1-2-2z', f: 1 }, { d: 'M9 8h7M9 11h7M9 14h5' }],
+    '🔄': [{ d: 'M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M6 21v-4h4' }],
+    '🐛': [{ d: 'M12 7a5 5 0 0 0-5 5v3a5 5 0 0 0 10 0v-3a5 5 0 0 0-5-5z', f: 1 }, { d: 'M9 7.5l-2-3M15 7.5l2-3M7 12H3M17 12h4M7 16l-3 2M17 16l3 2M12 9.5v10' }],
+    '🎉': [{ d: 'M3 21l4-12 8 8z', f: 1 }, { d: 'M13 3v2M18 5.5l-1.5 1.5M21 11h-2M14.5 9.5c1-2 3-2.5 4.5-1.5M9 3.5c.5 1.5 0 3-1 4' }],
+    '🎮': [{ d: 'M6 8h12a4 4 0 0 1 4 4v2a3 3 0 0 1-5.4 1.8L15 14H9l-1.6 1.8A3 3 0 0 1 2 14v-2a4 4 0 0 1 4-4z', f: 1 }, { d: 'M7 10.5v3M5.5 12h3M16 11v.4M18 12.6v.4' }],
+    '🌈': [{ d: 'M2 18a10 10 0 0 1 20 0M5 18a7 7 0 0 1 14 0M8 18a4 4 0 0 1 8 0' }],
+    '👤': [{ d: 'M12 4a4 4 0 1 0 0 8 4 4 0 1 0 0-8z', f: 1 }, { d: 'M4 21a8 8 0 0 1 16 0' }],
+    '📺': [{ d: 'M3 7h18v12H3z', f: 1 }, { d: 'M8 3l4 4 4-4M7 22h10' }],
+    '🗑': [{ d: 'M6 7l1 14h10l1-14z', f: 1 }, { d: 'M4 7h16M9 7V4h6v3M10 11v6M14 11v6' }],
+    '🎪': [{ d: 'M12 3l9 8v10H3V11z', f: 1 }, { d: 'M12 3v18M12 3l-4.5 18M12 3l4.5 18M12 3V1h2' }],
     '🎲': [{ d: 'M4 4h16v16H4z', f: 1 }, { d: 'M8 7.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1zM16 7.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1zM12 11.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1zM8 15.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1zM16 15.5a.5.5 0 1 0 0 1 .5.5 0 1 0 0-1z' }],
   };
+  ICONS['🐉'] = ICONS['🐲']; ICONS['🎖'] = ICONS['🏅']; ICONS['🌟'] = ICONS['⭐']; ICONS['🛟'] = ICONS['🛟'];
   /** 文字の中に入れる用: FES.iconSVG('🎲') → '<svg …>'（文字の色で描く。HTML 文字列を組み立てるところで使う） */
   FES.iconSVG = function (key) {
     const parts = ICONS[key]; if (!parts) return '';
     return `<svg class="fes-ico inl" viewBox="0 0 24 24" aria-hidden="true">${parts.map(pt => `<path d="${pt.d}"${pt.f ? ' class="f"' : ''}/>`).join('')}</svg>`;
   };
   /** HTML に <span data-ico="⚙"></span> と書いておくと、そこにアイコンが入る */
+  /** 画面の文字（DOM）の中の絵文字を、自作のアイコン（<svg>）に自動で置きかえる。あとから出る文字も見張る */
+  const ICON_RE = new RegExp('(' + Object.keys(ICONS).filter(k => ICONS[k]).sort((a, b) => b.length - a.length).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')\uFE0F?', 'g');
+  const SKIP_TAG = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, INPUT: 1, OPTION: 1, SELECT: 1, TITLE: 1, CANVAS: 1, svg: 1, SVG: 1 };
+  function iconizeText(t) {
+    const p = t.parentNode; if (!p || SKIP_TAG[p.nodeName] || p.closest && p.closest('svg')) return;
+    const s = t.nodeValue; ICON_RE.lastIndex = 0; if (!s || !ICON_RE.test(s)) return;
+    ICON_RE.lastIndex = 0;
+    const frag = document.createDocumentFragment(); let last = 0, m;
+    while ((m = ICON_RE.exec(s))) {
+      if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+      const sp = document.createElement('span'); sp.className = 'fes-ei'; sp.innerHTML = FES.iconSVG(m[1]); frag.appendChild(sp);
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+    p.replaceChild(frag, t);
+  }
+  function iconizeTree(root) {
+    if (!root) return;
+    if (root.nodeType === 3) { iconizeText(root); return; }
+    if (root.nodeType !== 1 || SKIP_TAG[root.nodeName]) return;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), list = [];
+    while (w.nextNode()) list.push(w.currentNode);
+    list.forEach(iconizeText);
+  }
+  FES.autoIcons = function (root) {
+    root = root || document.body; if (!root || root.__fesIcons) return; root.__fesIcons = true;
+    iconizeTree(root);
+    new MutationObserver(recs => { for (const r of recs) { if (r.type === 'characterData') iconizeText(r.target); else r.addedNodes.forEach(iconizeTree); } })
+      .observe(root, { childList: true, subtree: true, characterData: true });
+  };
+  if (document.body) FES.autoIcons(); else document.addEventListener('DOMContentLoaded', () => FES.autoIcons());
   FES.fillIcons = function (root) { (root || document).querySelectorAll('[data-ico]').forEach(e => { if (!e.firstChild) e.innerHTML = FES.iconSVG(e.getAttribute('data-ico')); }); };
   const ICON_IMG = {};
   /** キャンバス用: FES.iconImage('⚡', '#ffe66d') → <img>（SVG を 1 回だけ作って使い回す。読みこみ前は complete=false） */
@@ -828,6 +889,8 @@
   .fes-lite .fes-ico { filter: none; }
   .fes-ico.inl { width: 1.15em; height: 1.15em; stroke: currentColor; filter: none; vertical-align: -.2em; margin-right: .15em; }
   .fes-ico.inl .f { fill: currentColor; fill-opacity: .22; }
+  .fes-ei { display: inline-flex; vertical-align: middle; }
+  .fes-ei .fes-ico.inl { margin-right: .12em; }
   .fes-howto .ic.num { font-family: Consolas,"Courier New",monospace; font-size: 19px; font-weight: 900; color: var(--hc); }
   .fes-howto .tx { color: #fff; font-weight: 800; font-size: clamp(15px, 3.4vw, 20px); line-height: 1.5; text-align: left; }
   .fes-howto kbd { display: inline-block; min-width: 1.75em; margin: 0 .12em; padding: 0 .4em; border-radius: 7px; font: 900 .86em Consolas,"Courier New",monospace; text-align: center; color: #fff;
@@ -1293,7 +1356,7 @@
       const ul = el('ul', { class: 'fes-rank' });
       r.forEach((e, i) => {
         const li = el('li', { class: mine && e.date === mine ? 'me' : '' });
-        li.appendChild(el('span', { class: 'r g' + (i + 1), text: ['🥇', '🥈', '🥉'][i] || (i + 1) + '.' }));
+        li.appendChild(el('span', { class: 'r g' + (i + 1), text: i < 3 ? (i + 1) + '位' : (i + 1) + '.' }));
         li.appendChild(el('span', { class: 'n', text: e.name }));
         li.appendChild(el('span', { class: 's', text: e.score.toLocaleString() }));
         ul.appendChild(li);
