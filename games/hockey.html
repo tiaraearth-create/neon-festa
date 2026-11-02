@@ -219,6 +219,7 @@ function updateParticles(dt) {
   G.shake *= Math.exp(-7 * dt); if (G.shake < 0.2) G.shake = 0;
   G.flash = Math.max(0, G.flash - dt * 2.2);
   for (let i = 0; i < 2; i++) { G.scorePop[i] = Math.max(0, G.scorePop[i] - dt * 2); G.goalGlow[i] = Math.max(0, G.goalGlow[i] - dt * 0.7); }
+  if (G.shock) { G.shock.t += dt; if (G.shock.t > 0.8) G.shock = null; }
   for (const m of G.mallets) m.hitFlash = Math.max(0, m.hitFlash - dt * 4);
   if (G.msg) { G.msg.t += dt; if (G.msg.t >= G.msg.dur) G.msg = null; }
   if (G.note) { G.note.t += dt; if (G.note.t >= G.note.dur) G.note = null; }
@@ -237,7 +238,7 @@ function wallHit(x, y, orient) {
    試合の開始・進行
    ===================================================================== */
 function startMatch(mode, lvl) {
-  if (FES.howto(['🏒 [W][A][S][D]・矢印・タッチでパドルを動かす', '🥅 相手のゴールにパックを入れる', '🔥 FIRE SHOTで入れると2点！ 7点先取で勝ち'], 0, startMatch, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (FES.howto(['🏒 [W][A][S][D]・矢印・タッチでパドルを動かす', '🥅 相手のゴールにパックを入れる。7点先取で勝ち', '🔥 FIRE SHOTか、壁に当ててから入れると2点（両方なら3点）'], 0, startMatch, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false);
   G.mode = mode; G.cpuLevel = lvl;
   G.score = [0, 0]; G.scorePop = [0, 0]; G.goalGlow = [0, 0];
@@ -246,7 +247,8 @@ function startMatch(mode, lvl) {
   G.extra = []; G.bumpers = []; G.bumpersShown = false; G.streak = [0, 0];
   G.shake = 0; G.flash = 0; G.hitstop = 0; G.msg = null; G.note = null;
   G.lastHitter = -1; G.stallT = 0; G.lastTick = -1; G.lastBounceSfx = 0;
-  G.stats = { maxSpeed: 0, hits: [0, 0], fire: 0, fireGoals: 0, powers: 0, maxStreak: 0 };
+  G.stats = { maxSpeed: 0, hits: [0, 0], fire: 0, fireGoals: 0, powers: 0, maxStreak: 0, bankGoals: 0, saves: [0, 0] };
+  G.shock = null;
   G.mallets = [makeMallet(0), makeMallet(1)];
   if (mode === 'cpu') G.mallets[1].ctrl = 'cpu';
   G.puck = makePuck(CX, CY);
@@ -272,12 +274,14 @@ function resetForServe(loser) {
 function beginServe() {
   resetForServe(G.serveSide);
   G.state = 'serve'; G.serveT = 1.1;
-  G.msg = { text: playerName(G.serveSide) + ' サーブ', t: 0, dur: 1.1, size: 46, color: G.serveSide === 0 ? P1C : P2C, kind: 'plain' };
+  G.msg = { text: playerName(G.serveSide) + 'のサーブ', t: 0, dur: 1.1, size: 46, color: G.serveSide === 0 ? P1C : P2C, kind: 'plain' };
   FES.sfx('select');
 }
 function scoreGoal(scorer, pk) {
   const p = pk || G.puck;
-  const fire = p.fire, pts = fire ? 2 : 1;
+  const fire = p.fire, bank = (p.bounces || 0) >= 1 && G.lastHitter === scorer, pts = (fire ? 2 : 1) + (bank ? 1 : 0);   // 壁に当ててから入れると +1 点
+  if (bank) G.stats.bankGoals++;
+  G.shock = { x: scorer === 1 ? TX : TR, y: p.y, t: 0, c: scorer === 0 ? P1C : P2C };
   G.score[scorer] += pts; G.scorePop[scorer] = 1;
   G.streak[scorer]++; G.streak[1 - scorer] = 0;
   if (fire) G.stats.fireGoals++;
@@ -290,15 +294,22 @@ function scoreGoal(scorer, pk) {
   burst(gx, p.y, 70, col, 950, { drag: 1.5 });
   burst(gx, p.y, 40, WHITE, 600, { drag: 1.5, grav: 300 });
   burst(gx, p.y, 40, GOLD, 800, { spark: true, drag: 2 });
-  if (fire) {
-    G.msg = { text: 'FIRE GOAL!!', t: 0, dur: 2.1, size: 128, color: FIREC, kind: 'goal', sub: playerName(scorer) + ' が 2 点 ゲット！' };
+  if (fire && bank) {
+    G.msg = { text: 'SUPER GOAL!!!', t: 0, dur: 2.3, size: 112, color: GOLD, kind: 'goal', sub: playerName(scorer) + 'が3点ゲット！（FIRE＋壁）' };
+    burst(gx, p.y, 60, GOLD, 1200, { drag: 1.5 }); G.shake = 38; G.flash = 0.95;
+    FES.noise({ dur: 0.6, freq: 1400, slide: -900, vol: 0.32, filter: 'lowpass' });
+  } else if (bank) {
+    G.msg = { text: 'BANK SHOT!', t: 0, dur: 2.0, size: 118, color: GREEN, kind: 'goal', sub: playerName(scorer) + 'が2点ゲット！（壁に当ててゴール）' };
+    burst(gx, p.y, 40, GREEN, 1000, { drag: 1.5 });
+  } else if (fire) {
+    G.msg = { text: 'FIRE GOAL!!', t: 0, dur: 2.1, size: 128, color: FIREC, kind: 'goal', sub: playerName(scorer) + 'が2点ゲット！' };
     burst(gx, p.y, 50, FIREC, 1100, { drag: 1.5 });
     G.shake = 34; G.flash = 0.9;
     FES.noise({ dur: 0.5, freq: 1200, slide: -800, vol: 0.3, filter: 'lowpass' });
   } else {
-    G.msg = { text: 'GOAL!', t: 0, dur: 1.9, size: 150, color: col, kind: 'goal', sub: playerName(scorer) + ' が とくてん！' };
+    G.msg = { text: 'GOAL!', t: 0, dur: 1.9, size: 150, color: col, kind: 'goal', sub: playerName(scorer) + 'がとくてん！' };
   }
-  G.note = G.streak[scorer] >= 3 ? { text: G.streak[scorer] + ' 連続ゴール！', t: 0, dur: 2.0, color: GOLD } : null;
+  G.note = G.streak[scorer] >= 3 ? { text: G.streak[scorer] + '連続ゴール！', t: 0, dur: 2.0, color: GOLD } : null;
   FES.sfx('fanfare'); FES.sfx('explode');
   for (const q of allPucks()) { q.vx = 0; q.vy = 0; q.fire = false; }
   G.extra = []; G.puckHidden = true;
@@ -309,11 +320,13 @@ function finishMatch(winner) {
   const a = G.score[0], b = G.score[1];
   const sub = a + ' - ' + b;
   const stats = [
-    { label: '最高速', value: Math.round(G.stats.maxSpeed / 10) + ' km/h' },
-    { label: playerName(0) + ' ヒット', value: G.stats.hits[0] },
-    { label: playerName(1) + ' ヒット', value: G.stats.hits[1] },
+    { label: '最高速', value: Math.round(G.stats.maxSpeed / 10) + 'km/h' },
+    { label: playerName(0) + 'のヒット', value: G.stats.hits[0] },
+    { label: playerName(1) + 'のヒット', value: G.stats.hits[1] },
     { label: 'FIRE SHOT', value: G.stats.fire },
     { label: 'FIRE GOAL', value: G.stats.fireGoals },
+    { label: 'BANK SHOT', value: G.stats.bankGoals },
+    { label: 'SAVE', value: G.stats.saves[0] + G.stats.saves[1] },
     { label: 'パワーアップ', value: G.stats.powers },
   ];
   const retry = () => startMatch(G.mode, G.cpuLevel);
@@ -322,23 +335,23 @@ function finishMatch(winner) {
   } else if (G.mode === 'cpu') {
     const lv = CPU_LEVELS[G.cpuLevel];
     if (winner === 0) {
-      const rs = (a - b) * lv.base + Math.round(G.time) * (G.cpuLevel + 1) * 4 + G.stats.fireGoals * 150 * (G.cpuLevel + 1);
+      const rs = (a - b) * lv.base + Math.round(G.time) * (G.cpuLevel + 1) * 4 + (G.stats.fireGoals * 150 + G.stats.bankGoals * 120 + G.stats.saves[0] * 40) * (G.cpuLevel + 1);
       FES.showResult({ title: 'あなたの勝ち！', score: rs, scoreLabel: 'pt', subtitle: sub + '　vs CPU ' + lv.name, stats, ranking: true, rank: { S: 4500, A: 3000, B: 1500, C: 500 }, titles: { S: 'ホッケーの神', A: 'エースストライカー', B: 'ナイスゲーム！', C: 'まずは1勝！', D: '勝ったぞ！' } }, retry);
     } else {
-      FES.showResult({ title: 'CPU の勝ち…', score: b, subtitle: sub + '　vs CPU ' + lv.name, stats, ranking: false }, retry);
+      FES.showResult({ title: 'CPUの勝ち…', score: b, subtitle: sub + '　vs CPU ' + lv.name, stats, ranking: false }, retry);
     }
   } else {
-    FES.showResult({ title: 'P' + (winner + 1) + ' の勝ち！', score: G.score[winner], subtitle: sub, stats, ranking: false }, retry);
+    FES.showResult({ title: 'P' + (winner + 1) + 'の勝ち！', score: G.score[winner], subtitle: sub, stats, ranking: false }, retry);
   }
 }
 function onTimeUp() {
   if (G.score[0] !== G.score[1]) {
     G.state = 'timeup'; G.timeupT = 1.7; G.timeupWinner = G.score[0] > G.score[1] ? 0 : 1;
-    G.msg = { text: 'TIME UP!', t: 0, dur: 1.7, size: 110, color: GOLD, kind: 'goal', sub: playerName(G.timeupWinner) + ' の勝ち！' };
+    G.msg = { text: 'TIME UP!', t: 0, dur: 1.7, size: 110, color: GOLD, kind: 'goal', sub: playerName(G.timeupWinner) + 'の勝ち！' };
     G.shake = 10; G.flash = 0.4; FES.sfx('perfect');
   } else if (!G.sudden) {
     G.sudden = true; G.time = SUDDEN_TIME;
-    G.msg = { text: 'SUDDEN DEATH!', t: 0, dur: 2.0, size: 84, color: [255, 80, 80], kind: 'goal', sub: '次のゴールで 勝ち！' };
+    G.msg = { text: 'SUDDEN DEATH!', t: 0, dur: 2.0, size: 84, color: [255, 80, 80], kind: 'goal', sub: '次のゴールで勝ち！' };
     G.shake = 8; FES.sfx('wrong');
   } else {
     G.state = 'timeup'; G.timeupT = 1.5; G.timeupWinner = -1;
@@ -640,14 +653,16 @@ function collidePuckMallet(p, m, mx, my) {
   const rvx = p.vx - m.vx, rvy = p.vy - m.vy;
   const vn = rvx * nx + rvy * ny;
   if (vn >= 0) return;
+  const save = (m.idx === 0 ? p.vx < -650 && p.x < TX + 190 : p.vx > 650 && p.x > TR - 190) && p.y > GT - 30 && p.y < GB + 30;   // 自分のゴールに向かう速いパックを止めた
   p.vx -= (1 + MALLET_E) * vn * nx; p.vy -= (1 + MALLET_E) * vn * ny;
   const mvn = m.vx * nx + m.vy * ny;
   if (mvn > 0) { p.vx += mvn * 0.3 * nx; p.vy += mvn * 0.3 * ny; }
   clampPuckSpeed(p);
   onMalletHit(m, p, nx, ny, -vn);
+  if (save) { G.stats.saves[m.idx]++; G.note = { text: 'SAVE!', t: 0, dur: 1.0, color: m.color }; FES.sfx('perfect'); burst(p.x, p.y, 24, m.color, 520, { drag: 2 }); }
 }
 function onMalletHit(m, p, nx, ny, impact) {
-  G.lastHitter = m.idx; G.stats.hits[m.idx]++; m.hitFlash = 1;
+  G.lastHitter = m.idx; G.stats.hits[m.idx]++; m.hitFlash = 1; p.bounces = 0;
   let sp = Math.hypot(p.vx, p.vy);
   if (m.boost) {
     m.boost = false;
@@ -675,16 +690,16 @@ function onMalletHit(m, p, nx, ny, impact) {
   if (impact > 500) FES.noise({ dur: 0.08, freq: 1800, slide: 200, vol: 0.18 });
 }
 function collideWalls(p) {
-  if (p.y - p.r < TY) { p.y = TY + p.r; if (p.vy < 0) { p.vy = -p.vy * WALL_E; wallHit(p.x, TY, 'h'); } }
-  else if (p.y + p.r > TB) { p.y = TB - p.r; if (p.vy > 0) { p.vy = -p.vy * WALL_E; wallHit(p.x, TB, 'h'); } }
+  if (p.y - p.r < TY) { p.y = TY + p.r; if (p.vy < 0) { p.vy = -p.vy * WALL_E; wallHit(p.x, TY, 'h'); p.bounces = (p.bounces || 0) + 1; } }
+  else if (p.y + p.r > TB) { p.y = TB - p.r; if (p.vy > 0) { p.vy = -p.vy * WALL_E; wallHit(p.x, TB, 'h'); p.bounces = (p.bounces || 0) + 1; } }
   if (p.x - p.r < TX) {
     const gb = goalBand(0);
     if (p.y - p.r > gb.t && p.y + p.r < gb.b) { if (p.x + p.r < TX) { scoreGoal(1, p); return true; } }
-    else { p.x = TX + p.r; if (p.vx < 0) { p.vx = -p.vx * WALL_E; wallHit(TX, p.y, 'v'); } }
+    else { p.x = TX + p.r; if (p.vx < 0) { p.vx = -p.vx * WALL_E; wallHit(TX, p.y, 'v'); p.bounces = (p.bounces || 0) + 1; } }
   } else if (p.x + p.r > TR) {
     const gb = goalBand(1);
     if (p.y - p.r > gb.t && p.y + p.r < gb.b) { if (p.x - p.r > TR) { scoreGoal(0, p); return true; } }
-    else { p.x = TR - p.r; if (p.vx > 0) { p.vx = -p.vx * WALL_E; wallHit(TR, p.y, 'v'); } }
+    else { p.x = TR - p.r; if (p.vx > 0) { p.vx = -p.vx * WALL_E; wallHit(TR, p.y, 'v'); p.bounces = (p.bounces || 0) + 1; } }
   }
   return false;
 }
@@ -843,6 +858,77 @@ window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 document.addEventListener('visibilitychange', () => { if (document.hidden && inGame() && !G.paused) togglePause(); });
 
+
+/* =====================================================================
+   絵（最初に 1 回だけ描いておき、遊んでいる間は drawImage で貼るだけ）
+   ===================================================================== */
+function canvasOf(w, h, k) { const c = document.createElement('canvas'); c.width = Math.ceil(w * k); c.height = Math.ceil(h * k); const g = c.getContext('2d'); g.scale(k, k); return [c, g]; }
+const mix = (a, b, t) => [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t), Math.round(a[2] + (b[2] - a[2]) * t)];
+/* テーブル: ガラスのようなつや・空気穴・まん中のロゴ */
+const TABLE_ART = (() => {
+  const [c, g] = canvasOf(TW, TH, 1.5);
+  const bg = g.createLinearGradient(0, 0, 0, TH); bg.addColorStop(0, '#141850'); bg.addColorStop(1, '#090a26'); g.fillStyle = bg; g.fillRect(0, 0, TW, TH);
+  const gl = g.createLinearGradient(0, 0, TW / 2, 0); gl.addColorStop(0, rgba(P1C, 0.16)); gl.addColorStop(1, rgba(P1C, 0)); g.fillStyle = gl; g.fillRect(0, 0, TW / 2, TH);
+  const gr = g.createLinearGradient(TW, 0, TW / 2, 0); gr.addColorStop(0, rgba(P2C, 0.16)); gr.addColorStop(1, rgba(P2C, 0)); g.fillStyle = gr; g.fillRect(TW / 2, 0, TW / 2, TH);
+  g.fillStyle = 'rgba(255,255,255,0.07)';
+  for (let y = 11; y < TH; y += 22) for (let x = 11 + ((y / 22) % 2) * 11; x < TW; x += 22) { g.beginPath(); g.arc(x, y, 1.3, 0, TAU); g.fill(); }   // 空気穴
+  g.lineWidth = 3;
+  g.strokeStyle = rgba(P1C, 0.38); g.beginPath(); g.arc(0, TH / 2, 130, -Math.PI / 2, Math.PI / 2); g.stroke();
+  g.strokeStyle = rgba(P2C, 0.38); g.beginPath(); g.arc(TW, TH / 2, 130, Math.PI / 2, Math.PI * 1.5); g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 3; g.beginPath(); g.arc(TW / 2, TH / 2, 72, 0, TAU); g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = 10; g.beginPath(); g.arc(TW / 2, TH / 2, 84, 0, TAU); g.stroke();
+  g.save(); g.translate(TW / 2, TH / 2); g.font = `900 22px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillText('NEON', 0, -12); g.fillText('FESTA', 0, 14); g.restore();
+  const sh = g.createLinearGradient(0, 0, TW, TH); sh.addColorStop(0, 'rgba(255,255,255,0.08)'); sh.addColorStop(0.35, 'rgba(255,255,255,0)'); sh.addColorStop(0.62, 'rgba(255,255,255,0)'); sh.addColorStop(0.7, 'rgba(255,255,255,0.05)'); sh.addColorStop(0.78, 'rgba(255,255,255,0)');
+  g.fillStyle = sh; g.fillRect(0, 0, TW, TH);   // ガラスの反射
+  return c;
+})();
+/* マレット（色ごと）: 金属のふち・つまみ・つや。半径 40 の絵 */
+const MALLET_ART = {};
+function malletArt(col) {
+  const key = col.join(','); if (MALLET_ART[key]) return MALLET_ART[key];
+  const [c, g] = canvasOf(100, 100, 2); g.translate(50, 50); const R = 40;
+  const ring = g.createLinearGradient(-R, -R, R, R); ring.addColorStop(0, '#f2f6ff'); ring.addColorStop(0.5, '#8a93b0'); ring.addColorStop(1, '#3a4058');
+  g.fillStyle = ring; g.beginPath(); g.arc(0, 0, R, 0, TAU); g.fill();
+  const body = g.createRadialGradient(-R * 0.3, -R * 0.35, 3, 0, 0, R * 0.9); body.addColorStop(0, rgba(mix(col, WHITE, 0.55), 1)); body.addColorStop(0.65, rgba(col, 1)); body.addColorStop(1, rgba(mix(col, [0, 0, 0], 0.55), 1));
+  g.fillStyle = body; g.beginPath(); g.arc(0, 0, R * 0.88, 0, TAU); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, R * 0.6, 0, TAU); g.stroke();
+  g.strokeStyle = rgba(mix(col, WHITE, 0.6), 0.6); g.lineWidth = 1.5; g.beginPath(); g.arc(0, 0, R * 0.64, 0, TAU); g.stroke();
+  g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.arc(2, 3, R * 0.42, 0, TAU); g.fill();   // つまみの影
+  const knob = g.createRadialGradient(-R * 0.14, -R * 0.16, 1, 0, 0, R * 0.4); knob.addColorStop(0, '#ffffff'); knob.addColorStop(0.5, rgba(mix(col, WHITE, 0.35), 1)); knob.addColorStop(1, rgba(mix(col, [0, 0, 0], 0.3), 1));
+  g.fillStyle = knob; g.beginPath(); g.arc(0, 0, R * 0.4, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.55)'; g.beginPath(); g.ellipse(-R * 0.36, -R * 0.42, R * 0.3, R * 0.13, -0.7, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.8)'; g.beginPath(); g.ellipse(-R * 0.12, -R * 0.15, R * 0.12, R * 0.06, -0.7, 0, TAU); g.fill();
+  return (MALLET_ART[key] = c);
+}
+/* パック（ふつう・分身・FIRE）: 半径 20 の絵 */
+const PUCK_ART = {};
+function puckArt(kind) {
+  if (PUCK_ART[kind]) return PUCK_ART[kind];
+  const cols = { normal: ['#ffffff', '#d8e8ff', '#5f8de0'], extra: ['#fffbe0', '#ffe680', '#c8960c'], fire: ['#fff3e0', '#ffc070', '#e0501a'] }[kind];
+  const [c, g] = canvasOf(52, 52, 2); g.translate(26, 26); const R = 20;
+  const b = g.createRadialGradient(-6, -7, 2, 0, 0, R); b.addColorStop(0, cols[0]); b.addColorStop(0.6, cols[1]); b.addColorStop(1, cols[2]);
+  g.fillStyle = b; g.beginPath(); g.arc(0, 0, R, 0, TAU); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, R - 1.5, 0, TAU); g.stroke();
+  g.strokeStyle = 'rgba(0,20,60,0.35)'; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, R * 0.62, 0, TAU); g.stroke();
+  g.fillStyle = 'rgba(0,20,60,0.45)'; g.beginPath(); for (let i = 0; i < 10; i++) { const r = i % 2 ? 3 : 7.5, a = i * Math.PI / 5 - Math.PI / 2; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.closePath(); g.fill();   // 星のマーク（回っているのがわかる）
+  g.fillStyle = 'rgba(255,255,255,0.6)'; g.beginPath(); g.ellipse(-7, -9, 6, 2.6, -0.6, 0, TAU); g.fill();
+  return (PUCK_ART[kind] = c);
+}
+const GLOWS = {};
+function glowArt(col) { const key = col.join(','); if (GLOWS[key]) return GLOWS[key]; const [c, g] = canvasOf(64, 64, 1), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, rgba(col, 1)); gr.addColorStop(0.35, rgba(col, 0.4)); gr.addColorStop(1, rgba(col, 0)); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return (GLOWS[key] = c); }
+function addGlow(col, x, y, r, a) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a; ctx.drawImage(glowArt(col), x - r, y - r, r * 2, r * 2); ctx.restore(); }
+/* ブルーム（明るいところだけにじむ）: 軽量モードでは出さない */
+const BLOOM = document.createElement('canvas');
+function drawBloom() {
+  if (FES.lite()) return;
+  const bw = Math.max(32, Math.round(canvas.width / 8)), bh = Math.max(18, Math.round(canvas.height / 8));
+  if (BLOOM.width !== bw || BLOOM.height !== bh) { BLOOM.width = bw; BLOOM.height = bh; }
+  const g = BLOOM.getContext('2d'); g.globalCompositeOperation = 'copy'; g.drawImage(canvas, 0, 0, bw, bh);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(BLOOM, 0, 0); g.drawImage(BLOOM, 0, 0);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45; ctx.drawImage(BLOOM, 0, 0, canvas.width, canvas.height); ctx.restore();
+}
+
 /* =====================================================================
    描画ヘルパー
    ===================================================================== */
@@ -887,6 +973,7 @@ function draw() {
   drawWallFlashes();
   drawFrame();
   worldEnd();
+  drawBloom();
   drawHUD();
   drawMessages();
   ctx.restore();
@@ -909,37 +996,17 @@ function drawBackground() {
 
 function drawTable() {
   const t = G.t;
-  const g = ctx.createLinearGradient(TX, TY, TX, TB);
-  g.addColorStop(0, '#11143f'); g.addColorStop(1, '#0a0b28');
-  ctx.fillStyle = g; ctx.fillRect(TX, TY, TW, TH);
+  ctx.drawImage(TABLE_ART, TX, TY, TW, TH);   // ガラスの面・空気穴・ロゴ（描いておいた絵）
   ctx.save();
   ctx.beginPath(); ctx.rect(TX, TY, TW, TH); ctx.clip();
-  // 内側グリッド（流れる）
-  ctx.strokeStyle = 'rgba(255,255,255,0.045)'; ctx.lineWidth = 1;
-  const off = (t * 40) % 40;
-  ctx.beginPath();
-  for (let x = TX - 40 + off; x < TR + 40; x += 40) { ctx.moveTo(x, TY); ctx.lineTo(x, TB); }
-  for (let y = TY; y < TB; y += 40) { ctx.moveTo(TX, y); ctx.lineTo(TR, y); }
-  ctx.stroke();
-  // 陣地のティント
-  const gl = ctx.createLinearGradient(TX, 0, CX, 0); gl.addColorStop(0, rgba(P1C, 0.12)); gl.addColorStop(1, rgba(P1C, 0));
-  ctx.fillStyle = gl; ctx.fillRect(TX, TY, TW / 2, TH);
-  const gr = ctx.createLinearGradient(TR, 0, CX, 0); gr.addColorStop(0, rgba(P2C, 0.12)); gr.addColorStop(1, rgba(P2C, 0));
-  ctx.fillStyle = gr; ctx.fillRect(CX, TY, TW / 2, TH);
-  // ゴールクリース
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = rgba(P1C, 0.35); ctx.beginPath(); ctx.arc(TX, CY, 130, -Math.PI / 2, Math.PI / 2); ctx.stroke();
-  ctx.strokeStyle = rgba(P2C, 0.35); ctx.beginPath(); ctx.arc(TR, CY, 130, Math.PI / 2, Math.PI * 1.5); ctx.stroke();
-  // センターライン・サークル
   ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 4;
   ctx.setLineDash([14, 10]); ctx.lineDashOffset = -t * 30;
-  ctx.beginPath(); ctx.moveTo(CX, TY); ctx.lineTo(CX, TB); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(CX, TY); ctx.lineTo(CX, TY + TH / 2 - 86); ctx.moveTo(CX, TY + TH / 2 + 86); ctx.lineTo(CX, TB); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(CX, CY, 72, 0, TAU); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 10;
-  ctx.beginPath(); ctx.arc(CX, CY, 84, 0, TAU); ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(CX, CY, 6, 0, TAU); ctx.fill();
+  if (G.shock) {   // ゴールの衝撃波
+    const k = G.shock.t / 0.8;
+    if (k < 1) { ctx.strokeStyle = rgba(G.shock.c, (1 - k) * 0.8); ctx.lineWidth = 14 * (1 - k) + 2; ctx.beginPath(); ctx.arc(G.shock.x, G.shock.y, 30 + k * 900, 0, TAU); ctx.stroke(); }
+  }
   ctx.restore();
   // ゴール口
   for (let i = 0; i < 2; i++) {
@@ -1018,8 +1085,7 @@ function drawTrail() {
     for (let i = 0; i < n; i++) {
       const tr = p.trail[i], k = (i + 1) / n;
       const col = tr.fire ? FIREC : (p.life >= 0 ? MULTIC : WHITE);
-      ctx.fillStyle = rgba(col, k * (tr.fire ? 0.5 : 0.3));
-      ctx.beginPath(); ctx.arc(tr.x, tr.y, PUCK_R * (0.3 + 0.7 * k), 0, TAU); ctx.fill();
+      if (i % 2 === n % 2) addGlow(col, tr.x, tr.y, PUCK_R * (0.8 + 1.4 * k), k * (tr.fire ? 0.55 : 0.3));
     }
   }
 }
@@ -1027,32 +1093,26 @@ function drawPuck(p) {
   const extra = p.life >= 0;
   ctx.save();
   if (extra && p.life < 2 && Math.floor(p.life * 8) % 2 === 0) ctx.globalAlpha = 0.45;
-  if (p.fire) glow(p.x, p.y, 60, FIREC, 0.7 + 0.2 * Math.sin(G.t * 40));
-  else glow(p.x, p.y, 40, extra ? MULTIC : WHITE, 0.35);
-  const g = ctx.createRadialGradient(p.x - 4, p.y - 5, 2, p.x, p.y, p.r);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, p.fire ? '#ffd8a0' : extra ? '#fff4b0' : '#d8e8ff'); g.addColorStop(1, p.fire ? '#ff8a3d' : extra ? '#e0b830' : '#7aa8ff');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
-  ctx.strokeStyle = p.fire ? rgba(FIREC, 1) : extra ? rgba(MULTIC, 1) : 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.stroke();
-  ctx.fillStyle = 'rgba(0,20,60,0.35)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.45, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,10,0.4)'; ctx.beginPath(); ctx.ellipse(p.x + 4, p.y + 6, p.r, p.r * 0.92, 0, 0, TAU); ctx.fill();   // 影
+  if (p.fire) addGlow(FIREC, p.x, p.y, 64, 0.75 + 0.2 * Math.sin(G.t * 40));
+  else addGlow(extra ? MULTIC : [180, 210, 255], p.x, p.y, 44, 0.45);
+  p.rot = (p.rot || 0) + (p.vx * 0.6 - p.vy * 0.4) * 0.00025;   // 動く向きに合わせて回る
+  const s = 52 * (p.r / 20);
+  ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+  ctx.drawImage(puckArt(p.fire ? 'fire' : extra ? 'extra' : 'normal'), -s / 2, -s / 2, s, s);
   ctx.restore();
 }
 function drawMallets() {
   for (const m of G.mallets) {
     const c = m.color;
-    glow(m.x, m.y, m.r * 2.2, c, 0.35 + m.hitFlash * 0.4);
+    addGlow(c, m.x, m.y, m.r * 2.2, 0.3 + m.hitFlash * 0.5);
     if (m.hitFlash > 0) {
       ctx.strokeStyle = rgba(c, m.hitFlash); ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(m.x, m.y, m.r + (1 - m.hitFlash) * 40, 0, TAU); ctx.stroke();
     }
-    const g = ctx.createRadialGradient(m.x - m.r * 0.3, m.y - m.r * 0.35, 2, m.x, m.y, m.r);
-    g.addColorStop(0, rgba(c, 0.55)); g.addColorStop(0.75, rgba(c, 0.25)); g.addColorStop(1, rgba(c, 0.6));
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, TAU); ctx.fill();
-    ctx.strokeStyle = rgba(c, 1); ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.r - 2, 0, TAU); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.r * 0.45, 0, TAU); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(m.x, m.y, m.r * 0.18, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,10,0.45)'; ctx.beginPath(); ctx.ellipse(m.x + 6, m.y + 9, m.r, m.r * 0.95, 0, 0, TAU); ctx.fill();   // 影
+    const ms = 100 * (m.r / 40); ctx.drawImage(malletArt(c), m.x - ms / 2, m.y - ms / 2, ms, ms);
+    ctx.strokeStyle = rgba(c, 0.9); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 1, 0, TAU); ctx.stroke();
     if (m.boost) {
       ctx.strokeStyle = rgba(FIREC, 0.6 + 0.4 * Math.sin(G.t * 12)); ctx.lineWidth = 3;
       ctx.setLineDash([8, 6]); ctx.lineDashOffset = -G.t * 60;
@@ -1063,7 +1123,7 @@ function drawMallets() {
       ctx.fillStyle = rgba(ICEC, 0.45); ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 5, 0, TAU); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
       ctx.save(); ctx.translate(m.x, m.y); if (PORTRAIT) ctx.rotate(Math.PI / 2);
-      text('❄', 0, 2, m.r * 1.1, '#fff', 'center', '900');
+      FES.drawIcon(ctx, '❄', 0, 0, m.r * 1.2, '#ffffff', 'rgb(140,220,255)');
       ctx.restore();
     }
   }
@@ -1151,10 +1211,10 @@ function drawHUD() {
   }
   // 下部ヒント
   let hint;
-  if (PORTRAIT) hint = G.mode === 'cpu' ? 'タッチで パドルを動かす　／　■ でポーズ' : '下半分: P1　上半分: P2　／　■ でポーズ';
+  if (PORTRAIT) hint = G.mode === 'cpu' ? 'タッチでパドルを動かす ／ 上のボタンでポーズ' : '下半分がP1・上半分がP2 ／ 上のボタンでポーズ';
   else hint = G.mode === 'cpu'
-    ? 'あなた: W A S D ／ マウス ／ タッチ　　　Esc / P: ポーズ'
-    : 'P1: W A S D ／ マウス ／ 左タッチ　　P2: ↑ ↓ ← → ／ 右タッチ　　Esc / P: ポーズ';
+    ? 'あなた: WASD・マウス・タッチ ／ ポーズ: Esc・P'
+    : 'P1: WASD・マウス・左タッチ ／ P2: 矢印キー・右タッチ ／ ポーズ: Esc・P';
   text(hint, SCX, SH - 17, 14, 'rgba(255,255,255,0.5)', 'center', '600');
 }
 
@@ -1250,8 +1310,8 @@ function drawTitlePortrait() {
   g.addColorStop(0, rgba(P1C, 1)); g.addColorStop(0.5, '#ffffff'); g.addColorStop(1, rgba(P2C, 1));
   ctx.fillStyle = g; ctx.fillText('ネオンエアホッケー', 0, 0);
   ctx.restore();
-  text('先に 7 点 とるか、90 秒で終了！', SCX, 272, 20, rgba(GOLD, 1), 'center', '900');
-  text('🔥 FIRE SHOT で入れると 2 点', SCX, 302, 17, rgba(FIREC, 1), 'center', '900');
+  text('先に7点とるか、90秒で終了！', SCX, 272, 20, rgba(GOLD, 1), 'center', '900');
+  text('FIRE SHOTか、壁に当ててから入れると2点', SCX, 302, 17, rgba(FIREC, 1), 'center', '900');
   for (let i = 0; i < TITLE_BTNS.length; i++) drawTitleBtn(i, 24);
   text('タップでスタート', SCX, 662, 16, 'rgba(255,255,255,0.75)', 'center', '700');
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; rrect(30, 690, 480, 136, 14); ctx.fill();
@@ -1260,8 +1320,8 @@ function drawTitlePortrait() {
   text('画面の下半分をタッチして動かす', 310, 716, 16, '#fff', 'center', '700');
   text('P2（上）', 90, 746, 17, rgba(P2C, 1), 'center', '900');
   text('画面の上半分をタッチ（CPU戦は自動）', 310, 746, 16, '#fff', 'center', '700');
-  text('パワーアップ 6 種 ／ ラスト 30 秒はバンパー登場', SCX, 782, 14, 'rgba(255,255,255,0.75)', 'center', '700');
-  text('横向きにすると キーボードでも遊べる', SCX, 806, 13, 'rgba(255,255,255,0.5)', 'center', '600');
+  text('パワーアップ6種 ／ 残り30秒でバンパー登場', SCX, 782, 14, 'rgba(255,255,255,0.75)', 'center', '700');
+  text('横向きにすると、キーボードでも遊べる', SCX, 806, 13, 'rgba(255,255,255,0.5)', 'center', '600');
   const hi = FES.getHiScore();
   text('CPU戦 HI-SCORE: ' + hi.toLocaleString() + ' pt', SCX, 870, 17, rgba(GOLD, 0.9), 'center', '900');
 }
@@ -1283,18 +1343,18 @@ function drawTitle() {
   g.addColorStop(0, rgba(P1C, 1)); g.addColorStop(0.5, '#ffffff'); g.addColorStop(1, rgba(P2C, 1));
   ctx.fillStyle = g; ctx.fillText('ネオンエアホッケー', 0, 0);
   ctx.restore();
-  text('先に 7 点 とるか、90 秒で終了！　🔥 FIRE SHOT で入れると 2 点', CX, 240, 20, rgba(GOLD, 1), 'center', '900');
-  text('パワーアップ 6 種（大・小・速・氷・守・分）　／　ラスト 30 秒は バンパー登場', CX, 268, 15, 'rgba(255,255,255,0.7)', 'center', '700');
+  text('先に7点とるか、90秒で終了！ ／ FIRE SHOTか、壁に当ててから入れると2点（両方なら3点）', CX, 240, 18, rgba(GOLD, 1), 'center', '900');
+  text('パワーアップ6種（大・小・速・氷・守・分） ／ 残り30秒でバンパー登場', CX, 268, 15, 'rgba(255,255,255,0.7)', 'center', '700');
   // モードボタン
   for (let i = 0; i < TITLE_BTNS.length; i++) drawTitleBtn(i, 26);
-  text('← → で選択　／　クリック・タップ・Enter・Space でスタート', CX, 392, 17, 'rgba(255,255,255,0.75)', 'center', '700');
+  text('←→で選択 ／ クリック・タップ・Enter・Spaceでスタート', CX, 392, 17, 'rgba(255,255,255,0.75)', 'center', '700');
   // 操作説明
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; rrect(150, 418, 660, 74, 14); ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1; ctx.stroke();
   text('P1（左）', 230, 440, 18, rgba(P1C, 1), 'center', '900');
-  text('W A S D ／ マウス ／ 画面の左半分をタッチ', 470, 440, 17, '#fff', 'center', '700');
+  text('WASD ／ マウス ／ 画面の左半分をタッチ', 470, 440, 17, '#fff', 'center', '700');
   text('P2（右）', 230, 470, 18, rgba(P2C, 1), 'center', '900');
-  text('↑ ↓ ← → ／ 画面の右半分をタッチ　（CPU戦は自動）', 470, 470, 17, '#fff', 'center', '700');
+  text('矢印キー ／ 画面の右半分をタッチ（CPU戦は自動）', 470, 470, 17, '#fff', 'center', '700');
   const hi = FES.getHiScore();
   text('CPU戦 HI-SCORE: ' + hi.toLocaleString() + ' pt', CX, 516, 18, rgba(GOLD, 0.9), 'center', '900');
 }
