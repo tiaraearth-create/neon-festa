@@ -20,6 +20,7 @@
   .ctl.on { background: linear-gradient(135deg,#6a5cff,#b04dff); box-shadow: 0 0 18px rgba(120,90,255,.6); }
   #kbtoggle { right: 12px; }
   #pausebtn { left: 12px; display: none; }
+  .ctl .fes-ico { width: 26px; height: 26px; }
   body.kb .ctl { bottom: calc(var(--kbh, 0px) + 10px); }
   /* ソフトキーボード */
   #softkb { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: none; flex-direction: column; gap: 6px;
@@ -40,7 +41,7 @@
 <div id="stage"><canvas id="game"></canvas></div>
 <div id="softkb"></div>
 <div id="pausebtn" class="ctl" title="ポーズ">II</div>
-<div id="kbtoggle" class="ctl" title="ソフトキーボード">⌨</div>
+<div id="kbtoggle" class="ctl" title="ソフトキーボード"><span data-ico="⌨"></span></div>
 <script>
 'use strict';
 FES.init({ id: 'typing', title: 'タイピングバトル', ranking: true });
@@ -269,6 +270,7 @@ const VOCAB = [
    ===================================================================== */
 const W = 960, H = 540;
 const GAME_TIME = 60;
+const GOLD_EVERY = 6, GOLD_TIME = 2, GOLD_TIME_MAX = 10;   // 6 体ごとに金色のミミック。たおすと +2 秒（1 回のゲームで合計 10 秒まで）・ボーナス 2 倍
 const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif';
 const MONO = 'Consolas,"Courier New",monospace';
 const GROUND_Y = 462;
@@ -278,6 +280,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const kbEl = document.getElementById('softkb');
 const kbToggle = document.getElementById('kbtoggle');
+FES.fillIcons(kbToggle);
 const pauseBtn = document.getElementById('pausebtn');
 
 const view = { scale: 1, ox: 0, oy: 0 };
@@ -300,6 +303,7 @@ const G = {   // 1プレイの状態
   comboPop: 0, scrollSpeed: 30, scroll: 0, missAt: 0, absorbN: false,
   particles: [], floats: [], lastSec: -1, bgT: 0,
   wordT: 0, speedHits: 0, slash: null,   // いまの単語にかかった秒・スピードボーナス回数・フィニッシュの斬撃
+  golds: 0,
 };
 let countdown = { t: 0, n: 3 };
 let lastTs = 0, raf = 0;
@@ -447,12 +451,13 @@ const ENEMY_TYPES = {
   3: ['boss', 'boss', 'ghost2'],
 };
 function newEnemy(word) {
-  const type = FES.pick(ENEMY_TYPES[word.tier]);
+  const type = word.gold ? 'mimic' : FES.pick(ENEMY_TYPES[word.tier]);
   return { type, x: ENEMY_X + 320, tx: ENEMY_X, y: GROUND_Y, hp: word.keys, maxHp: word.keys,
     t: Math.random() * 10, hit: 0, kb: 0, scale: word.tier === 3 ? 1.35 : word.tier === 2 ? 1.1 : 1, dead: 0, enter: 0 };
 }
 function nextWord() {
   G.word = pickWord();
+  G.word.gold = G.words > 0 && (G.words + 1) % GOLD_EVERY === 0;   // 金色のミミック
   G.word.par = (1.0 + G.word.keys * 0.34) * MODES[MODE].par;   // この秒数以内に打ち切ると SPEED ボーナス
   G.wordT = 0;
   G.enemy = newEnemy(G.word);
@@ -467,11 +472,11 @@ function resetGame() {
     time: GAME_TIME, elapsed: 0, score: 0, dispScore: 0, combo: 0, maxCombo: 0, correct: 0, miss: 0, words: 0, mult: 1,
     word: null, enemy: null, deadEnemies: [], pools: buildPools(),
     hero: { atk: 0, hurt: 0, bob: 0 }, shake: 0, flashRed: 0, flashWhite: 0, hitstop: 0, comboPop: 0,
-    scrollSpeed: 30, scroll: 0, missAt: 0, absorbN: false, particles: [], floats: [], lastSec: -1, wordT: 0, speedHits: 0, slash: null,
+    scrollSpeed: 30, scroll: 0, missAt: 0, absorbN: false, particles: [], floats: [], lastSec: -1, wordT: 0, speedHits: 0, slash: null, golds: 0, goldTime: 0,
   });
 }
 function startGame() {
-  if (FES.howto(['⌨ 出てきたローマ字をそのまま打つ', '✅ 1単語打ち切るとモンスター撃破', '🔥 ミスなしで倍率アップ'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (FES.howto(['⌨ 出てきたローマ字をそのまま打つ', '✅ 1単語打ち切るとモンスター撃破。金色のミミックは+2秒', '🔥 ミスなしで倍率アップ'], 0, startGame, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   FES.hideResult(); FES.pause(false);
   resetGame();
   BGM.stop();
@@ -507,13 +512,14 @@ function endGame() {
       score: Math.floor(G.score), scoreLabel: 'pt', title: 'TIME UP!',
       grade: title === 'タイピング神' ? 'S' : title === '達人' ? 'A' : title === '上級者' ? 'B' : title === '中級者' ? 'C' : 'D',
       titles: { S: 'タイピング神', A: '達人', B: '上級者', C: '中級者', D: '初心者（これから！）' },
-      subtitle: `${MODES[MODE].label} ／ ${G.words} 体撃破`,
+      subtitle: `${MODES[MODE].label} ／ ${G.words}体撃破`,
       stats: [
         { label: '単語数', value: G.words },
         { label: 'KPM', value: kpm },
         { label: '正確率', value: acc + '%' },
-        { label: 'MAX COMBO', value: G.maxCombo },
-        { label: 'SPEED ボーナス', value: G.speedHits },
+        { label: '最大コンボ', value: G.maxCombo },
+        { label: 'SPEEDボーナス', value: G.speedHits },
+        { label: 'ミミック', value: G.golds },
       ],
     }, () => startGame());
   }, 900);
@@ -566,8 +572,14 @@ function completeWord() {
   G.words++;
   G.absorbN = !!w.st.trailingN;
   const fast = G.wordT <= w.par;
-  const bonus = Math.round((100 + w.keys * 22) * G.mult * modeMul() * (fast ? 1.5 : 1));
+  const bonus = Math.round((100 + w.keys * 22) * G.mult * modeMul() * (fast ? 1.5 : 1) * (w.gold ? 2 : 1));
   G.score += bonus;
+  if (w.gold) {
+    G.golds++;
+    const add = Math.min(GOLD_TIME, GOLD_TIME_MAX - (G.goldTime || 0)); G.goldTime = (G.goldTime || 0) + add;
+    if (add > 0) { G.time = Math.min(GAME_TIME, G.time + add); spawnFloat(`+${add}秒！`, W / 2 + 70, 40, '#5ee06a', 26); }
+    [0, 0.07, 0.14, 0.24].forEach((d, k) => FES.tone({ freq: [1047, 1319, 1568, 2093][k], dur: 0.16, type: 'triangle', vol: 0.13, delay: d }));
+  }
   if (fast) { G.speedHits++; spawnFloat('SPEED! ×1.5', ENEMY_X, GROUND_Y - 150 * (en ? en.scale : 1) - 20, '#8ed6ff', 24); FES.tone({ freq: 1600, slide: 2400, dur: 0.12, type: 'sine', vol: 0.12 }); }
   if (en) G.slash = { x: en.x, y: GROUND_Y - 60 * en.scale, t: 0.22, max: 0.22 };
   G.scrollSpeed = 420;
@@ -580,7 +592,8 @@ function completeWord() {
     const cols = ENEMY_COLORS[en.type] || ['#fff'];
     spawnBurst(en.x, ey, 34 + w.tier * 10, cols.concat(['#fff', '#ffd36e']), 380 + w.tier * 80, 0.8);
     spawnFloat(`+${bonus}`, en.x, ey - 70, '#ffd36e', 34);
-    spawnFloat(w.tier === 3 ? 'BOSS撃破!!' : '撃破!', en.x, ey - 30, '#fff', w.tier === 3 ? 40 : 30);
+    spawnFloat(w.gold ? 'ミミック撃破！' : w.tier === 3 ? 'BOSS撃破！！' : '撃破！', en.x, ey - 30, w.gold ? '#ffd36e' : '#fff', w.tier === 3 || w.gold ? 40 : 30);
+    if (w.gold) spawnBurst(en.x, ey, 30, ['#ffd36e', '#fff2b0', '#ffffff'], 520, 1.0);
   }
   nextWord();
 }
@@ -673,7 +686,7 @@ for (let i = 0; i < 12; i++) LANTERNS.push({ x: i * 190 + Math.random() * 60, y:
 const ENEMY_COLORS = {
   slime: ['#5ee06a', '#a8ff9a', '#2fa84a'], slime2: ['#5ec8ff', '#b3ecff', '#2a7fc9'], mush: ['#ff5e5e', '#ffd9b3', '#fff'],
   ghost: ['#d9d0ff', '#fff', '#8b7cff'], ghost2: ['#ffb3f0', '#fff', '#c94dbb'], bat: ['#a06bff', '#4b2d9a', '#ffd36e'],
-  boss: ['#ff4d6d', '#7a1030', '#ffd36e'],
+  boss: ['#ff4d6d', '#7a1030', '#ffd36e'], mimic: ['#ffc83d', '#fff2b0', '#8a5a10'],
 };
 
 function drawBackground() {
@@ -869,6 +882,24 @@ function drawEnemy(en) {
     // 手
     ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(-46, -28 + Math.sin(en.t * 4) * 4, 10, 7, 0.4, 0, Math.PI * 2); ctx.ellipse(46, -28 - Math.sin(en.t * 4) * 4, 10, 7, -0.4, 0, Math.PI * 2); ctx.fill();
     ctx.translate(0, -36); drawFace(sc, en.hit, dying, false);
+  } else if (en.type === 'mimic') {
+    // 金色の宝箱のモンスター（ふたがパクパク動く）
+    const open = 0.18 + 0.14 * Math.sin(en.t * 7) + (en.hit > 0 ? 0.25 : 0);
+    const gg = ctx.createLinearGradient(0, -56, 0, 0); gg.addColorStop(0, flash ? '#fff' : '#ffe27a'); gg.addColorStop(1, flash ? '#fff' : '#c98a12');
+    const gap = 6 + open * 44, lidY = -40 - gap;                                                     // ふたが上にパカッとあく
+    ctx.fillStyle = flash ? '#fff' : '#3a1a00'; rr(-42, lidY - 2, 84, gap + 6, 6); ctx.fill();          // 口の中
+    ctx.fillStyle = '#fff'; for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(k * 11 - 4, -40); ctx.lineTo(k * 11, -48); ctx.lineTo(k * 11 + 4, -40); ctx.fill(); ctx.beginPath(); ctx.moveTo(k * 11 - 4, lidY); ctx.lineTo(k * 11, lidY + 8); ctx.lineTo(k * 11 + 4, lidY); ctx.fill(); }   // 歯（上と下）
+    ctx.fillStyle = gg; rr(-46, -40, 92, 40, 8); ctx.fill();                                          // 箱
+    ctx.fillStyle = flash ? '#fff' : dark; ctx.fillRect(-46, -24, 92, 6); ctx.fillRect(-6, -40, 12, 40);   // 帯
+    ctx.save(); ctx.translate(0, lidY);                                                                // ふた
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.moveTo(-46, 0); ctx.lineTo(-46, -14); ctx.quadraticCurveTo(0, -40, 46, -14); ctx.lineTo(46, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = flash ? '#fff' : dark; ctx.fillRect(-6, -30, 12, 30);
+    ctx.fillStyle = flash ? '#fff' : light; ctx.globalAlpha *= 0.7; ctx.beginPath(); ctx.ellipse(-22, -18, 10, 4, -0.3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha /= 0.7;
+    ctx.restore();
+    ctx.fillStyle = '#ff4d6d'; ctx.beginPath(); ctx.ellipse(0, -40, 14, 4 + open * 8, 0, Math.PI, 0); ctx.fill();   // 舌
+    // きらめき
+    for (let k = 0; k < 3; k++) { const a = en.t * 2 + k * 2.1, r = 58; const px = Math.cos(a) * r, py = -30 + Math.sin(a) * r * 0.6, sz = 4 + 2 * Math.sin(en.t * 6 + k); ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.moveTo(px, py - sz * 2); ctx.lineTo(px + sz * 0.5, py); ctx.lineTo(px, py + sz * 2); ctx.lineTo(px - sz * 0.5, py); ctx.closePath(); ctx.fill(); }
+    ctx.translate(0, lidY - 16); drawFace(sc, en.hit, dying, true);
   } else if (en.type === 'bat') {
     const flap = Math.sin(en.t * 14) * 0.5;
     ctx.fillStyle = dark;
@@ -900,13 +931,14 @@ function drawEnemy(en) {
 function drawWordPanel() {
   const w = G.word; if (!w) return;
   const px = 90, py = 118, pw = W - 180, ph = 150;
-  ctx.fillStyle = 'rgba(8,6,30,.72)'; rr(px, py, pw, ph, 22); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 2; rr(px, py, pw, ph, 22); ctx.stroke();
+  ctx.fillStyle = w.gold ? 'rgba(60,38,4,.85)' : 'rgba(8,6,30,.72)'; rr(px, py, pw, ph, 22); ctx.fill();
+  ctx.strokeStyle = w.gold ? `rgba(255,211,110,${0.7 + 0.3 * Math.sin(G.bgT * 8)})` : 'rgba(255,255,255,.22)'; ctx.lineWidth = w.gold ? 3 : 2; rr(px, py, pw, ph, 22); ctx.stroke();
   // カテゴリタグ
   const tagCol = w.tier === 3 ? '#ff4d6d' : w.tier === 2 ? '#b04dff' : '#3f9cff';
   ctx.fillStyle = tagCol; rr(px + 16, py - 12, 110, 24, 12); ctx.fill();
   text(w.cat, px + 71, py, 13, '#fff');
-  if (w.tier === 3) { ctx.fillStyle = '#ffd36e'; rr(px + 134, py - 12, 60, 24, 12); ctx.fill(); text('BOSS', px + 164, py, 12, '#3a1a00'); }
+  if (w.gold) { ctx.fillStyle = '#ffd36e'; rr(px + 134, py - 12, 150, 24, 12); ctx.fill(); text(`ボーナス ×2・+${GOLD_TIME}秒`, px + 209, py, 12, '#3a1a00'); }
+  else if (w.tier === 3) { ctx.fillStyle = '#ffd36e'; rr(px + 134, py - 12, 60, 24, 12); ctx.fill(); text('BOSS', px + 164, py, 12, '#3a1a00'); }
   // 漢字・かな
   const missFlash = (G.elapsed - G.missAt) < 0.25 && G.missAt > 0;
   const ksize = w.kanji.length > 12 ? 30 : w.kanji.length > 8 ? 36 : 44;
@@ -979,7 +1011,7 @@ function drawHUD() {
   text(`${kpm}`, W - 246, 96, 20, '#8ed6ff', { align: 'left' });
   text('ACC', W - 150, 80, 11, 'rgba(255,255,255,.6)', { align: 'left' });
   text(`${acc.toFixed(1)}%`, W - 150, 96, 20, acc >= 95 ? '#5ee06a' : acc >= 85 ? '#ffd36e' : '#ff6b8a', { align: 'left' });
-  text(`x${G.mult.toFixed(1)}`, W - 30, 88, 18, '#ffb347', { align: 'right' });
+  text(`×${G.mult.toFixed(1)}`, W - 30, 88, 18, '#ffb347', { align: 'right' });
   // コンボ
   if (G.combo >= 3) {
     const pop = 1 + G.comboPop * 0.35;
@@ -1031,13 +1063,13 @@ function drawTitle() {
   ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineJoin = 'round'; ctx.strokeText('タイピングバトル', 0, 0);
   ctx.fillStyle = tg; ctx.fillText('タイピングバトル', 0, 0);
   ctx.restore();
-  text('ローマ字でモンスターをたおせ！ 60秒バトル', W / 2, 212, 20, '#fff', { stroke: 4 });
+  text('ローマ字でモンスターをたおせ！60秒バトル', W / 2, 212, 20, '#fff', { stroke: 4 });
   // 説明
   ctx.fillStyle = 'rgba(8,6,30,.7)'; rr(W / 2 - 300, 240, 600, 122, 18); ctx.fill();
-  text('表示されたことばをローマ字で入力（si/shi、ti/chi など どちらでもOK）', W / 2, 266, 16, '#fff', { weight: 700 });
-  text('ミスするとコンボが途切れる。コンボでスコア倍率アップ！', W / 2, 294, 16, 'rgba(255,255,255,.85)', { weight: 700 });
-  text('キーボード: そのまま打つ / Esc でポーズ　　スマホ: 右下 ⌨ でソフトキーボード', W / 2, 322, 15, '#8ed6ff', { weight: 700 });
-  text('HI-SCORE  ' + FES.getHiScore().toLocaleString(), W / 2, 350, 15, '#ffd36e', { weight: 700 });
+  text('表示されたことばをローマ字で入力（si・shi、ti・chiなど、どちらでもOK）', W / 2, 266, 16, '#fff', { weight: 700 });
+  text('ミスするとコンボが切れる。金色のミミックをたおすと+2秒・2倍！', W / 2, 294, 16, 'rgba(255,255,255,.85)', { weight: 700 });
+  text('キーボードはそのまま打つ ／ Escでポーズ ／ スマホは右下のボタンでソフトキーボード', W / 2, 322, 15, '#8ed6ff', { weight: 700 });
+  text('HI-SCORE ' + FES.getHiScore().toLocaleString(), W / 2, 350, 15, '#ffd36e', { weight: 700 });
   // モードのボタン（1・2・3 キーでも）
   MODES.forEach((m, i) => {
     const b = modeBtnRect(i), on = i === MODE;
@@ -1054,7 +1086,7 @@ function drawTitle() {
   ctx.fillStyle = bg; rr(-130, -28, 260, 56, 28); ctx.fill();
   text('スタート', 0, 0, 26, '#fff');
   ctx.restore();
-  text('クリック / タップ / Enter / Space', W / 2, 490, 13, 'rgba(255,255,255,.6)', { weight: 700 });
+  text('クリック・タップ・Enter・Spaceでスタート', W / 2, 490, 13, 'rgba(255,255,255,.6)', { weight: 700 });
 }
 function modeBtnRect(i) { return { x: W / 2 - 230 + i * 160, y: 366, w: 140, h: 42 }; }
 function setMode(i) { MODE = FES.clamp(i, 0, 2); try { localStorage.setItem('fes:typing:mode', String(MODE)); } catch (e) { /* ignore */ } FES.sfx('select'); }
@@ -1098,6 +1130,16 @@ function render() {
   }
   if (G.flashRed > 0) { ctx.fillStyle = `rgba(255,40,80,${(G.flashRed * 0.9).toFixed(2)})`; ctx.fillRect(0, 0, W, H); }
   if (G.flashWhite > 0) { ctx.fillStyle = `rgba(255,255,255,${(G.flashWhite * 2).toFixed(2)})`; ctx.fillRect(0, 0, W, H); }
+  drawBloom();
+}
+const BLOOM = document.createElement('canvas');
+function drawBloom() {
+  if (FES.lite() || state === 'title') return;
+  const bw = Math.max(32, Math.round(canvas.width / 8)), bh = Math.max(18, Math.round(canvas.height / 8));
+  if (BLOOM.width !== bw || BLOOM.height !== bh) { BLOOM.width = bw; BLOOM.height = bh; }
+  const g = BLOOM.getContext('2d'); g.globalCompositeOperation = 'copy'; g.drawImage(canvas, 0, 0, bw, bh);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(BLOOM, 0, 0); g.drawImage(BLOOM, 0, 0);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.28; ctx.drawImage(BLOOM, 0, 0, canvas.width, canvas.height); ctx.restore();
 }
 function loop(ts) {
   raf = requestAnimationFrame(loop);
