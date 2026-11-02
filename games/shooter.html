@@ -51,6 +51,7 @@ const BOSS_DEFS = [
   { name: 'オメガ・ドレッドノート', hp: 4000, color: '#ffd166', color2: '#ff5c8a', bonus: 20000, scale: 1.25 },
 ];
 const BOMB_BTN = { x: W - 66, y: H - 126, r: 46 };
+const HYPER_T = 7;               // HYPER モードの秒数（かすり・近くで倒すとゲージがたまる）
 const PAUSE_BTN = { x: 46, y: H - 126, r: 26 };
 
 /* ------------------------------------------------------------ 状態 */
@@ -71,6 +72,7 @@ function newState() {
     countT: 0, announce: null, over: false, overT: 0, resultShown: false,
     cleared: false, clearT: 0, bombWave: null, bombPress: 0, warp: 0, uid: 1,
     bgmMode: 'normal', waveHits: 0, bossKills: 0, carrierDone: false,
+    hyper: 0, hyperT: 0, hypers: 0, medals: 0,
   };
 }
 
@@ -544,7 +546,8 @@ function updateQueue(dt) {
 /* ------------------------------------------------------------ プレイヤー */
 function fireShot(p) {
   const shots = S.shots; const y = p.y - 18;
-  const mk = (dx, ang, dmg, w, h, laser) => shots.push({ x: p.x + dx, y, vx: Math.sin(ang) * 900, vy: -Math.cos(ang) * 900, dmg, w, h, laser: !!laser, hits: laser ? [] : null });
+  const hy = S.hyperT > 0;
+  const mk = (dx, ang, dmg, w, h, laser) => shots.push({ x: p.x + dx, y, vx: Math.sin(ang) * 900, vy: -Math.cos(ang) * 900, dmg: dmg * (hy ? 1.6 : 1), w: w * (hy ? 1.3 : 1), h, laser: !!laser, hits: laser ? [] : null, hyper: hy });
   switch (p.power) {
     case 1: mk(0, 0, 7, 6, 22); break;
     case 2: mk(-9, 0, 6.5, 6, 22); mk(9, 0, 6.5, 6, 22); break;
@@ -576,6 +579,7 @@ function updatePlayer(dt) {
   while (p.shotT <= 0) { p.shotT += p.power >= 4 ? 0.085 : 0.1; fireShot(p); }
   if (p.power >= 5) { p.laserT -= dt; if (p.laserT <= 0) { p.laserT = 0.05; S.shots.push({ x: p.x, y: p.y - 24, vx: 0, vy: -1300, dmg: 6, w: 14, h: 70, laser: true, hits: [] }); } }
   p.inv = Math.max(0, p.inv - dt); p.bombCd = Math.max(0, p.bombCd - dt);
+  if (S.hyperT > 0) { S.hyperT -= dt; if (S.hyperT <= 0) { S.hyperT = 0; popup(p.x, p.y - 60, 'HYPER おわり', '#ffd166', 18, 0.9); } }
 }
 function useBomb() {
   const p = S.player;
@@ -590,6 +594,27 @@ function useBomb() {
   S.bullets.length = 0;
   if (n) { S.score += n * 10; popup(p.x, p.y - 60, `弾消し +${n * 10}`, '#ffd166', 22, 1.0); }
   for (const e of S.enemies) { if (e.type === 'boss' && e.invuln) continue; damageEnemy(e, e.type === 'boss' ? 180 : 200, true); }
+}
+/* HYPER: ゲージ満タンで 7 秒間、ショットが金色で強くなり、倒した敵のまわりの弾が金メダルに変わる */
+function hyperGain(v) {
+  if (S.hyperT > 0 || S.over || S.cleared) return;
+  S.hyper = Math.min(1, S.hyper + v);
+  if (S.hyper >= 1) {
+    S.hyper = 0; S.hyperT = HYPER_T; S.hypers++;
+    announce('HYPER MODE!', '倒した敵のまわりの弾が、金のメダルに変わる！', '#ffd166', 1.6);
+    SND.bonus(); addFlash('#ffd166', 0.35); addShake(10);
+    addRing(S.player.x, S.player.y, 260, 0.6, '#ffd166', 10);
+  }
+}
+function bulletsToMedals(x, y, r) {
+  let n = 0;
+  for (let i = S.bullets.length - 1; i >= 0; i--) {
+    const b = S.bullets[i];
+    if (dist(b.x, b.y, x, y) > r) continue;
+    S.items.push({ x: b.x, y: b.y, type: 'M', vy: 40, t: rand(0, TAU) });
+    S.bullets[i] = S.bullets[S.bullets.length - 1]; S.bullets.pop(); n++;
+  }
+  if (n) { spark(x, y, Math.min(16, n * 2), '#ffd166', 220, 0.4); if (n >= 5) popup(x, y - 40, `${n}枚！`, '#ffd166', 20, 0.8); }
 }
 function damageEnemy(e, dmg, byBomb) {
   if (e.type === 'boss' && (e.invuln || e.dying)) return;
@@ -613,7 +638,9 @@ function killEnemy(e, byBomb) {
   const mult = comboMult();
   let pts = Math.round(e.score * mult / 10) * 10;
   const d = dist(e.x, e.y, p.x, p.y);
-  if (d < 150 && !byBomb) { pts += e.score; popup(e.x, e.y - 26, `CLOSE!! +${e.score}`, '#ff9a3d', 22, 0.9); }
+  if (d < 150 && !byBomb) { pts += e.score; popup(e.x, e.y - 26, `CLOSE!! +${e.score}`, '#ff9a3d', 22, 0.9); hyperGain(0.05); }
+  hyperGain(0.012);
+  if (S.hyperT > 0) bulletsToMedals(e.x, e.y, e.type === 'turret' || e.type === 'carrier' ? 220 : 150);
   S.score += pts;
   popup(e.x, e.y, `+${pts}`, '#ffe66d', 16, 0.6);
   const col = { zako: '#ff6b4a', snake: '#c07cff', missile: '#ffd166', turret: '#9fb3d9', form: '#6bff9a', rock: '#c9b79c', guard: '#9ff0ff', carrier: '#ffd166' }[e.type] || '#fff';
@@ -663,9 +690,14 @@ function pickup(it) {
   } else if (it.type === 'B') {
     if (p.bombs < 5) { p.bombs++; popup(p.x, p.y - 44, 'BOMB +1', '#ff4dd8', 22, 0.9); FES.sfx('powerup'); }
     else { S.score += 2000; popup(p.x, p.y - 44, '+2000', '#ff4dd8', 20, 0.8); FES.sfx('coin'); }
+  } else if (it.type === 'M') {
+    const pts = Math.round(150 * comboMult() / 10) * 10;
+    S.score += pts; S.medals++; FES.tone({ freq: 1568 + (S.medals % 6) * 120, dur: 0.05, type: 'square', vol: 0.06 });
+    if (S.medals % 10 === 0) popup(p.x, p.y - 44, `メダル${S.medals}枚`, '#ffd166', 16, 0.6);
+    return;
   } else {
     const pts = Math.round(300 * comboMult() / 10) * 10;
-    S.score += pts; SND.item(); popup(p.x, p.y - 44, `★ +${pts}`, '#ffe66d', 18, 0.7);
+    S.score += pts; SND.item(); popup(p.x, p.y - 44, `+${pts}`, '#ffe66d', 18, 0.7);
   }
   spark(p.x, p.y, 8, it.type === 'P' ? '#5cd4ff' : it.type === 'B' ? '#ff4dd8' : '#ffe66d', 180, 0.4);
 }
@@ -831,7 +863,8 @@ function updateItems(dt) {
   for (let i = its.length - 1; i >= 0; i--) {
     const it = its[i]; it.t += dt;
     const d = dist(it.x, it.y, p.x, p.y);
-    if (d < 130 && !S.over) { const a = angleTo(it.x, it.y, p.x, p.y); const sp = 620 - d * 2; it.x += Math.cos(a) * sp * dt; it.y += Math.sin(a) * sp * dt; }
+    const mag = it.type === 'M' ? 360 : 130;
+    if (d < mag && !S.over) { const a = angleTo(it.x, it.y, p.x, p.y); const sp = (it.type === 'M' ? 900 : 620) - d * 2; it.x += Math.cos(a) * sp * dt; it.y += Math.sin(a) * sp * dt; }
     else { it.y += it.vy * dt; it.x += Math.sin(it.t * 2) * 30 * dt; }
     if (it.y > H + 30) its.splice(i, 1);
   }
@@ -863,7 +896,7 @@ function collisions() {
     const b = bs[i]; const d = dist(b.x, b.y, p.x, p.y);
     if (d < b.r * 0.6 + p.r) { if (p.inv <= 0) { playerHit(); return; } continue; }
     if (!b.grazed && d < b.r + 26) {
-      b.grazed = true; S.graze++; S.score += 50; SND.graze();
+      b.grazed = true; S.graze++; S.score += 50; SND.graze(); hyperGain(0.025);
       popup(p.x + rand(-20, 20), p.y - 30, 'GRAZE', '#8ed6ff', 13, 0.45);
       spark(p.x + (b.x - p.x) * 0.5, p.y + (b.y - p.y) * 0.5, 3, '#8ed6ff', 160, 0.25);
     }
@@ -941,8 +974,8 @@ function drawShots() {
       ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(s.x - 2.5, s.y - s.h / 2, 5, s.h);
     } else {
       ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(Math.atan2(s.vy, s.vx) + Math.PI / 2);
-      ctx.fillStyle = 'rgba(90,200,255,.4)'; ctx.fillRect(-s.w, -s.h / 2 - 4, s.w * 2, s.h + 8);
-      ctx.fillStyle = '#e6fbff'; ctx.fillRect(-s.w / 2 + 1, -s.h / 2, s.w - 2, s.h);
+      ctx.fillStyle = s.hyper ? 'rgba(255,200,80,.5)' : 'rgba(90,200,255,.4)'; ctx.fillRect(-s.w, -s.h / 2 - 4, s.w * 2, s.h + 8);
+      ctx.fillStyle = s.hyper ? '#fff6d0' : '#e6fbff'; ctx.fillRect(-s.w / 2 + 1, -s.h / 2, s.w - 2, s.h);
       ctx.restore();
     }
   }
@@ -955,6 +988,14 @@ function drawBullets() {
 }
 function drawItems() {
   for (const it of S.items) {
+    if (it.type === 'M') {   // 金メダル（ぼかしなしで軽く）
+      const sq = Math.abs(Math.cos(it.t * 6));
+      ctx.save(); ctx.translate(it.x, it.y); ctx.scale(0.35 + sq * 0.65, 1);
+      ctx.fillStyle = '#b8860b'; ctx.beginPath(); ctx.arc(0, 0, 9, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(0, -1, 8, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#fff6c0'; ctx.fillRect(-1.5, -5, 3, 8);
+      ctx.restore(); continue;
+    }
     const c = it.type === 'P' ? '#5cd4ff' : it.type === 'B' ? '#ff4dd8' : '#ffe66d';
     ctx.save(); ctx.translate(it.x, it.y);
     const pulse = 1 + Math.sin(it.t * 6) * 0.1;
@@ -965,8 +1006,8 @@ function drawItems() {
       for (let i = 0; i < 10; i++) { const r = i % 2 ? 7 : 15, a = i * Math.PI / 5 - Math.PI / 2; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
       ctx.closePath(); ctx.fill();
     } else {
-      roundRect(-14, -14, 28, 28, 7); ctx.fillStyle = c; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-      text(it.type, 0, 1, 20, '#fff', 'center', 900);
+      roundRect(-14, -14, 28, 28, 7); ctx.fillStyle = hexToRgba(c, 0.85); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+      if (!FES.drawIcon(ctx, it.type === 'P' ? '⚡' : '💣', 0, 0, 22, '#ffffff', null)) text(it.type, 0, 1, 20, '#fff', 'center', 900);
     }
     ctx.restore();
   }
@@ -1165,13 +1206,24 @@ function drawHUD() {
       roundRect(378 + i * 18, by - 7, 14, 14, 3); ctx.fill();
     }
   }
+  // HYPER ゲージ
+  if (!wide) {
+    const hw = 160, hx = (W - hw) / 2, hy = 114;
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; roundRect(hx, hy, hw, 6, 3); ctx.fill();
+    ctx.fillStyle = S.hyperT > 0 ? '#fff6c0' : '#ffd166'; roundRect(hx, hy, hw * (S.hyperT > 0 ? S.hyperT / HYPER_T : S.hyper), 6, 3); ctx.fill();
+    text(S.hyperT > 0 ? 'HYPER!' : 'HYPER', hx - 8, hy + 3, 11, '#ffd166', 'right', 900);
+  }
+  if (S.hyperT > 0) {
+    const k = 0.5 + 0.5 * Math.sin(S.t * 10);
+    ctx.strokeStyle = `rgba(255,209,102,${0.35 + k * 0.35})`; ctx.lineWidth = 8; ctx.strokeRect(4, 4, W - 8, H - 8);
+  }
   // コンボ
   if (S.combo >= 2) {
     const sc = 1 + S.comboPop * 0.25;
     ctx.save(); ctx.translate(W - 24, H * 0.42); ctx.scale(sc, sc);
     text(`${S.combo}`, 0, 0, 44, '#ff9ee8', 'right', 900, 5, true);
     text('COMBO', 0, 30, 14, '#ff9ee8', 'right', 900, 3);
-    text(`x${comboMult().toFixed(2)}`, 0, 50, 13, '#ffe66d', 'right', 700, 3);
+    text(`×${comboMult().toFixed(2)}`, 0, 50, 13, '#ffe66d', 'right', 700, 3);
     ctx.restore();
   }
   // ボムボタン
@@ -1180,7 +1232,7 @@ function drawHUD() {
   const bg2 = ctx.createRadialGradient(0, -10, 4, 0, 0, bb.r); bg2.addColorStop(0, '#ff7ae6'); bg2.addColorStop(1, '#8a1a8a');
   ctx.fillStyle = bg2; ctx.globalAlpha = p.bombs > 0 ? 0.9 : 0.35; ctx.beginPath(); ctx.arc(0, 0, bb.r, 0, TAU); ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 3; ctx.stroke();
-  text('BOMB', 0, -6, 18, '#fff', 'center', 900); text(`x${p.bombs}`, 0, 14, 15, '#fff', 'center', 700);
+  text('BOMB', 0, -6, 18, '#fff', 'center', 900); text(`×${p.bombs}`, 0, 14, 15, '#fff', 'center', 700);
   ctx.restore();
   // ポーズボタン
   const pb = PAUSE_BTN;
@@ -1254,13 +1306,14 @@ function drawTitle() {
   // HI-SCORE
   text(`HI-SCORE  ${hiScore.toLocaleString()}`, W / 2, H * 0.41, 20, '#ffe66d', 'center', 900, 4);
   // 操作説明
-  ctx.fillStyle = 'rgba(0,0,30,.55)'; roundRect(50, H * 0.70, W - 100, 150, 18); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,30,.55)'; roundRect(50, H * 0.70, W - 100, 182, 18); ctx.fill();
   ctx.strokeStyle = 'rgba(140,214,255,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
   const lines = [
-    ['キーボード', '矢印 / WASD 移動 ・ Shift / Z ボム'],
-    ['マウス', 'カーソルに追従 ・ クリックでボム'],
-    ['タッチ', '指スライドで移動 ・ 右下ボタンでボム'],
-    ['共通', 'ショットは自動連射 ・ Esc / P でポーズ'],
+    ['キーボード', '矢印・WASDで移動 ／ Shift・Zでボム'],
+    ['マウス', 'カーソルについてくる ／ クリックでボム'],
+    ['タッチ', '指をすべらせて移動 ／ 右下のボタンでボム'],
+    ['共通', 'ショットは自動で連射 ／ Esc・Pでポーズ'],
+    ['HYPER', 'かすり・近くで倒すと、弾が金メダルに'],
   ];
   lines.forEach(([k, v], i) => {
     const y = H * 0.70 + 28 + i * 32;
@@ -1274,8 +1327,8 @@ function drawTitle() {
   ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 2; ctx.stroke();
   text('▶ スタート', 0, 1, 28, '#fff', 'center', 900);
   ctx.restore();
-  text('クリック / タップ / Enter でスタート', W / 2, H * 0.55 + 58, 14, 'rgba(255,255,255,.7)', 'center', 700);
-  text('約3分 ・ WAVE 9 の最終ボスを倒せ！', W / 2, H * 0.55 + 82, 14, '#ffe66d', 'center', 700);
+  text('クリック・タップ・Enterでスタート', W / 2, H * 0.55 + 58, 14, 'rgba(255,255,255,.7)', 'center', 700);
+  text('約3分・WAVE 9の最終ボスを倒せ！', W / 2, H * 0.55 + 82, 14, '#ffe66d', 'center', 700);
 }
 function drawCountdown() {
   const c = S.countT;
@@ -1330,7 +1383,7 @@ function drawSidePanels() {
     const r = FES.getRanking().slice(0, 5);
     if (!r.length) line('まだ記録なし。1番乗りを狙おう！', 14, '#ffe66d', 700, 26);
     r.forEach((e, i) => {
-      text(['🥇', '🥈', '🥉'][i] || (i + 1) + '.', lx, y, 16 * u, '#fff', 'left', 900);
+      text(`${i + 1}位`, lx, y, 15 * u, ['#ffd166', '#d8e0f0', '#e0a070'][i] || '#fff', 'left', 900);
       text(e.name, lx + 34 * u, y, 16 * u, i === 0 ? '#ffe66d' : '#fff', 'left', 900);
       text(e.score.toLocaleString(), lx + lw, y, 16 * u, 'rgba(255,255,255,.85)', 'right', 700);
       y += 28 * u;
@@ -1356,9 +1409,11 @@ function drawSidePanels() {
     if (S.combo >= 2) {
       const scp = 1 + S.comboPop * 0.2;
       ctx.save(); ctx.translate(lx, y + 14 * u); ctx.scale(scp, scp); text(`${S.combo}`, 0, 0, 46 * u, '#ff9ee8', 'left', 900); ctx.restore();
-      text(`x${comboMult().toFixed(2)}`, lx + lw, y + 14 * u, 16 * u, '#ffe66d', 'right', 900); y += 60 * u;
+      text(`×${comboMult().toFixed(2)}`, lx + lw, y + 14 * u, 16 * u, '#ffe66d', 'right', 900); y += 60 * u;
     } else { line('—', 30, 'rgba(255,255,255,.25)', 900, 56); }
-    line(`撃破 ${S.kills}　　GRAZE ${S.graze}`, 13, 'rgba(255,255,255,.7)', 700, 24);
+    line(`撃破${S.kills} ／ GRAZE ${S.graze} ／ メダル${S.medals}`, 13, 'rgba(255,255,255,.7)', 700, 26);
+    line(S.hyperT > 0 ? `HYPER MODE  のこり${Math.ceil(S.hyperT)}秒` : 'HYPER ゲージ（かすり・近くで倒す）', 12, '#ffd166', 900, 20);
+    bar(S.hyperT > 0 ? S.hyperT / HYPER_T : S.hyper, S.hyperT > 0 ? '#fff6c0' : '#ffd166', 10);
   }
   // ---- 右パネル ----
   const rx = R.x + 22 * u, rw = R.w - 44 * u;
@@ -1377,12 +1432,14 @@ function drawSidePanels() {
     rline('POWER', 12, 'rgba(255,255,255,.6)', 900, 28);
     for (let i = 0; i < 5; i++) { ctx.fillStyle = i < p.power ? (i === 4 ? '#ffe66d' : '#5cd4ff') : 'rgba(255,255,255,.15)'; roundRect(rx + i * 30 * u, y - 9 * u, 24 * u, 18 * u, 4); ctx.fill(); }
     y += 46 * u;
-    if (p.power >= 5) rline('LASER 搭載中！', 14, '#ffe66d', 900, 30);
+    if (p.power >= 5) rline('LASER搭載中！', 14, '#ffe66d', 900, 30);
   } else {
     rline('HOW TO PLAY', 12, 'rgba(255,255,255,.6)', 900, 30);
-    rline('約3分。WAVE 9 の最終ボスを倒せ！', 14, '#ffe66d', 900, 36);
+    rline('約3分。WAVE 9の最終ボスを倒せ！', 14, '#ffe66d', 900, 30);
+    rline('かすり・近くで倒すとHYPER！', 13, '#ffd166', 900, 24);
+    rline('敵の弾が金メダルに変わる', 13, '#ffd166', 700, 30);
   }
-  const help = [['移動', '矢印 / WASD / マウス'], ['ボム', 'Shift / Z / クリック'], ['ポーズ', 'Esc / P'], ['ショット', '自動連射']];
+  const help = [['移動', '矢印・WASD・マウス'], ['ボム', 'Shift・Z・クリック'], ['ポーズ', 'Esc・P'], ['ショット', '自動で連射']];
   const helpTop = R.y + R.h - (help.length * 30 + 40) * u;
   if (helpTop >= y + 8 * u) {   // 上の表示（LIFE・BOMB・POWER）と重なるときは操作説明を出さない
     y = helpTop;
@@ -1398,7 +1455,7 @@ function startGame() {
   beginPlay();
 }
 function beginPlay() {
-  if (FES.howto(['🚀 矢印・マウス・タッチで移動（弾は自動で出る）', '💣 [Shift]か画面のボタンでボム', '💥 敵の近くで倒すとCLOSEボーナス'], 0, beginPlay, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
+  if (FES.howto(['🚀 矢印・マウス・タッチで移動（弾は自動で出る）', '💣 [Shift]か画面のボタンでボム', '✨ かすり・近くで倒すとHYPER（敵の弾が金メダルに）'], 0, beginPlay, arguments)) return;   // まん中に「あそびかた」→ OK で始まる
   S = newState();
   S.phase = 'count'; S.countT = 0; S.countStep = -1;
   input.mouseMoved = false; input.dx = 0; input.dy = 0; input.touchId = null;
@@ -1417,7 +1474,7 @@ function finishGame() {
   if (S.resultShown) return;
   S.resultShown = true; bgmStop(); canvas.style.cursor = '';
   const p = S.player;
-  let title = 'GAME OVER', subtitle = `WAVE ${S.wave} で撃墜…`;
+  let title = 'GAME OVER', subtitle = `WAVE ${S.wave}で撃墜…`;
   if (S.cleared) {
     const bonus = 30000 + p.lives * 5000 + p.bombs * 2000;
     S.score += bonus; title = 'MISSION CLEAR!'; subtitle = `全ボス撃破！ クリアボーナス +${bonus.toLocaleString()}`;
@@ -1425,7 +1482,7 @@ function finishGame() {
   FES.showResult({
     score: S.score, scoreLabel: 'pt', title, subtitle,
     rank: { S: 60000, A: 35000, B: 15000, C: 5000 }, titles: { S: '銀河の英雄', A: 'エースパイロット', B: 'いい腕だ！' },
-    stats: [{ label: 'WAVE', value: S.wave }, { label: '撃破数', value: S.kills }, { label: 'ボス撃破', value: `${S.bossKills} / 3` }, { label: 'MAX COMBO', value: S.maxCombo }, { label: 'GRAZE', value: S.graze }],
+    stats: [{ label: 'WAVE', value: S.wave }, { label: '撃破数', value: S.kills }, { label: 'ボス撃破', value: `${S.bossKills}/3` }, { label: '最大コンボ', value: S.maxCombo }, { label: 'GRAZE', value: S.graze }, { label: 'HYPER', value: `${S.hypers}回` }, { label: 'メダル', value: `${S.medals}枚` }],
   }, restartGame);
 }
 
@@ -1464,6 +1521,15 @@ function update(dtRaw) {
     if (S.clearT > 3.2) finishGame();
   }
 }
+const BLOOM = document.createElement('canvas');
+function drawBloom() {
+  if (FES.lite()) return;
+  const bw = Math.max(32, Math.round(canvas.width / 8)), bh = Math.max(18, Math.round(canvas.height / 8));
+  if (BLOOM.width !== bw || BLOOM.height !== bh) { BLOOM.width = bw; BLOOM.height = bh; }
+  const g = BLOOM.getContext('2d'); g.globalCompositeOperation = 'copy'; g.drawImage(canvas, 0, 0, bw, bh);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(BLOOM, 0, 0); g.drawImage(BLOOM, 0, 0);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.4; ctx.drawImage(BLOOM, 0, 0, canvas.width, canvas.height); ctx.restore();   // クリップ（プレイ画面）の中だけに重なる
+}
 function render() {
   const { dpr, scale: sc, offsetX: ox, offsetY: oy, vw, vh } = view;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1490,6 +1556,7 @@ function render() {
   }
   ctx.restore();
   if (S.flash.a > 0) { ctx.globalAlpha = S.flash.a; ctx.fillStyle = S.flash.c; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  drawBloom();
   if (S.phase !== 'title') {
     drawHUD(); drawWarning(); drawAnnounce();
     if (S.phase === 'count') drawCountdown();
